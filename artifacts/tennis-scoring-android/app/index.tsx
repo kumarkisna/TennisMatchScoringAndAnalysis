@@ -14,6 +14,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { listLocalMatches, LOCAL_MATCH_LIST_KEY } from '@/lib/local-matches';
+import { listLocalPlayers, LOCAL_PLAYERS_KEY } from '@/lib/local-players';
 
 function formatMatchDate(date: string) {
   const normalizedDate = date.slice(0, 10);
@@ -34,6 +35,10 @@ export default function HomeScreen() {
   const matchesQuery = useQuery({
     queryKey: LOCAL_MATCH_LIST_KEY,
     queryFn: listLocalMatches,
+  });
+  const playersQuery = useQuery({
+    queryKey: LOCAL_PLAYERS_KEY,
+    queryFn: listLocalPlayers,
   });
   const matches = matchesQuery.data ?? [];
   const completedCount = matches.filter((match) => match.status === 'complete').length;
@@ -112,13 +117,36 @@ export default function HomeScreen() {
               />
             </Pressable>
 
+            <Pressable
+              testID="button-open-saved-players"
+              accessibilityRole="button"
+              onPress={() => router.push('/players')}
+              style={({ pressed }) => [
+                styles.playersButton,
+                {
+                  borderColor: colors.border,
+                  backgroundColor: colors.card,
+                  opacity: pressed ? 0.78 : 1,
+                },
+              ]}
+            >
+              <Ionicons name="people-outline" size={17} color={colors.primary} />
+              <Text style={[styles.playersButtonText, { color: colors.foreground }]}>
+                Saved players
+              </Text>
+              <Text style={[styles.playersButtonCount, { color: colors.mutedForeground }]}>
+                {playersQuery.data?.length ?? 0}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
+            </Pressable>
+
             <View style={styles.sectionHeader}>
               <View>
                 <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
                   Match book
                 </Text>
                 <Text style={[styles.sectionCaption, { color: colors.mutedForeground }]}>
-                  Saved locally first · syncs when online
+                  Offline-only · saved on this device
                 </Text>
               </View>
               <View style={styles.matchControls}>
@@ -324,14 +352,12 @@ export default function HomeScreen() {
           )
         }
         ListFooterComponent={
-          matches.length > 0 ? (
-            <View style={styles.footerNote}>
-              <Ionicons name="shield-checkmark-outline" size={14} color={colors.mutedForeground} />
-              <Text style={[styles.footerText, { color: colors.mutedForeground }]}>
-                Scores save on device first · new matches sync online
-              </Text>
-            </View>
-          ) : undefined
+          <View style={styles.footerNote}>
+            <Ionicons name="shield-checkmark-outline" size={14} color={colors.mutedForeground} />
+            <Text style={[styles.footerText, { color: colors.mutedForeground }]}>
+              Offline-only · matches and players stay on this device
+            </Text>
+          </View>
         }
       />
     </SafeAreaView>
@@ -385,6 +411,9 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: { fontFamily: 'DMSans_700Bold', fontSize: 15 },
   buttonArrow: { marginLeft: 'auto' },
+  playersButton: { marginTop: 10, minHeight: 42, borderWidth: 1, borderRadius: 9, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  playersButtonText: { flex: 1, fontFamily: 'DMSans_600SemiBold', fontSize: 12 },
+  playersButtonCount: { fontFamily: 'DMSans_700Bold', fontSize: 11 },
   sectionHeader: {
     marginTop: 37,
     marginBottom: 15,

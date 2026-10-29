@@ -1,2 +1,2 @@
-- [Android scoring storage](android-scoring-storage.md) — the device copy stays authoritative; only new matches queue for private online sync.
-- [Match set structure and reporting](tennis-match-structure.md) — one local match can contain unlimited standard or custom-target tiebreak sets, with whole-match analysis.
+- [Android scoring storage](android-scoring-storage.md) — match and player data must remain offline-only; preserve older server records unless deletion is requested.
+- [Match set structure and reporting](tennis-match-structure.md) — any set can be reviewed read-only; match reports and PDFs cover every set.

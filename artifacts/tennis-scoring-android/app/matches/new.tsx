@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -10,19 +11,84 @@ import {
 } from 'react-native';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useColors } from '@/hooks/useColors';
 import {
   createLocalMatch,
   LOCAL_MATCH_LIST_KEY,
   localMatchKey,
 } from '@/lib/local-matches';
-import { requestMatchSync } from '@/lib/match-sync';
+import {
+  addLocalPlayer,
+  listLocalPlayers,
+  LOCAL_PLAYERS_KEY,
+} from '@/lib/local-players';
 
 type Side = 'tracked' | 'opponent';
 type Surface = 'Hard' | 'Clay' | 'Grass' | 'Carpet' | 'Other';
 
 const surfaces: Surface[] = ['Hard', 'Clay', 'Grass', 'Carpet', 'Other'];
+
+function SavedPlayerChoices({
+  players,
+  value,
+  testIDPrefix,
+  onSelect,
+}: {
+  players: { id: string; name: string }[];
+  value: string;
+  testIDPrefix: string;
+  onSelect: (name: string) => void;
+}) {
+  const colors = useColors();
+  if (players.length === 0) return null;
+
+  return (
+    <View style={styles.savedPlayersBlock}>
+      <Text style={[styles.savedPlayersLabel, { color: colors.mutedForeground }]}>
+        SAVED PLAYERS · TAP TO USE
+      </Text>
+      <ScrollView
+        horizontal
+        nestedScrollEnabled
+        showsHorizontalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.savedPlayersRow}>
+          {players.map((player) => {
+            const selected =
+              value.trim().toLocaleLowerCase() === player.name.toLocaleLowerCase();
+            return (
+              <Pressable
+                key={player.id}
+                testID={`saved-player-choice-${testIDPrefix}-${player.id}`}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                onPress={() => onSelect(player.name)}
+                style={[
+                  styles.savedPlayerChip,
+                  {
+                    backgroundColor: selected ? colors.primary : colors.background,
+                    borderColor: selected ? colors.primary : colors.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.savedPlayerChipText,
+                    { color: selected ? colors.primaryForeground : colors.foreground },
+                  ]}
+                >
+                  {player.name}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
 
 function localDate() {
   const date = new Date();
@@ -91,6 +157,14 @@ export default function NewMatchScreen() {
   const [surface, setSurface] = useState<Surface>('Hard');
   const [firstServer, setFirstServer] = useState<Side>('tracked');
   const [formError, setFormError] = useState('');
+  const playersQuery = useQuery({
+    queryKey: LOCAL_PLAYERS_KEY,
+    queryFn: listLocalPlayers,
+  });
+  const savePlayers = useMutation({
+    mutationFn: (names: string[]) => Promise.all(names.map((name) => addLocalPlayer(name))),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: LOCAL_PLAYERS_KEY }),
+  });
 
   const createMatch = useMutation({
     mutationFn: createLocalMatch,
@@ -98,12 +172,6 @@ export default function NewMatchScreen() {
       queryClient.setQueryData(localMatchKey(match.id), match);
       void queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
       router.replace({ pathname: '/matches/[id]', params: { id: match.id } });
-      void requestMatchSync()
-        .catch(() => undefined)
-        .finally(() => {
-          void queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
-          void queryClient.invalidateQueries({ queryKey: localMatchKey(match.id) });
-        });
     },
   });
 
@@ -136,6 +204,12 @@ export default function NewMatchScreen() {
     });
   }
 
+  function saveCurrentPlayers() {
+    const names = [...new Set([trackedPlayer.trim(), opponent.trim()].filter(Boolean))];
+    if (names.length > 0) savePlayers.mutate(names);
+  }
+
+  const players = playersQuery.data ?? [];
   const nameFor = (side: Side) =>
     side === 'tracked'
       ? trackedPlayer.trim() || 'Tracked player'
@@ -205,6 +279,12 @@ export default function NewMatchScreen() {
             testID="input-tracked-player"
             maxLength={80}
           />
+          <SavedPlayerChoices
+            players={players}
+            value={trackedPlayer}
+            testIDPrefix="tracked"
+            onSelect={setTrackedPlayer}
+          />
           <Field
             label="OPPONENT"
             value={opponent}
@@ -213,6 +293,46 @@ export default function NewMatchScreen() {
             testID="input-opponent"
             maxLength={80}
           />
+          <SavedPlayerChoices
+            players={players}
+            value={opponent}
+            testIDPrefix="opponent"
+            onSelect={setOpponent}
+          />
+          {players.length === 0 ? (
+            <Pressable
+              testID="button-manage-players-from-match"
+              accessibilityRole="button"
+              onPress={() => router.push('/players')}
+              style={styles.managePlayersLink}
+            >
+              <Ionicons name="people-outline" size={14} color={colors.primary} />
+              <Text style={[styles.managePlayersText, { color: colors.primary }]}>
+                Add saved players
+              </Text>
+            </Pressable>
+          ) : null}
+          <Pressable
+            testID="button-save-match-player-names"
+            accessibilityRole="button"
+            disabled={(!trackedPlayer.trim() && !opponent.trim()) || savePlayers.isPending}
+            onPress={saveCurrentPlayers}
+            style={[
+              styles.savePlayersButton,
+              {
+                borderColor: colors.border,
+                opacity:
+                  !trackedPlayer.trim() && !opponent.trim() || savePlayers.isPending
+                    ? 0.45
+                    : 1,
+              },
+            ]}
+          >
+            <Ionicons name="person-add-outline" size={14} color={colors.primary} />
+            <Text style={[styles.managePlayersText, { color: colors.primary }]}>
+              {savePlayers.isPending ? 'Saving names…' : 'Save typed names for next time'}
+            </Text>
+          </Pressable>
 
           <View style={styles.twoFields}>
             <View style={styles.halfField}>
@@ -315,7 +435,7 @@ export default function NewMatchScreen() {
           </View>
         </View>
 
-        {formError || createMatch.error ? (
+        {formError || createMatch.error || savePlayers.error ? (
           <View
             accessibilityRole="alert"
             style={[styles.errorBox, { backgroundColor: colors.card, borderColor: colors.destructive }]}
@@ -323,6 +443,7 @@ export default function NewMatchScreen() {
             <Ionicons name="alert-circle-outline" size={18} color={colors.destructive} />
             <Text style={[styles.errorText, { color: colors.destructive }]}>
               {formError ||
+                savePlayers.error?.message ||
                 createMatch.error?.message ||
                 'Could not save this match on this device.'}
             </Text>
@@ -388,6 +509,14 @@ const styles = StyleSheet.create({
   serverChoices: { gap: 8 },
   serverChoice: { minHeight: 43, borderWidth: 1, borderRadius: 8, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 9 },
   serverChoiceText: { flex: 1, fontFamily: 'DMSans_500Medium', fontSize: 13 },
+  savedPlayersBlock: { gap: 6, marginTop: -8 },
+  savedPlayersLabel: { fontFamily: 'DMSans_700Bold', fontSize: 8, letterSpacing: 0.8 },
+  savedPlayersRow: { flexDirection: 'row', gap: 6, paddingVertical: 2 },
+  savedPlayerChip: { minHeight: 31, paddingHorizontal: 10, borderWidth: 1, borderRadius: 16, justifyContent: 'center' },
+  savedPlayerChipText: { fontFamily: 'DMSans_600SemiBold', fontSize: 11 },
+  managePlayersLink: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  managePlayersText: { fontFamily: 'DMSans_600SemiBold', fontSize: 10 },
+  savePlayersButton: { minHeight: 36, borderWidth: 1, borderRadius: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   errorBox: { marginTop: 14, borderWidth: 1, borderRadius: 9, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
   errorText: { flex: 1, fontFamily: 'DMSans_500Medium', fontSize: 12, lineHeight: 18 },
   submitButton: { marginTop: 16, minHeight: 54, borderRadius: 10, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

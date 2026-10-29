@@ -7,18 +7,6 @@
  */
 
 export * from './codeCount';
-export * from './devicePointDeleteResult';
-export * from './deviceSyncMatchInput';
-export * from './deviceSyncMatchInputFirstServer';
-export * from './deviceSyncMatchInputStatus';
-export * from './deviceSyncMatchInputSurface';
-export * from './deviceSyncMatchResult';
-export * from './deviceSyncPoint';
-export * from './deviceSyncPointEndingCode';
-export * from './deviceSyncPointServer';
-export * from './deviceSyncPointsInput';
-export * from './deviceSyncPointsResult';
-export * from './deviceSyncPointWinner';
 export * from './healthStatus';
 export * from './match';
 export * from './matchFirstServer';

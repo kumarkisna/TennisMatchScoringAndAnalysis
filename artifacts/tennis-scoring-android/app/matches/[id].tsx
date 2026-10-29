@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -33,14 +33,12 @@ import {
   recordLocalPoint,
   undoLocalPoint,
   type LocalMatch,
-  type LocalPoint,
   type LocalSetResult,
   type NewLocalPoint,
   type PlayerSide,
   type PointCode,
   type SetFormat,
 } from '@/lib/local-matches';
-import { requestMatchSync } from '@/lib/match-sync';
 import { summarizePlayerPerformance } from '@/lib/player-insights';
 import { buildPlayerReportHtml } from '@/lib/player-report-html';
 
@@ -103,7 +101,6 @@ function CodeCell({
     winner: Side;
     endingCode?: string | null;
     firstServeFault: boolean;
-    syncStatus?: LocalPoint['syncStatus'];
   };
   colors: ReturnType<typeof useColors>;
 }) {
@@ -137,11 +134,6 @@ function CodeCell({
       {point.firstServeFault ? (
         <View style={[styles.faultDot, { backgroundColor: colors.primaryForeground }]} />
       ) : null}
-      {point.syncStatus === 'pending' ? (
-        <View style={[styles.syncPendingMarker, { backgroundColor: colors.primaryForeground }]}>
-          <Ionicons name="cloud-upload-outline" size={7} color={colors.primary} />
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -158,6 +150,7 @@ export default function MatchScreen() {
   const [isExportingReport, setIsExportingReport] = useState(false);
   const [reportExportError, setReportExportError] = useState('');
   const [customTiebreakTarget, setCustomTiebreakTarget] = useState('');
+  const [selectedReviewSetNumber, setSelectedReviewSetNumber] = useState<number | null>(null);
 
   const matchQuery = useQuery({
     queryKey: localMatchKey(matchId),
@@ -169,17 +162,14 @@ export default function MatchScreen() {
     queryFn: () => getLocalInsights(matchId),
     enabled: Boolean(matchId),
   });
+  useEffect(() => {
+    setSelectedReviewSetNumber(null);
+  }, [matchId, matchQuery.data?.setNumber]);
 
   const onUpdated = (updatedMatch: LocalMatch) => {
     queryClient.setQueryData(localMatchKey(matchId), updatedMatch);
     void queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
     void queryClient.invalidateQueries({ queryKey: localInsightsKey(matchId) });
-    void requestMatchSync()
-      .catch(() => undefined)
-      .finally(() => {
-        void queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
-        void queryClient.invalidateQueries({ queryKey: localMatchKey(matchId) });
-      });
   };
 
   const recordPoint = useMutation({
@@ -206,15 +196,12 @@ export default function MatchScreen() {
     mutationFn: () => finishLocalMatch(matchId),
     onSuccess: onUpdated,
   });
-  const retrySync = useMutation({
-    mutationFn: requestMatchSync,
-    onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
-      void queryClient.invalidateQueries({ queryKey: localMatchKey(matchId) });
-    },
-  });
-
   const match = matchQuery.data;
+  const setHistory = match ? getLocalSetHistory(match) : [];
+  const currentSet = setHistory.find((set) => set.isCurrent);
+  const displayedSet =
+    setHistory.find((set) => set.setNumber === selectedReviewSetNumber) ?? currentSet;
+  const isReviewingHistoricalSet = Boolean(displayedSet && !displayedSet.isCurrent);
   const isBusy =
     recordPoint.isPending ||
     undoPoint.isPending ||
@@ -231,22 +218,22 @@ export default function MatchScreen() {
     : null;
 
   function addPoint(winner: Side) {
-    if (!match || match.score.isComplete || isBusy) return;
+    if (!match || isReviewingHistoricalSet || match.score.isComplete || isBusy) return;
     recordPoint.mutate({ winner, endingCode, firstServeFault });
   }
 
   function addNextSet(format: SetFormat, tiebreakTarget = 10) {
-    if (!match || !match.score.isComplete || isBusy) return;
+    if (!match || isReviewingHistoricalSet || !match.score.isComplete || isBusy) return;
     addSet.mutate({ format, tiebreakTarget });
   }
 
   function finishCurrentMatch() {
-    if (!match || !match.score.isComplete || isBusy) return;
+    if (!match || isReviewingHistoricalSet || !match.score.isComplete || isBusy) return;
     finishMatch.mutate();
   }
 
   function confirmUndo() {
-    if (!match || match.points.length === 0 || isBusy) return;
+    if (!match || isReviewingHistoricalSet || match.points.length === 0 || isBusy) return;
     Alert.alert(
       'Undo last point?',
       'This removes the latest point from the set and recalculates the score.',
@@ -339,21 +326,9 @@ export default function MatchScreen() {
 
   const trackedName = match.trackedPlayer;
   const opponentName = match.opponent;
-  const setHistory = getLocalSetHistory(match);
-  const pendingPointCount = setHistory
-    .flatMap((set) => set.points)
-    .filter((point) => point.syncStatus === 'pending').length;
-  const pendingEarlierSets = setHistory
-    .filter((set) => !set.isCurrent)
-    .map((set) => ({
-      setNumber: set.setNumber,
-      count: set.points.filter((point) => point.syncStatus === 'pending').length,
-    }))
-    .filter((set) => set.count > 0)
-    .map((set) => `Set ${set.setNumber}: ${set.count}`)
-    .join(' · ');
-  const pointGroups = new Map<number, typeof match.points>();
-  for (const point of match.points) {
+  const viewedSet = displayedSet ?? currentSet ?? setHistory[setHistory.length - 1]!;
+  const pointGroups = new Map<number, typeof viewedSet.points>();
+  for (const point of viewedSet.points) {
     if (point.isTiebreak) continue;
     const gamePoints = pointGroups.get(point.gameNumber) ?? [];
     gamePoints.push(point);
@@ -367,24 +342,34 @@ export default function MatchScreen() {
     index < 3 ? ['15', '30', '40'][index] : 'AD',
   );
   const tiebreakPoints = match.points.filter((point) => point.isTiebreak);
+  const matrixTiebreakPoints = viewedSet.points.filter((point) => point.isTiebreak);
   const currentGameNumber = match.score.trackedGames + match.score.opponentGames + 1;
-  const completedRegularGameCount = Math.min(
+  const matrixCurrentGameNumber =
+    viewedSet.score.trackedGames + viewedSet.score.opponentGames + 1;
+  const matrixCompletedRegularGameCount = Math.min(
     12,
-    match.score.trackedGames + match.score.opponentGames,
+    viewedSet.score.trackedGames + viewedSet.score.opponentGames,
   );
-  const hasActiveRegularGame =
-    match.setFormat === 'standard' &&
-    !match.score.isComplete &&
-    !match.score.isTiebreak;
-  const regularGameNumbers = [
-    ...(hasActiveRegularGame ? [currentGameNumber] : []),
-    ...Array.from({ length: completedRegularGameCount }, (_, index) => index + 1),
+  const matrixHasActiveRegularGame =
+    viewedSet.isCurrent &&
+    viewedSet.format === 'standard' &&
+    !viewedSet.score.isComplete &&
+    !viewedSet.score.isTiebreak;
+  const matrixRegularGameNumbers = [
+    ...(matrixHasActiveRegularGame ? [matrixCurrentGameNumber] : []),
+    ...Array.from(
+      { length: matrixCompletedRegularGameCount },
+      (_, index) => index + 1,
+    ),
   ];
-  const showTiebreakRows =
-    match.setFormat === 'match_tiebreak' || match.score.isTiebreak || tiebreakPoints.length > 0;
-  const tiebreakIsLive =
-    !match.score.isComplete &&
-    (match.setFormat === 'match_tiebreak' || match.score.isTiebreak);
+  const matrixShowsTiebreakRows =
+    viewedSet.format === 'match_tiebreak' ||
+    viewedSet.score.isTiebreak ||
+    matrixTiebreakPoints.length > 0;
+  const matrixTiebreakIsLive =
+    viewedSet.isCurrent &&
+    !viewedSet.score.isComplete &&
+    (viewedSet.format === 'match_tiebreak' || viewedSet.score.isTiebreak);
   const liveGamePoints =
     match.setFormat === 'match_tiebreak' || match.score.isTiebreak
       ? tiebreakPoints
@@ -399,36 +384,36 @@ export default function MatchScreen() {
   const serverName =
     match.score.nextServer === 'tracked' ? trackedName : opponentName;
   const recordError = recordPoint.error?.message || undoPoint.error?.message;
-  const maxTiebreakColumn = Math.max(
-    match.setFormat === 'match_tiebreak' ? Math.min(match.tiebreakTarget, 10) : 7,
-    tiebreakPoints.length,
+  const maxMatrixTiebreakColumn = Math.max(
+    viewedSet.format === 'match_tiebreak' ? Math.min(viewedSet.tiebreakTarget, 10) : 7,
+    matrixTiebreakPoints.length,
   );
-  const tiebreakMatrixRow = showTiebreakRows ? (
+  const matrixTiebreakRow = matrixShowsTiebreakRows ? (
     <View
       style={[
         styles.tiebreakBlock,
         {
           borderTopColor: colors.border,
-          backgroundColor: tiebreakIsLive ? colors.secondary : 'transparent',
+          backgroundColor: matrixTiebreakIsLive ? colors.secondary : 'transparent',
         },
       ]}
     >
       <View style={styles.tiebreakLabel}>
         <Text style={[styles.tiebreakTitle, { color: colors.foreground }]}>
-          {match.setFormat === 'match_tiebreak'
-            ? `MATCH TIE-BREAK TO ${match.tiebreakTarget}`
+          {viewedSet.format === 'match_tiebreak'
+            ? `MATCH TIE-BREAK TO ${viewedSet.tiebreakTarget}`
             : 'TIE-BREAK'}
         </Text>
         <Text style={[styles.tiebreakScore, { color: colors.mutedForeground }]}>
-          {match.score.trackedTiebreakPoints} – {match.score.opponentTiebreakPoints}
+          {viewedSet.score.trackedTiebreakPoints} – {viewedSet.score.opponentTiebreakPoints}
         </Text>
       </View>
-      {Array.from({ length: maxTiebreakColumn }, (_, index) => (
+      {Array.from({ length: maxMatrixTiebreakColumn }, (_, index) => (
         <View key={`tb-${index + 1}`} style={styles.tiebreakColumn}>
           <Text style={[styles.tiebreakColumnHeader, { color: colors.mutedForeground }]}>
             {index + 1}
           </Text>
-          <CodeCell point={tiebreakPoints[index]} colors={colors} />
+          <CodeCell point={matrixTiebreakPoints[index]} colors={colors} />
         </View>
       ))}
     </View>
@@ -471,13 +456,18 @@ export default function MatchScreen() {
             testID="button-undo-point"
             accessibilityRole="button"
             accessibilityLabel="Undo last point"
-            disabled={match.points.length === 0 || isBusy}
+            disabled={isReviewingHistoricalSet || match.points.length === 0 || isBusy}
             onPress={confirmUndo}
             style={({ pressed }) => [
               styles.undoButton,
               {
                 borderColor: colors.border,
-                opacity: match.points.length === 0 || isBusy ? 0.35 : pressed ? 0.65 : 1,
+                opacity:
+                  isReviewingHistoricalSet || match.points.length === 0 || isBusy
+                    ? 0.35
+                    : pressed
+                      ? 0.65
+                      : 1,
               },
             ]}
           >
@@ -575,97 +565,88 @@ export default function MatchScreen() {
             </Text>
           </View>
           <View style={styles.setHistoryWrap}>
-            {setHistory.map((set) => (
-              <View
-                key={set.setNumber}
-                style={[
-                  styles.setHistoryChip,
-                  {
-                    backgroundColor: set.isCurrent ? colors.secondary : colors.background,
-                    borderColor: set.isCurrent ? colors.primary : colors.border,
-                  },
-                ]}
-              >
-                <Text
+            {setHistory.map((set) => {
+              const selected = viewedSet.setNumber === set.setNumber;
+              return (
+                <Pressable
+                  key={set.setNumber}
+                  testID={`button-review-set-${set.setNumber}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Review Set ${set.setNumber}, ${formatSetResult(set)}${set.isCurrent ? ', current set' : ''}`}
+                  accessibilityHint="Opens this set without changing the live score."
+                  accessibilityState={{ selected }}
                   style={[
-                    styles.setHistoryLabel,
-                    { color: set.isCurrent ? colors.primary : colors.mutedForeground },
+                    styles.setHistoryChip,
+                    {
+                      backgroundColor: selected ? colors.secondary : colors.background,
+                      borderColor: selected || set.isCurrent ? colors.primary : colors.border,
+                    },
                   ]}
+                  onPress={() =>
+                    setSelectedReviewSetNumber(set.isCurrent ? null : set.setNumber)
+                  }
                 >
-                  SET {set.setNumber}
-                  {set.isCurrent ? (match.score.isComplete ? ' · LATEST' : ' · CURRENT') : ''}
-                </Text>
-                <Text style={[styles.setHistoryScore, { color: colors.foreground }]}>
-                  {formatSetResult(set)}
-                </Text>
-                {set.format === 'match_tiebreak' ? (
-                  <Text style={[styles.setHistoryTarget, { color: colors.mutedForeground }]}>
-                    FIRST TO {set.tiebreakTarget}
+                  <Text
+                    style={[
+                      styles.setHistoryLabel,
+                      {
+                        color:
+                          selected || set.isCurrent
+                            ? colors.primary
+                            : colors.mutedForeground,
+                      },
+                    ]}
+                  >
+                    SET {set.setNumber}
+                    {set.isCurrent ? ' · CURRENT' : selected ? ' · REVIEWING' : ''}
                   </Text>
-                ) : null}
-              </View>
-            ))}
+                  <Text style={[styles.setHistoryScore, { color: colors.foreground }]}>
+                    {formatSetResult(set)}
+                  </Text>
+                  {set.format === 'match_tiebreak' ? (
+                    <Text style={[styles.setHistoryTarget, { color: colors.mutedForeground }]}>
+                      FIRST TO {set.tiebreakTarget}
+                    </Text>
+                  ) : null}
+                </Pressable>
+              );
+            })}
           </View>
           <Text style={[styles.setHistoryHint, { color: colors.mutedForeground }]}>
-            All sets and points stay together in this match.
+            Tap any set to review its points. Review never changes the active scoring set.
           </Text>
         </View>
 
-        {match.syncStatus !== 'local_only' ? (
-          <View style={[styles.syncStatusCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons
-              name={match.syncStatus === 'synced' ? 'cloud-done-outline' : 'cloud-upload-outline'}
-              size={18}
-              color={match.syncStatus === 'synced' ? colors.primary : colors.accent}
-            />
-            <View style={styles.syncStatusCopy}>
-              <Text style={[styles.syncStatusTitle, { color: colors.foreground }]}>
-                {match.syncStatus === 'synced'
-                  ? 'All points synced'
-                  : match.syncStatus === 'error'
-                    ? 'Sync paused'
-                    : pendingPointCount > 0
-                      ? `${pendingPointCount} ${pendingPointCount === 1 ? 'point' : 'points'} waiting to sync`
-                      : 'Match details waiting to sync'}
+        {isReviewingHistoricalSet ? (
+          <View
+            style={[
+              styles.reviewModeCard,
+              { backgroundColor: colors.secondary, borderColor: colors.primary },
+            ]}
+          >
+            <Ionicons name="eye-outline" size={18} color={colors.primary} />
+            <View style={styles.reviewModeCopy}>
+              <Text style={[styles.reviewModeTitle, { color: colors.secondaryForeground }]}>
+                Reviewing Set {viewedSet.setNumber} · read-only
               </Text>
-              <Text style={[styles.syncStatusHint, { color: colors.mutedForeground }]}>
-                {match.syncStatus === 'error'
-                  ? (match.syncError ?? 'Your score is safe on this device.')
-                  : match.syncStatus === 'synced'
-                    ? 'Your device copy is kept.'
-                    : 'Saved on this device first. Cloud sync resumes when online.'}
+              <Text style={[styles.reviewModeHint, { color: colors.mutedForeground }]}>
+                Live scoring stays in Set {match.setNumber}. Return to the current set to record points.
               </Text>
-              {pendingPointCount > 0 ? (
-                <Text style={[styles.syncStatusHint, { color: colors.mutedForeground }]}>
-                  Cloud markers identify pending points in the current set.
-                </Text>
-              ) : null}
-              {pendingEarlierSets ? (
-                <Text style={[styles.syncStatusHint, { color: colors.mutedForeground }]}>
-                  Earlier sets still waiting: {pendingEarlierSets}
-                </Text>
-              ) : null}
             </View>
-            {match.syncStatus !== 'synced' ? (
-              <Pressable
-                testID="button-retry-match-sync"
-                accessibilityRole="button"
-                disabled={retrySync.isPending}
-                onPress={() => retrySync.mutate()}
-                style={[
-                  styles.syncRetryButton,
-                  { borderColor: colors.border, opacity: retrySync.isPending ? 0.6 : 1 },
-                ]}
-              >
-                <Text style={[styles.syncRetryText, { color: colors.primary }]}>
-                  {retrySync.isPending ? '…' : 'Retry'}
-                </Text>
-              </Pressable>
-            ) : null}
+            <Pressable
+              testID="button-return-to-current-set"
+              accessibilityRole="button"
+              onPress={() => setSelectedReviewSetNumber(null)}
+              style={[styles.returnToCurrentButton, { borderColor: colors.primary }]}
+            >
+              <Text style={[styles.returnToCurrentText, { color: colors.primary }]}>
+                Current
+              </Text>
+            </Pressable>
           </View>
         ) : null}
 
-        {!match.score.isComplete ? (
+        {!isReviewingHistoricalSet && !match.score.isComplete ? (
           <View style={[styles.liveGameCard, { backgroundColor: colors.card, borderColor: colors.primary }]}>
             <View style={styles.liveGameHeader}>
               <View style={styles.liveGameCopy}>
@@ -709,7 +690,7 @@ export default function MatchScreen() {
           </View>
         ) : null}
 
-        {match.score.isComplete ? (
+        {!isReviewingHistoricalSet && match.score.isComplete ? (
           <>
             <View style={[styles.completeBanner, { backgroundColor: colors.secondary }]}>
               <Ionicons name="checkmark-circle" size={19} color={colors.primary} />
@@ -840,7 +821,7 @@ export default function MatchScreen() {
               ) : null}
             </View>
           </>
-        ) : (
+        ) : !isReviewingHistoricalSet ? (
           <View style={[styles.scoringPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={styles.panelHeading}>
               <Text style={[styles.panelTitle, { color: colors.foreground }]}>Record a point</Text>
@@ -955,15 +936,21 @@ export default function MatchScreen() {
               </View>
             ) : null}
           </View>
-        )}
+        ) : null}
 
         <View style={styles.sectionHeader}>
           <View>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Set {match.setNumber} matrix</Text>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+              Set {viewedSet.setNumber} matrix
+            </Text>
             <Text style={[styles.sectionCaption, { color: colors.mutedForeground }]}>
-              {match.setFormat === 'match_tiebreak'
-                ? 'Live tiebreak first; completed games follow in order'
-                : 'Current game first; completed games follow in order'}
+              {isReviewingHistoricalSet
+                ? `Read-only review · live scoring stays in Set ${match.setNumber}`
+                : viewedSet.score.isComplete
+                  ? 'Completed set · games in order'
+                : viewedSet.format === 'match_tiebreak'
+                  ? 'Live tiebreak first; completed games follow in order'
+                  : 'Current game first; completed games follow in order'}
             </Text>
           </View>
           <View style={styles.matrixLegend}>
@@ -996,13 +983,14 @@ export default function MatchScreen() {
               <Text style={[styles.matrixWinnerHeader, { color: colors.mutedForeground }]}>WIN</Text>
             </View>
 
-            {tiebreakIsLive ? tiebreakMatrixRow : null}
-            {regularGameNumbers.map((gameNumber) => {
+            {matrixTiebreakIsLive ? matrixTiebreakRow : null}
+            {matrixRegularGameNumbers.map((gameNumber) => {
               const gamePoints = pointGroups.get(gameNumber) ?? [];
-              const isCompleted = gameNumber <= completedRegularGameCount;
+              const isCompleted = gameNumber <= matrixCompletedRegularGameCount;
               const rowWinner = isCompleted ? gamePoints.at(-1)?.winner : undefined;
-              const isActiveGame = hasActiveRegularGame && gameNumber === currentGameNumber;
-              const server = serverForGame(match.firstServer, gameNumber);
+              const isActiveGame =
+                matrixHasActiveRegularGame && gameNumber === matrixCurrentGameNumber;
+              const server = serverForGame(viewedSet.firstServer, gameNumber);
               return (
                 <View
                   key={gameNumber}
@@ -1079,7 +1067,7 @@ export default function MatchScreen() {
               );
               })}
 
-            {!tiebreakIsLive ? tiebreakMatrixRow : null}
+            {!matrixTiebreakIsLive ? matrixTiebreakRow : null}
           </View>
         </ScrollView>
 
@@ -1220,23 +1208,25 @@ export default function MatchScreen() {
 
         <View style={styles.sectionHeader}>
           <View>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Recent points</Text>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+              Set {viewedSet.setNumber} points
+            </Text>
             <Text style={[styles.sectionCaption, { color: colors.mutedForeground }]}>
-              {match.points.length} recorded · latest first
+              {viewedSet.points.length} recorded · latest first
             </Text>
           </View>
         </View>
 
         <View style={[styles.logCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          {match.points.length === 0 ? (
+          {viewedSet.points.length === 0 ? (
             <View style={styles.emptyLog}>
               <Ionicons name="list-outline" size={19} color={colors.mutedForeground} />
               <Text style={[styles.insightHint, { color: colors.mutedForeground }]}>
-                The point log will fill in as the set is played.
+                No points have been recorded in Set {viewedSet.setNumber}.
               </Text>
             </View>
           ) : (
-            [...match.points]
+            [...viewedSet.points]
               .slice(-8)
               .reverse()
               .map((point, index, recentPoints) => (
@@ -1406,12 +1396,12 @@ const styles = StyleSheet.create({
   setHistoryScore: { marginTop: 3, fontFamily: 'DMSans_700Bold', fontSize: 13, fontVariant: ['tabular-nums'] },
   setHistoryTarget: { marginTop: 2, fontFamily: 'DMSans_500Medium', fontSize: 7, letterSpacing: 0.4 },
   setHistoryHint: { fontFamily: 'DMSans_400Regular', fontSize: 9 },
-  syncStatusCard: { marginTop: 10, borderWidth: 1, borderRadius: 11, padding: 11, flexDirection: 'row', alignItems: 'center', gap: 9 },
-  syncStatusCopy: { flex: 1, gap: 3 },
-  syncStatusTitle: { fontFamily: 'DMSans_700Bold', fontSize: 11 },
-  syncStatusHint: { fontFamily: 'DMSans_400Regular', fontSize: 9, lineHeight: 13 },
-  syncRetryButton: { minWidth: 48, minHeight: 31, paddingHorizontal: 8, borderWidth: 1, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
-  syncRetryText: { fontFamily: 'DMSans_700Bold', fontSize: 10 },
+  reviewModeCard: { marginTop: 10, borderWidth: 1, borderRadius: 11, padding: 11, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  reviewModeCopy: { flex: 1, gap: 3 },
+  reviewModeTitle: { fontFamily: 'DMSans_700Bold', fontSize: 11 },
+  reviewModeHint: { fontFamily: 'DMSans_400Regular', fontSize: 9, lineHeight: 13 },
+  returnToCurrentButton: { minHeight: 31, paddingHorizontal: 8, borderWidth: 1, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
+  returnToCurrentText: { fontFamily: 'DMSans_700Bold', fontSize: 10 },
   setActionCard: { marginTop: 10, borderWidth: 1, borderRadius: 13, padding: 13, gap: 8 },
   setActionTitle: { fontFamily: 'Manrope_700Bold', fontSize: 15 },
   setActionHint: { fontFamily: 'DMSans_400Regular', fontSize: 10, lineHeight: 15 },
@@ -1476,7 +1466,6 @@ const styles = StyleSheet.create({
   serverCircle: { width: 20, height: 20, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   serverInitial: { fontFamily: 'DMSans_700Bold', fontSize: 8 },
   matrixCell: { width: 31, height: 27, borderWidth: 1, borderRadius: 4, alignItems: 'center', justifyContent: 'center', position: 'relative' },
-  syncPendingMarker: { position: 'absolute', top: 1, right: 1, width: 11, height: 11, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
   matrixCode: { fontFamily: 'DMSans_700Bold', fontSize: 8 },
   emptyCellText: { fontFamily: 'DMSans_400Regular', fontSize: 12 },
   faultDot: { position: 'absolute', left: 3, bottom: 3, width: 4, height: 4, borderRadius: 2 },
