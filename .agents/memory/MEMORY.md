@@ -1,2 +1,3 @@
-- [Android scoring storage](android-scoring-storage.md) — match and player data must remain offline-only; preserve older server records unless deletion is requested.
-- [Match set structure and reporting](tennis-match-structure.md) — any set can be reviewed read-only; match reports and PDFs cover every set.
+- [Android scoring storage](android-scoring-storage.md) — player profiles stay on-device; new matches sync privately, and legacy local matches remain unclaimed.
+- [Match set structure and reporting](tennis-match-structure.md) — one local match can contain unlimited sets; historical sets are read-only and reports cover all sets.
+- [pnpm security policy](pnpm-security-policy.md) — inspect workspace settings after dependency commands; pnpm can rewrite the release-age protection.

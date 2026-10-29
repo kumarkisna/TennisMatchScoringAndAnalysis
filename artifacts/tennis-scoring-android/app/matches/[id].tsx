@@ -48,6 +48,17 @@ import {
 import { summarizePlayerPerformance } from '@/lib/player-insights';
 import { buildPlayerReportHtml } from '@/lib/player-report-html';
 
+import { useAuth } from '@clerk/expo';
+import {
+  getGetMatchInsightsQueryKey,
+  getGetMatchQueryKey,
+  useGetMatch,
+  useGetMatchInsights,
+} from '@workspace/api-client-react';
+import { MatchSharing } from '@/components/MatchSharing';
+import { RemoteMatchView } from '@/components/RemoteMatchView';
+import { requestMatchSync } from '@/lib/match-sync';
+
 type Side = PlayerSide;
 
 const courtSurfaces: CourtSurface[] = ['Hard', 'Clay', 'Grass', 'Carpet', 'Other'];
@@ -195,6 +206,7 @@ export default function MatchScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
+  const { userId } = useAuth();
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const matchId = Array.isArray(params.id) ? params.id[0] ?? '' : params.id ?? '';
   const [endingCode, setEndingCode] = useState<PointCode | null>(null);
@@ -209,26 +221,50 @@ export default function MatchScreen() {
 
   const matchQuery = useQuery({
     queryKey: localMatchKey(matchId),
-    queryFn: () => getLocalMatch(matchId),
-    enabled: Boolean(matchId),
+    queryFn: () => getLocalMatch(matchId, userId ?? ''),
+    enabled: Boolean(matchId && userId),
   });
   const insightsQuery = useQuery({
     queryKey: localInsightsKey(matchId),
-    queryFn: () => getLocalInsights(matchId),
-    enabled: Boolean(matchId),
+    queryFn: () => getLocalInsights(matchId, userId ?? ''),
+    enabled: Boolean(matchId && userId),
   });
   useEffect(() => {
     setSelectedReviewSetNumber(null);
   }, [matchId, matchQuery.data?.setNumber]);
+  const remoteMatchId = matchQuery.data
+    ? matchQuery.data.remoteMatchId ?? ''
+    : matchQuery.isLoading || !userId
+      ? ''
+      : matchId;
+  const remoteMatchQuery = useGetMatch(remoteMatchId, {
+    query: {
+      enabled: Boolean(remoteMatchId && userId),
+      queryKey: getGetMatchQueryKey(remoteMatchId),
+    },
+  });
+  const remoteInsightsQuery = useGetMatchInsights(remoteMatchId, {
+    query: {
+      enabled: Boolean(remoteMatchId && userId),
+      queryKey: getGetMatchInsightsQueryKey(remoteMatchId),
+    },
+  });
 
   const onUpdated = (updatedMatch: LocalMatch) => {
     queryClient.setQueryData(localMatchKey(matchId), updatedMatch);
     void queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
     void queryClient.invalidateQueries({ queryKey: localInsightsKey(matchId) });
+    if (!userId) return;
+    void requestMatchSync(userId)
+      .catch(() => undefined)
+      .finally(() => {
+        void queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
+        void queryClient.invalidateQueries({ queryKey: localMatchKey(matchId) });
+      });
   };
 
   const recordPoint = useMutation({
-    mutationFn: (input: NewLocalPoint) => recordLocalPoint(matchId, input),
+    mutationFn: (input: NewLocalPoint) => recordLocalPoint(matchId, input, userId ?? ''),
     onSuccess: (updatedMatch) => {
       setEndingCode(null);
       setFirstServeFault(false);
@@ -236,29 +272,36 @@ export default function MatchScreen() {
     },
   });
   const undoPoint = useMutation({
-    mutationFn: () => undoLocalPoint(matchId),
+    mutationFn: () => undoLocalPoint(matchId, userId ?? ''),
     onSuccess: onUpdated,
   });
   const addSet = useMutation({
     mutationFn: (input: { format: SetFormat; tiebreakTarget?: number }) =>
-      addLocalSet(matchId, input.format, input.tiebreakTarget),
+      addLocalSet(matchId, input.format, userId ?? '', input.tiebreakTarget),
     onSuccess: (updatedMatch) => {
       setCustomTiebreakTarget('');
       onUpdated(updatedMatch);
     },
   });
   const finishMatch = useMutation({
-    mutationFn: () => finishLocalMatch(matchId),
+    mutationFn: () => finishLocalMatch(matchId, userId ?? ''),
     onSuccess: onUpdated,
   });
   const updateDetails = useMutation({
     mutationFn: (details: LocalMatchDetails) =>
-      updateLocalMatchDetails(matchId, details),
+      updateLocalMatchDetails(matchId, details, userId ?? ''),
     onSuccess: (updatedMatch) => {
       onUpdated(updatedMatch);
       setIsEditingDetails(false);
       setEditDraft(null);
       setEditValidationError('');
+    },
+  });
+  const retrySync = useMutation({
+    mutationFn: () => requestMatchSync(userId ?? ''),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
+      void queryClient.invalidateQueries({ queryKey: localMatchKey(matchId) });
     },
   });
   const match = matchQuery.data;
@@ -403,6 +446,31 @@ export default function MatchScreen() {
     );
   }
 
+  if (!match && remoteMatchQuery.isLoading) {
+    return (
+      <SafeAreaView
+        style={[styles.safeArea, styles.centered, { backgroundColor: colors.background }]}
+      >
+        <ActivityIndicator color={colors.primary} />
+        <Text style={[styles.loadingText, { color: colors.mutedForeground }]}>
+          Opening private match…
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (!match && remoteMatchQuery.data) {
+    return (
+      <RemoteMatchView
+        match={remoteMatchQuery.data}
+        insights={remoteInsightsQuery.data}
+        insightsLoading={remoteInsightsQuery.isLoading}
+        insightsError={remoteInsightsQuery.isError}
+        onBack={() => router.replace('/')}
+      />
+    );
+  }
+
   if (matchQuery.isError || !match) {
     return (
       <SafeAreaView
@@ -410,12 +478,19 @@ export default function MatchScreen() {
       >
         <Ionicons name="document-text-outline" size={28} color={colors.accent} />
         <Text style={[styles.errorTitle, { color: colors.foreground }]}>
-          {matchQuery.isError ? 'Couldn’t open this set' : 'Match not found'}
+          {matchQuery.isError
+            ? 'Couldn’t open this match'
+            : remoteMatchQuery.isError
+              ? 'Match not found or access was removed'
+              : 'Match not found'}
         </Text>
         <Pressable
           testID="button-retry-match"
           accessibilityRole="button"
-          onPress={() => void matchQuery.refetch()}
+          onPress={() => {
+            void matchQuery.refetch();
+            void remoteMatchQuery.refetch();
+          }}
           style={[styles.retryButton, { borderColor: colors.border }]}
         >
           <Text style={[styles.retryText, { color: colors.primary }]}>Try again</Text>
@@ -738,6 +813,16 @@ export default function MatchScreen() {
             Tap any set to review its points. Review never changes the active scoring set.
           </Text>
         </View>
+
+        <MatchSharing
+          matchId={match.remoteMatchId}
+          canManage={remoteMatchQuery.data?.isOwner === true}
+          checking={Boolean(match.remoteMatchId) && remoteMatchQuery.isLoading}
+          deviceOnly={match.syncStatus === 'local_only'}
+          waitingForSync={
+            match.syncStatus === 'pending' || match.syncStatus === 'error'
+          }
+        />
 
         {isReviewingHistoricalSet ? (
           <View

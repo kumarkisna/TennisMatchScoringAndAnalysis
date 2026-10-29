@@ -1,21 +1,42 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
-import { Router, type IRouter, type Request } from "express";
-import { db, tennisMatchesTable, tennisPointsTable } from "@workspace/db";
+import { and, desc, eq, exists, inArray, or } from "drizzle-orm";
+import { Router, type IRouter } from "express";
+import { clerkClient, getAuth } from "@clerk/express";
 import {
+  db,
+  tennisMatchSharesTable,
+  tennisMatchesTable,
+  tennisPointsTable,
+} from "@workspace/db";
+import {
+  CreateMatchShareBody,
+  CreateMatchShareParams,
+  CreateMatchShareResponse,
   CreateMatchBody,
   CreateMatchResponse,
+  DeleteSyncedDevicePointParams,
+  DeleteSyncedDevicePointResponse,
+  DeleteMatchShareParams,
   GetMatchInsightsParams,
   GetMatchInsightsResponse,
   GetMatchParams,
   GetMatchResponse,
+  ListMatchSharesParams,
+  ListMatchSharesResponse,
   ListMatchesResponse,
   RecordPointBody,
   RecordPointParams,
   RecordPointResponse,
+  SyncDeviceMatchBody,
+  SyncDeviceMatchResponse,
+  SyncDevicePointsBody,
+  SyncDevicePointsParams,
+  SyncDevicePointsResponse,
   UndoLatestPointParams,
   UndoLatestPointResponse,
 } from "@workspace/api-zod";
+import { requireAuth } from "../middlewares/require-auth";
+import { canReadMatch, normalizeInviteEmail } from "../lib/match-access";
 import {
   calculateScore,
   getPointContext,
@@ -24,8 +45,22 @@ import {
 } from "../lib/tennis-scoring";
 
 const router: IRouter = Router();
+router.use(requireAuth);
 
-async function fetchMatch(matchId: string) {
+function getUserId(req: Parameters<typeof getAuth>[0]): string {
+  const userId = getAuth(req).userId;
+  if (!userId) throw new Error("Authentication middleware did not provide a user.");
+  return userId;
+}
+
+async function getVerifiedEmails(userId: string): Promise<string[]> {
+  const user = await clerkClient.users.getUser(userId);
+  return user.emailAddresses
+    .filter((address) => address.verification?.status === "verified")
+    .map((address) => normalizeInviteEmail(address.emailAddress));
+}
+
+async function fetchMatch(matchId: string, userId: string) {
   const [match] = await db
     .select()
     .from(tennisMatchesTable)
@@ -33,13 +68,40 @@ async function fetchMatch(matchId: string) {
 
   if (!match) return null;
 
+  const isOwner = match.ownerId === userId;
+  if (!isOwner) {
+    const verifiedEmails = await getVerifiedEmails(userId);
+    const shares =
+      verifiedEmails.length === 0
+        ? []
+        : await db
+            .select({ inviteEmail: tennisMatchSharesTable.inviteEmail })
+            .from(tennisMatchSharesTable)
+            .where(
+              and(
+                eq(tennisMatchSharesTable.matchId, matchId),
+                inArray(tennisMatchSharesTable.inviteEmail, verifiedEmails),
+              ),
+            );
+    if (
+      !canReadMatch(
+        match.ownerId,
+        userId,
+        verifiedEmails,
+        shares.map((share) => share.inviteEmail),
+      )
+    ) {
+      return null;
+    }
+  }
+
   const points = await db
     .select()
     .from(tennisPointsTable)
     .where(eq(tennisPointsTable.matchId, matchId))
     .orderBy(tennisPointsTable.sequenceNumber);
 
-  return { match, points };
+  return { match, points, isOwner };
 }
 
 function hashSyncToken(token: string): string {
@@ -59,21 +121,141 @@ function matchesSyncToken(
   );
 }
 
-function hasDeviceSyncAccess(
-  req: Request,
-  match: { syncTokenHash: string | null },
-): boolean {
-  return (
-    !match.syncTokenHash ||
-    matchesSyncToken(match.syncTokenHash, req.get("x-match-sync-token"))
-  );
-}
+router.post("/matches/device-sync", async (req, res): Promise<void> => {
+  const parsed = SyncDeviceMatchBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const data = parsed.data;
+  const userId = getUserId(req);
+  const syncTokenHash = hashSyncToken(data.syncToken);
+  const result = await db.transaction(async (tx) => {
+    let [match] = await tx
+      .select()
+      .from(tennisMatchesTable)
+      .where(
+        and(
+          eq(tennisMatchesTable.clientMatchId, data.clientMatchId),
+          eq(tennisMatchesTable.ownerId, userId),
+        ),
+      )
+      .for("update");
+
+    if (match && !matchesSyncToken(match.syncTokenHash, data.syncToken)) {
+      return { error: "unauthorized" as const };
+    }
+
+    if (!match) {
+      const [created] = await tx
+        .insert(tennisMatchesTable)
+        .values({
+          ownerId: userId,
+          clientMatchId: data.clientMatchId,
+          syncTokenHash,
+          matchDate: data.matchDate.toISOString().slice(0, 10),
+          event: data.event ?? null,
+          round: data.round ?? null,
+          setNumber: data.setNumber,
+          trackedPlayer: data.trackedPlayer.trim(),
+          opponent: data.opponent.trim(),
+          chairCoach: data.chairCoach ?? null,
+          surface: data.surface,
+          firstServer: data.firstServer,
+          status: data.status,
+        })
+        .onConflictDoNothing()
+        .returning();
+
+      if (created) {
+        match = created;
+      } else {
+        [match] = await tx
+          .select()
+          .from(tennisMatchesTable)
+          .where(
+            and(
+              eq(tennisMatchesTable.clientMatchId, data.clientMatchId),
+              eq(tennisMatchesTable.ownerId, userId),
+            ),
+          )
+          .for("update");
+      }
+
+      if (!match) return { error: "not_found" as const };
+      if (!matchesSyncToken(match.syncTokenHash, data.syncToken)) {
+        return { error: "unauthorized" as const };
+      }
+    }
+
+    const [updated] = await tx
+      .update(tennisMatchesTable)
+      .set({
+        matchDate: data.matchDate.toISOString().slice(0, 10),
+        event: data.event ?? null,
+        round: data.round ?? null,
+        setNumber: data.setNumber,
+        trackedPlayer: data.trackedPlayer.trim(),
+        opponent: data.opponent.trim(),
+        chairCoach: data.chairCoach ?? null,
+        surface: data.surface,
+        firstServer: data.firstServer,
+        status: data.status,
+        syncTokenHash,
+      })
+      .where(eq(tennisMatchesTable.id, match.id))
+      .returning();
+    const points = await tx
+      .select()
+      .from(tennisPointsTable)
+      .where(eq(tennisPointsTable.matchId, updated.id));
+
+    return {
+      id: updated.id,
+      clientMatchId: data.clientMatchId,
+      pointCount: points.length,
+      nextSequence: points.length + 1,
+    };
+  });
+
+  if ("error" in result) {
+    res.status(result.error === "unauthorized" ? 401 : 404).json({
+      error:
+        result.error === "unauthorized"
+          ? "Device sync credential is invalid"
+          : "Match could not be synchronized",
+    });
+    return;
+  }
+
+  res.json(SyncDeviceMatchResponse.parse(result));
+});
 
 router.get("/matches", async (req, res): Promise<void> => {
+  const userId = getUserId(req);
+  const verifiedEmails = await getVerifiedEmails(userId);
+  const visibility =
+    verifiedEmails.length === 0
+      ? eq(tennisMatchesTable.ownerId, userId)
+      : or(
+          eq(tennisMatchesTable.ownerId, userId),
+          exists(
+            db
+              .select({ id: tennisMatchSharesTable.id })
+              .from(tennisMatchSharesTable)
+              .where(
+                and(
+                  eq(tennisMatchSharesTable.matchId, tennisMatchesTable.id),
+                  inArray(tennisMatchSharesTable.inviteEmail, verifiedEmails),
+                ),
+              ),
+          ),
+        );
   const matches = await db
     .select()
     .from(tennisMatchesTable)
-    .where(isNull(tennisMatchesTable.syncTokenHash))
+    .where(visibility)
     .orderBy(desc(tennisMatchesTable.updatedAt))
     .limit(50);
 
@@ -114,6 +296,7 @@ router.get("/matches", async (req, res): Promise<void> => {
       pointCount: matchPoints.length,
       winner: score.winner,
       updatedAt: match.updatedAt.toISOString(),
+      isOwner: match.ownerId === userId,
     };
   });
 
@@ -128,9 +311,11 @@ router.post("/matches", async (req, res): Promise<void> => {
   }
 
   const data = parsed.data;
+  const userId = getUserId(req);
   const [match] = await db
     .insert(tennisMatchesTable)
     .values({
+      ownerId: userId,
       matchDate: data.matchDate.toISOString().slice(0, 10),
       event: data.event ?? null,
       round: data.round ?? null,
@@ -144,9 +329,259 @@ router.post("/matches", async (req, res): Promise<void> => {
     })
     .returning();
 
-  const record = toMatchRecord(match, []);
+  const record = { ...toMatchRecord(match, []), isOwner: true };
   res.status(201).json(CreateMatchResponse.parse(record));
 });
+
+router.post(
+  "/matches/:id/sync-points",
+  async (req, res): Promise<void> => {
+    const params = SyncDevicePointsParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const token = req.get("x-match-sync-token");
+    if (!token) {
+      res.status(401).json({ error: "Device sync credential is required" });
+      return;
+    }
+    const userId = getUserId(req);
+    const body = SyncDevicePointsBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: body.error.message });
+      return;
+    }
+
+    const idempotencyKeys = new Set<string>();
+    let previousSequence = 0;
+    for (const point of body.data.points) {
+      if (
+        idempotencyKeys.has(point.idempotencyKey) ||
+        point.sequenceNumber <= previousSequence
+      ) {
+        res.status(400).json({
+          error: "Point idempotency keys must be unique and points must be ordered.",
+        });
+        return;
+      }
+      idempotencyKeys.add(point.idempotencyKey);
+      previousSequence = point.sequenceNumber;
+    }
+
+    const result = await db.transaction(async (tx) => {
+      const [match] = await tx
+        .select()
+        .from(tennisMatchesTable)
+        .where(
+          and(
+            eq(tennisMatchesTable.id, params.data.id),
+            eq(tennisMatchesTable.ownerId, userId),
+          ),
+        )
+        .for("update");
+      if (!match) return { error: "not_found" as const };
+      if (
+        !match.syncTokenHash ||
+        !matchesSyncToken(match.syncTokenHash, token)
+      ) {
+        return { error: "unauthorized" as const };
+      }
+
+      const points = await tx
+        .select()
+        .from(tennisPointsTable)
+        .where(eq(tennisPointsTable.matchId, match.id))
+        .orderBy(tennisPointsTable.sequenceNumber);
+      const byClientPointId = new Map(
+        points
+          .filter((point) => point.clientPointId !== null)
+          .map((point) => [point.clientPointId as string, point]),
+      );
+      const pointsToInsert: typeof body.data.points = [];
+      let expectedSequence = points.length + 1;
+
+      for (const point of body.data.points) {
+        const existing = byClientPointId.get(point.idempotencyKey);
+        if (existing) {
+          const samePoint =
+            existing.sequenceNumber === point.sequenceNumber &&
+            existing.setNumber === point.setNumber &&
+            existing.gameNumber === point.gameNumber &&
+            existing.server === point.server &&
+            existing.isTiebreak === point.isTiebreak &&
+            existing.winner === point.winner &&
+            existing.endingCode === (point.endingCode ?? null) &&
+            existing.firstServeFault === point.firstServeFault;
+          if (!samePoint) return { error: "idempotency_conflict" as const };
+          continue;
+        }
+
+        if (point.sequenceNumber !== expectedSequence) {
+          return {
+            error: "sequence_conflict" as const,
+            expectedSequence,
+          };
+        }
+        pointsToInsert.push(point);
+        expectedSequence += 1;
+      }
+
+      for (const point of pointsToInsert) {
+        const [inserted] = await tx
+          .insert(tennisPointsTable)
+          .values({
+            matchId: match.id,
+            clientPointId: point.idempotencyKey,
+            sequenceNumber: point.sequenceNumber,
+            setNumber: point.setNumber,
+            gameNumber: point.gameNumber,
+            server: point.server,
+            isTiebreak: point.isTiebreak,
+            winner: point.winner,
+            endingCode: point.endingCode ?? null,
+            firstServeFault: point.firstServeFault,
+          })
+          .returning();
+        points.push(inserted);
+        byClientPointId.set(point.idempotencyKey, inserted);
+      }
+
+      await tx
+        .update(tennisMatchesTable)
+        .set({ updatedAt: new Date() })
+        .where(eq(tennisMatchesTable.id, match.id));
+
+      return {
+        pointCount: points.length,
+        nextSequence: points.length + 1,
+      };
+    });
+
+    if ("error" in result) {
+      if (result.error === "unauthorized") {
+        res.status(401).json({ error: "Device sync credential is invalid" });
+        return;
+      }
+      if (result.error === "idempotency_conflict") {
+        res.status(409).json({
+          error: "An idempotency key was reused with different point data.",
+        });
+        return;
+      }
+      if (result.error === "sequence_conflict") {
+        res.status(409).json({
+          error: `Expected point sequence ${result.expectedSequence}.`,
+          expectedSequence: result.expectedSequence,
+        });
+        return;
+      }
+      res.status(404).json({ error: "Match not found" });
+      return;
+    }
+
+    res.json(SyncDevicePointsResponse.parse(result));
+  },
+);
+
+router.delete(
+  "/matches/:id/sync-points/:pointId",
+  async (req, res): Promise<void> => {
+    const params = DeleteSyncedDevicePointParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const token = req.get("x-match-sync-token");
+    if (!token) {
+      res.status(401).json({ error: "Device sync credential is required" });
+      return;
+    }
+    const userId = getUserId(req);
+
+    const result = await db.transaction(async (tx) => {
+      const [match] = await tx
+        .select()
+        .from(tennisMatchesTable)
+        .where(
+          and(
+            eq(tennisMatchesTable.id, params.data.id),
+            eq(tennisMatchesTable.ownerId, userId),
+          ),
+        )
+        .for("update");
+      if (!match) return { error: "not_found" as const };
+      if (
+        !match.syncTokenHash ||
+        !matchesSyncToken(match.syncTokenHash, token)
+      ) {
+        return { error: "unauthorized" as const };
+      }
+
+      const [point] = await tx
+        .select()
+        .from(tennisPointsTable)
+        .where(
+          and(
+            eq(tennisPointsTable.matchId, match.id),
+            eq(tennisPointsTable.clientPointId, params.data.pointId),
+          ),
+        );
+      const points = await tx
+        .select()
+        .from(tennisPointsTable)
+        .where(eq(tennisPointsTable.matchId, match.id))
+        .orderBy(desc(tennisPointsTable.sequenceNumber));
+
+      if (!point) {
+        return {
+          deleted: false,
+          pointCount: points.length,
+          nextSequence: points.length + 1,
+        };
+      }
+      if (points[0]?.id !== point.id) {
+        return { error: "not_latest" as const };
+      }
+
+      await tx
+        .delete(tennisPointsTable)
+        .where(
+          and(
+            eq(tennisPointsTable.matchId, match.id),
+            eq(tennisPointsTable.id, point.id),
+          ),
+        );
+      await tx
+        .update(tennisMatchesTable)
+        .set({ status: "in_progress", updatedAt: new Date() })
+        .where(eq(tennisMatchesTable.id, match.id));
+
+      return {
+        deleted: true,
+        pointCount: points.length - 1,
+        nextSequence: points.length,
+      };
+    });
+
+    if ("error" in result) {
+      if (result.error === "unauthorized") {
+        res.status(401).json({ error: "Device sync credential is invalid" });
+        return;
+      }
+      if (result.error === "not_latest") {
+        res.status(409).json({
+          error: "Only the latest synchronized point can be undone.",
+        });
+        return;
+      }
+      res.status(404).json({ error: "Match not found" });
+      return;
+    }
+
+    res.json(DeleteSyncedDevicePointResponse.parse(result));
+  },
+);
 
 router.get("/matches/:id", async (req, res): Promise<void> => {
   const params = GetMatchParams.safeParse(req.params);
@@ -155,17 +590,17 @@ router.get("/matches/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const result = await fetchMatch(params.data.id);
+  const result = await fetchMatch(params.data.id, getUserId(req));
   if (!result) {
     res.status(404).json({ error: "Match not found" });
     return;
   }
-  if (!hasDeviceSyncAccess(req, result.match)) {
-    res.status(404).json({ error: "Match not found" });
-    return;
-  }
-
-  res.json(GetMatchResponse.parse(toMatchRecord(result.match, result.points)));
+  res.json(
+    GetMatchResponse.parse({
+      ...toMatchRecord(result.match, result.points),
+      isOwner: result.isOwner,
+    }),
+  );
 });
 
 router.post("/matches/:id/points", async (req, res): Promise<void> => {
@@ -180,11 +615,17 @@ router.post("/matches/:id/points", async (req, res): Promise<void> => {
     return;
   }
 
+  const userId = getUserId(req);
   const record = await db.transaction(async (tx) => {
     const [match] = await tx
       .select()
       .from(tennisMatchesTable)
-      .where(eq(tennisMatchesTable.id, params.data.id))
+      .where(
+        and(
+          eq(tennisMatchesTable.id, params.data.id),
+          eq(tennisMatchesTable.ownerId, userId),
+        ),
+      )
       .for("update");
     if (!match) return { error: "not_found" as const };
     if (match.syncTokenHash) return { error: "private" as const };
@@ -242,7 +683,10 @@ router.post("/matches/:id/points", async (req, res): Promise<void> => {
   }
 
   res.status(201).json(
-    RecordPointResponse.parse(toMatchRecord(record.match, record.points)),
+    RecordPointResponse.parse({
+      ...toMatchRecord(record.match, record.points),
+      isOwner: true,
+    }),
   );
 });
 
@@ -255,11 +699,17 @@ router.delete(
       return;
     }
 
+    const userId = getUserId(req);
     const record = await db.transaction(async (tx) => {
       const [match] = await tx
         .select()
         .from(tennisMatchesTable)
-        .where(eq(tennisMatchesTable.id, params.data.id))
+        .where(
+          and(
+            eq(tennisMatchesTable.id, params.data.id),
+            eq(tennisMatchesTable.ownerId, userId),
+          ),
+        )
         .for("update");
       if (!match) return { error: "not_found" as const };
       if (match.syncTokenHash) return { error: "private" as const };
@@ -311,7 +761,10 @@ router.delete(
     }
 
     res.json(
-      UndoLatestPointResponse.parse(toMatchRecord(record.match, record.points)),
+      UndoLatestPointResponse.parse({
+        ...toMatchRecord(record.match, record.points),
+        isOwner: true,
+      }),
     );
   },
 );
@@ -323,16 +776,11 @@ router.get("/matches/:id/insights", async (req, res): Promise<void> => {
     return;
   }
 
-  const result = await fetchMatch(params.data.id);
+  const result = await fetchMatch(params.data.id, getUserId(req));
   if (!result) {
     res.status(404).json({ error: "Match not found" });
     return;
   }
-  if (!hasDeviceSyncAccess(req, result.match)) {
-    res.status(404).json({ error: "Match not found" });
-    return;
-  }
-
   const codeStats = new Map<
     string,
     { count: number; trackedWon: number; opponentWon: number }
@@ -381,5 +829,129 @@ router.get("/matches/:id/insights", async (req, res): Promise<void> => {
 
   res.json(GetMatchInsightsResponse.parse(insights));
 });
+
+router.get("/matches/:id/shares", async (req, res): Promise<void> => {
+  const params = ListMatchSharesParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+
+  const userId = getUserId(req);
+  const [match] = await db
+    .select({ id: tennisMatchesTable.id })
+    .from(tennisMatchesTable)
+    .where(
+      and(
+        eq(tennisMatchesTable.id, params.data.id),
+        eq(tennisMatchesTable.ownerId, userId),
+      ),
+    );
+  if (!match) {
+    res.status(404).json({ error: "Match not found" });
+    return;
+  }
+
+  const shares = await db
+    .select()
+    .from(tennisMatchSharesTable)
+    .where(eq(tennisMatchSharesTable.matchId, match.id))
+    .orderBy(tennisMatchSharesTable.createdAt);
+  res.json(
+    ListMatchSharesResponse.parse(
+      shares.map((share) => ({
+        id: share.id,
+        email: share.inviteEmail,
+        createdAt: share.createdAt.toISOString(),
+      })),
+    ),
+  );
+});
+
+router.post("/matches/:id/shares", async (req, res): Promise<void> => {
+  const params = CreateMatchShareParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const body = CreateMatchShareBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+
+  const userId = getUserId(req);
+  const [match] = await db
+    .select({ id: tennisMatchesTable.id })
+    .from(tennisMatchesTable)
+    .where(
+      and(
+        eq(tennisMatchesTable.id, params.data.id),
+        eq(tennisMatchesTable.ownerId, userId),
+      ),
+    );
+  if (!match) {
+    res.status(404).json({ error: "Match not found" });
+    return;
+  }
+
+  const email = normalizeInviteEmail(body.data.email);
+  const [share] = await db
+    .insert(tennisMatchSharesTable)
+    .values({ matchId: match.id, inviteEmail: email, createdBy: userId })
+    .onConflictDoUpdate({
+      target: [
+        tennisMatchSharesTable.matchId,
+        tennisMatchSharesTable.inviteEmail,
+      ],
+      set: { createdBy: userId },
+    })
+    .returning();
+  res.status(201).json(
+    CreateMatchShareResponse.parse({
+      id: share.id,
+      email: share.inviteEmail,
+      createdAt: share.createdAt.toISOString(),
+    }),
+  );
+});
+
+router.delete(
+  "/matches/:id/shares/:shareId",
+  async (req, res): Promise<void> => {
+    const params = DeleteMatchShareParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+
+    const userId = getUserId(req);
+    const deleted = await db
+      .delete(tennisMatchSharesTable)
+      .where(
+        and(
+          eq(tennisMatchSharesTable.matchId, params.data.id),
+          eq(tennisMatchSharesTable.id, params.data.shareId),
+          exists(
+            db
+              .select({ id: tennisMatchesTable.id })
+              .from(tennisMatchesTable)
+              .where(
+                and(
+                  eq(tennisMatchesTable.id, tennisMatchSharesTable.matchId),
+                  eq(tennisMatchesTable.ownerId, userId),
+                ),
+              ),
+          ),
+        ),
+      )
+      .returning({ id: tennisMatchSharesTable.id });
+    if (deleted.length === 0) {
+      res.status(404).json({ error: "Match or viewer not found" });
+      return;
+    }
+    res.sendStatus(204);
+  },
+);
 
 export default router;

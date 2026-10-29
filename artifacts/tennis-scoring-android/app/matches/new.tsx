@@ -26,6 +26,9 @@ import {
   LOCAL_PLAYERS_KEY,
 } from '@/lib/local-players';
 
+import { useAuth } from '@clerk/expo';
+import { requestMatchSync } from '@/lib/match-sync';
+
 type Side = 'tracked' | 'opponent';
 type Surface = 'Hard' | 'Clay' | 'Grass' | 'Carpet' | 'Other';
 
@@ -149,6 +152,7 @@ export default function NewMatchScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
+  const { userId } = useAuth();
   const [matchDate, setMatchDate] = useState(localDate());
   const [trackedPlayer, setTrackedPlayer] = useState('');
   const [opponent, setOpponent] = useState('');
@@ -174,6 +178,12 @@ export default function NewMatchScreen() {
       queryClient.setQueryData(localMatchKey(match.id), match);
       void queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
       router.replace({ pathname: '/matches/[id]', params: { id: match.id } });
+      void requestMatchSync(userId ?? '')
+        .catch(() => undefined)
+        .finally(() => {
+          void queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
+          void queryClient.invalidateQueries({ queryKey: localMatchKey(match.id) });
+        });
     },
   });
 
@@ -190,6 +200,10 @@ export default function NewMatchScreen() {
       surface,
       firstServer,
     };
+    if (!userId) {
+      setFormError('Sign in before creating a match.');
+      return;
+    }
     const detailsError = validateLocalMatchDetails(details);
     if (detailsError) {
       setFormError(detailsError);
@@ -200,7 +214,11 @@ export default function NewMatchScreen() {
       return;
     }
 
-    createMatch.mutate({ ...details, setNumber: parsedSet });
+    createMatch.mutate({
+      ownerUserId: userId,
+      ...details,
+      setNumber: parsedSet,
+    });
   }
 
   function saveCurrentPlayers() {
@@ -478,7 +496,7 @@ export default function NewMatchScreen() {
         <View style={styles.localNote}>
           <Ionicons name="phone-portrait-outline" size={14} color={colors.mutedForeground} />
           <Text style={[styles.localNoteText, { color: colors.mutedForeground }]}>
-            Saved only on this phone. No online database is used.
+            Saved on this phone first. New matches sync privately when signed in.
           </Text>
         </View>
       </KeyboardAwareScrollViewCompat>

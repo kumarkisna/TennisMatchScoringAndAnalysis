@@ -34,7 +34,8 @@ export const ListMatchesResponseItem = zod.object({
   "opponentGames": zod.number().int(),
   "pointCount": zod.number().int(),
   "winner": zod.union([zod.literal('tracked'),zod.literal('opponent'),zod.literal(null)]).nullish(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "isOwner": zod.boolean()
 })
 export const ListMatchesResponse = zod.array(ListMatchesResponseItem)
 
@@ -97,7 +98,103 @@ export const CreateMatchResponse = zod.object({
   "createdAt": zod.coerce.date()
 })),
   "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "isOwner": zod.boolean()
+})
+
+
+/**
+ * @summary Create or update a private device-synced match
+ */
+export const syncDeviceMatchBodyClientMatchIdMax = 128;
+
+export const syncDeviceMatchBodySyncTokenMin = 20;
+export const syncDeviceMatchBodySyncTokenMax = 256;
+
+
+
+
+
+
+export const SyncDeviceMatchBody = zod.object({
+  "clientMatchId": zod.string().min(1).max(syncDeviceMatchBodyClientMatchIdMax),
+  "syncToken": zod.string().min(syncDeviceMatchBodySyncTokenMin).max(syncDeviceMatchBodySyncTokenMax),
+  "matchDate": zod.coerce.date(),
+  "event": zod.string().nullish(),
+  "round": zod.string().nullish(),
+  "setNumber": zod.number().int().min(1),
+  "trackedPlayer": zod.string().min(1),
+  "opponent": zod.string().min(1),
+  "chairCoach": zod.string().nullish(),
+  "surface": zod.enum(['Hard', 'Clay', 'Grass', 'Carpet', 'Other']),
+  "firstServer": zod.enum(['tracked', 'opponent']),
+  "status": zod.enum(['in_progress', 'complete'])
+})
+
+export const SyncDeviceMatchResponse = zod.object({
+  "id": zod.string().uuid(),
+  "clientMatchId": zod.string(),
+  "pointCount": zod.number().int(),
+  "nextSequence": zod.number().int()
+})
+
+
+/**
+ * @summary Synchronize an ordered batch of device-recorded points
+ */
+export const SyncDevicePointsParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const SyncDevicePointsHeader = zod.object({
+  "X-Match-Sync-Token": zod.string()
+})
+
+export const syncDevicePointsBodyPointsItemIdempotencyKeyMax = 128;
+
+
+
+
+export const syncDevicePointsBodyPointsMax = 100;
+
+
+
+export const SyncDevicePointsBody = zod.object({
+  "points": zod.array(zod.object({
+  "idempotencyKey": zod.string().min(1).max(syncDevicePointsBodyPointsItemIdempotencyKeyMax),
+  "sequenceNumber": zod.number().int().min(1),
+  "setNumber": zod.number().int().min(1),
+  "gameNumber": zod.number().int().min(1),
+  "server": zod.enum(['tracked', 'opponent']),
+  "isTiebreak": zod.boolean(),
+  "winner": zod.enum(['tracked', 'opponent']),
+  "endingCode": zod.union([zod.literal('A'),zod.literal('F'),zod.literal('B'),zod.literal('V'),zod.literal('O'),zod.literal('P'),zod.literal('N'),zod.literal('L'),zod.literal('W'),zod.literal('D'),zod.literal('FE'),zod.literal(null)]).nullish(),
+  "firstServeFault": zod.boolean()
+})).min(1).max(syncDevicePointsBodyPointsMax)
+})
+
+export const SyncDevicePointsResponse = zod.object({
+  "pointCount": zod.number().int(),
+  "nextSequence": zod.number().int()
+})
+
+
+/**
+ * @summary Remove an undone device point from the end of the synchronized log
+ */
+export const DeleteSyncedDevicePointParams = zod.object({
+  "id": zod.coerce.string().uuid(),
+  "pointId": zod.coerce.string()
+})
+
+export const DeleteSyncedDevicePointHeader = zod.object({
+  "X-Match-Sync-Token": zod.string()
+})
+
+export const DeleteSyncedDevicePointResponse = zod.object({
+  "deleted": zod.boolean(),
+  "pointCount": zod.number().int(),
+  "nextSequence": zod.number().int()
 })
 
 
@@ -145,7 +242,8 @@ export const GetMatchResponse = zod.object({
   "createdAt": zod.coerce.date()
 })),
   "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "isOwner": zod.boolean()
 })
 
 
@@ -201,7 +299,8 @@ export const RecordPointResponse = zod.object({
   "createdAt": zod.coerce.date()
 })),
   "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "isOwner": zod.boolean()
 })
 
 
@@ -249,7 +348,8 @@ export const UndoLatestPointResponse = zod.object({
   "createdAt": zod.coerce.date()
 })),
   "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date()
+  "updatedAt": zod.coerce.date(),
+  "isOwner": zod.boolean()
 })
 
 
@@ -274,5 +374,54 @@ export const GetMatchInsightsResponse = zod.object({
   "returnPointsWon": zod.number().int(),
   "servicePointsWon": zod.number().int()
 })
+
+
+/**
+ * @summary List viewers invited to a match
+ */
+export const ListMatchSharesParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const ListMatchSharesResponseItem = zod.object({
+  "id": zod.string().uuid(),
+  "email": zod.string().email(),
+  "createdAt": zod.coerce.date()
+})
+export const ListMatchSharesResponse = zod.array(ListMatchSharesResponseItem)
+
+
+/**
+ * @summary Invite a viewer by email
+ */
+export const CreateMatchShareParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const createMatchShareBodyEmailMin = 3;
+export const createMatchShareBodyEmailMax = 320;
+
+
+
+export const CreateMatchShareBody = zod.object({
+  "email": zod.string().email().min(createMatchShareBodyEmailMin).max(createMatchShareBodyEmailMax)
+})
+
+export const CreateMatchShareResponse = zod.object({
+  "id": zod.string().uuid(),
+  "email": zod.string().email(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Remove a viewer from a match
+ */
+export const DeleteMatchShareParams = zod.object({
+  "id": zod.coerce.string().uuid(),
+  "shareId": zod.coerce.string().uuid()
+})
+
+export const DeleteMatchShareResponse = zod.void()
 
 

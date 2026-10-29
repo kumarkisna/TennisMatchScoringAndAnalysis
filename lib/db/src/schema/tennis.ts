@@ -16,6 +16,7 @@ export const tennisMatchesTable = pgTable(
   "tennis_matches",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: text("owner_id").notNull().default("legacy-unassigned"),
     matchDate: date("match_date", { mode: "string" }).notNull(),
     event: text("event"),
     round: text("round"),
@@ -25,8 +26,8 @@ export const tennisMatchesTable = pgTable(
     chairCoach: text("chair_coach"),
     surface: text("surface").notNull(),
     firstServer: text("first_server").notNull(),
-    status: text("status").notNull().default("in_progress"),
     clientMatchId: text("client_match_id"),
+    status: text("status").notNull().default("in_progress"),
     syncTokenHash: text("sync_token_hash"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -40,6 +41,29 @@ export const tennisMatchesTable = pgTable(
     index("tennis_matches_updated_at_idx").on(table.updatedAt),
     index("tennis_matches_date_idx").on(table.matchDate),
     uniqueIndex("tennis_matches_client_match_id_idx").on(table.clientMatchId),
+    index("tennis_matches_owner_id_idx").on(table.ownerId),
+  ],
+);
+
+export const tennisMatchSharesTable = pgTable(
+  "tennis_match_shares",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => tennisMatchesTable.id, { onDelete: "cascade" }),
+    inviteEmail: text("invite_email").notNull(),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("tennis_match_shares_match_email_idx").on(
+      table.matchId,
+      table.inviteEmail,
+    ),
+    index("tennis_match_shares_email_idx").on(table.inviteEmail),
   ],
 );
 

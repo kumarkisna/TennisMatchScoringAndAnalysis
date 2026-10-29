@@ -3,10 +3,12 @@ import { Link, useParams } from 'wouter';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   getGetMatchInsightsQueryKey, getGetMatchQueryKey, getListMatchesQueryKey,
-  useGetMatch, useGetMatchInsights, useRecordPoint, useUndoLatestPoint,
+  getListMatchSharesQueryKey,
+  useCreateMatchShare, useDeleteMatchShare, useGetMatch, useGetMatchInsights,
+  useListMatchShares, useRecordPoint, useUndoLatestPoint,
   type PointInput,
 } from '@workspace/api-client-react';
-import { ArrowLeft, CircleAlert, CornerDownLeft, RefreshCw, Undo2 } from 'lucide-react';
+import { ArrowLeft, CircleAlert, CornerDownLeft, Eye, RefreshCw, Undo2, UserPlus } from 'lucide-react';
 
 const endingCodes = [
   ['A', 'Ace'], ['F', 'Forehand winner'], ['B', 'Backhand winner'], ['V', 'Net volley winner'],
@@ -35,9 +37,36 @@ export default function MatchPage() {
   });
   const recordPoint = useRecordPoint();
   const undoPoint = useUndoLatestPoint();
+  const [shareEmail, setShareEmail] = useState('');
+  const [shareMessage, setShareMessage] = useState('');
   const [endingCode, setEndingCode] = useState<PointInput['endingCode']>();
   const [firstServeFault, setFirstServeFault] = useState(false);
   const [mutationError, setMutationError] = useState('');
+  const sharesQuery = useListMatchShares(id, {
+    query: {
+      enabled: !!id && Boolean(match?.isOwner),
+      queryKey: getListMatchSharesQueryKey(id),
+    },
+  });
+  const createShare = useCreateMatchShare({
+    mutation: {
+      onSuccess: async () => {
+        setShareEmail('');
+        setShareMessage('Viewer access added.');
+        await queryClient.invalidateQueries({ queryKey: getListMatchSharesQueryKey(id) });
+      },
+      onError: () => setShareMessage('Could not add that viewer. Check the email and try again.'),
+    },
+  });
+  const deleteShare = useDeleteMatchShare({
+    mutation: {
+      onSuccess: async () => {
+        setShareMessage('Viewer access removed.');
+        await queryClient.invalidateQueries({ queryKey: getListMatchSharesQueryKey(id) });
+      },
+      onError: () => setShareMessage('Could not remove viewer access. Please try again.'),
+    },
+  });
 
   function refreshRelated() {
     void queryClient.invalidateQueries({ queryKey: getGetMatchQueryKey(id) });
@@ -46,7 +75,7 @@ export default function MatchPage() {
   }
 
   function submitPoint(winner: PointInput['winner']) {
-    if (!match || match.score.isComplete) return;
+    if (!match || !match.isOwner || match.score.isComplete) return;
     setMutationError('');
     recordPoint.mutate({
       id,
@@ -66,6 +95,7 @@ export default function MatchPage() {
   }
 
   function undoLatest() {
+    if (!match?.isOwner) return;
     setMutationError('');
     undoPoint.mutate({ id }, {
       onSuccess: refreshRelated,
@@ -100,7 +130,9 @@ export default function MatchPage() {
           <h1 className="display-title" style={{ fontSize: 'clamp(34px,5vw,52px)', margin: '8px 0' }}>{match.trackedPlayer}<span style={{ color: '#a9aa9e', fontSize: '.58em', padding: '0 10px' }}>vs</span>{match.opponent}</h1>
           <div className="match-context" data-testid="text-match-metadata">{formatDate(match.matchDate)} <i /> {match.surface} court {match.chairCoach ? <><i /> Chair / coach: {match.chairCoach}</> : null}</div>
         </div>
-        <span className={`status-pill ${score.isComplete ? 'complete' : ''}`} data-testid="status-match">{score.isComplete ? 'Set complete' : 'Live scoring'}</span>
+        <span className={`status-pill ${score.isComplete ? 'complete' : ''}`} data-testid="status-match">
+          {!match.isOwner ? 'Shared · view only' : score.isComplete ? 'Set complete' : 'Live scoring'}
+        </span>
       </div>
 
       <div className="match-layout">
@@ -120,18 +152,18 @@ export default function MatchPage() {
             </div>
           </section>
 
-          <section className="panel point-entry enter delay-2">
+          {match.isOwner ? <section className="panel point-entry enter delay-2">
             <div className="entry-head">
               <div><div className="eyebrow">Next point</div><h2>Who won it?</h2></div>
-              <button className="button secondary small undo-button" onClick={undoLatest} disabled={!match.points.length || undoPoint.isPending} data-testid="button-undo-point" aria-label="Correct the last point">
+              <button className="button secondary small undo-button" onClick={undoLatest} disabled={!match.points.length || undoPoint.isPending || !match.isOwner} data-testid="button-undo-point" aria-label="Correct the last point">
                 <Undo2 size={15} /> {undoPoint.isPending ? 'Undoing…' : 'Correct last'}
               </button>
             </div>
             <div className="winner-buttons">
-              <button className="point-button" onClick={() => submitPoint('tracked')} disabled={score.isComplete || recordPoint.isPending} data-testid="button-point-tracked">
+              <button className="point-button" onClick={() => submitPoint('tracked')} disabled={!match.isOwner || score.isComplete || recordPoint.isPending} data-testid="button-point-tracked">
                 <span className="winner-name">{match.trackedPlayer}</span><small>POINT WON</small>
               </button>
-              <button className="point-button opponent" onClick={() => submitPoint('opponent')} disabled={score.isComplete || recordPoint.isPending} data-testid="button-point-opponent">
+              <button className="point-button opponent" onClick={() => submitPoint('opponent')} disabled={!match.isOwner || score.isComplete || recordPoint.isPending} data-testid="button-point-opponent">
                 <span className="winner-name">{match.opponent}</span><small>POINT WON</small>
               </button>
             </div>
@@ -154,7 +186,12 @@ export default function MatchPage() {
             {recordPoint.isPending && <div className="saving-note" role="status" data-testid="status-saving-point"><span className="saving-dot" /> Saving point…</div>}
             {score.isComplete && <div className="complete-note" data-testid="status-set-complete">This set is complete. The final score and point log are ready to review.</div>}
             {mutationError && <div className="mutation-error" role="alert" data-testid="status-point-error"><CircleAlert size={16} />{mutationError}</div>}
-          </section>
+          </section> : (
+            <section className="panel view-only-note" aria-label="Shared match access">
+              <Eye size={18} />
+              <div><b>Shared with you</b><span>You can view the score, point log, and insights. Only the owner can change this match.</span></div>
+            </section>
+          )}
 
           <section className="panel log-panel enter delay-3">
             <div className="log-head"><div><div className="eyebrow">Point-by-point</div><h2>Match log</h2></div><span className="mono log-count" data-testid="text-point-count">{match.points.length} points</span></div>
@@ -208,6 +245,62 @@ export default function MatchPage() {
             )}
           </section>
           <div className="courtside-tip"><span className="tip-mark">“</span><p>Every point is a clue. Start with the winner; add a code when you can.</p><small>COURTSIDE NOTE</small></div>
+          {match.isOwner ? (
+            <section className="panel share-panel">
+              <div className="eyebrow">Private sharing</div>
+              <h2>Invite a viewer</h2>
+              <p className="share-explainer">They can read this scorecard and its insights, but cannot edit the match.</p>
+              <form
+                className="share-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  setShareMessage('');
+                  createShare.mutate({ id, data: { email: shareEmail.trim() } });
+                }}
+              >
+                <label className="field">
+                  Viewer email
+                  <input
+                    type="email"
+                    required
+                    maxLength={320}
+                    autoComplete="email"
+                    placeholder="family@example.com"
+                    value={shareEmail}
+                    onChange={(event) => setShareEmail(event.target.value)}
+                    data-testid="input-share-email"
+                  />
+                </label>
+                <button className="button" type="submit" disabled={createShare.isPending || !shareEmail.trim()} data-testid="button-share-match">
+                  <UserPlus size={15} /> {createShare.isPending ? 'Inviting…' : 'Invite'}
+                </button>
+              </form>
+              {shareMessage ? <p className="share-feedback" role="status">{shareMessage}</p> : null}
+              <div className="share-list-title">CURRENT VIEWERS</div>
+              {sharesQuery.isLoading ? <div className="share-feedback">Loading viewers…</div> : null}
+              {sharesQuery.data?.length ? sharesQuery.data.map((share) => (
+                <div className="share-row" key={share.id}>
+                  <span>{share.email}</span>
+                  <button
+                    type="button"
+                    className="remove-share"
+                    disabled={deleteShare.isPending}
+                    onClick={() => {
+                      if (window.confirm(`Remove ${share.email}'s access to this match?`)) {
+                        deleteShare.mutate({ id, shareId: share.id });
+                      }
+                    }}
+                    data-testid={`button-remove-share-${share.id}`}
+                  >
+                    Remove
+                  </button>
+                </div>
+              )) : null}
+              {!sharesQuery.isLoading && !sharesQuery.data?.length ? (
+                <p className="share-feedback">No viewers have been invited.</p>
+              ) : null}
+            </section>
+          ) : null}
         </aside>
       </div>
       <style>{`
@@ -233,6 +326,20 @@ export default function MatchPage() {
         .serve-note { display:flex; justify-content:flex-end; align-items:center; gap:7px; font-size:11px; color:#c7d1bf; margin-top:13px; }
         .serve-dot { width:6px; height:6px; border-radius:50%; background:#df9b73; }
         .point-entry { padding:23px; }
+        .view-only-note { display:flex; align-items:flex-start; gap:12px; padding:20px; color:#315d47; }
+        .view-only-note div { display:grid; gap:5px; }
+        .view-only-note b { color:#354c3d; font:700 14px var(--app-font-serif); }
+        .view-only-note span { color:#737b71; font-size:12px; line-height:1.5; }
+        .share-panel { padding:20px; }
+        .share-panel h2 { margin:6px 0 7px; font:800 20px var(--app-font-serif); letter-spacing:-.05em; }
+        .share-explainer { color:#737b71; font-size:11px; line-height:1.5; margin:0 0 15px; }
+        .share-form { display:grid; gap:10px; }
+        .share-form .button { justify-self:start; }
+        .share-list-title { margin-top:18px; padding-top:14px; border-top:1px solid #ebe7de; color:#8a8d83; font:9px var(--app-font-mono); letter-spacing:.1em; }
+        .share-row { display:flex; align-items:center; justify-content:space-between; gap:9px; padding:11px 0; border-bottom:1px solid #ebe7de; color:#46594b; font-size:11px; }
+        .remove-share { border:0; background:none; color:#9d493c; cursor:pointer; font-size:11px; font-weight:700; }
+        .remove-share:disabled { opacity:.5; cursor:not-allowed; }
+        .share-feedback { color:#737b71; font-size:11px; margin:10px 0 0; }
         .entry-head,.log-head { display:flex; justify-content:space-between; align-items:center; gap:12px; }
         .entry-head h2,.log-head h2,.insights-panel h2 { font:800 22px var(--app-font-serif); letter-spacing:-.06em; margin:4px 0 0; }
         .winner-buttons { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:20px; }

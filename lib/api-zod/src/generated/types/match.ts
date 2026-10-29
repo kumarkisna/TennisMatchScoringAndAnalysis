@@ -30,4 +30,5 @@ export interface Match {
   points: Point[];
   createdAt: Date;
   updatedAt: Date;
+  isOwner: boolean;
 }

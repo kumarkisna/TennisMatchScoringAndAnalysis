@@ -27,4 +27,5 @@ export interface MatchListItem {
   /** @nullable */
   winner?: MatchListItemWinner;
   updatedAt: Date;
+  isOwner: boolean;
 }

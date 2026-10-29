@@ -1,4 +1,4 @@
-import type { LocalInsights, PointCode } from '@/lib/local-matches';
+import type { PointCode } from '@/lib/local-matches';
 
 const shotCodes: PointCode[] = ['A', 'F', 'B', 'V', 'O', 'P'];
 
@@ -21,13 +21,30 @@ export interface PlayerPerformanceSummary {
   feedback: string[];
 }
 
+export interface PlayerReportInsights {
+  pointCount: number;
+  trackedPointsWon: number;
+  servicePointsWon: number;
+  trackedServicePoints: number;
+  returnPointsWon: number;
+  trackedReturnPoints: number;
+  trackedFirstServeFaults: number;
+  codes: { code: string; count: number; trackedWon: number }[];
+}
+
+const allPointCodes: PointCode[] = [...shotCodes, 'N', 'L', 'W', 'D', 'FE'];
+
+function isPointCode(value: string): value is PointCode {
+  return allPointCodes.includes(value as PointCode);
+}
+
 function percent(numerator: number, denominator: number): number | null {
   if (denominator === 0) return null;
   return Math.round((numerator / denominator) * 100);
 }
 
 export function summarizePlayerPerformance(
-  insights: LocalInsights,
+  insights: PlayerReportInsights,
 ): PlayerPerformanceSummary {
   const overallWinPercent = percent(
     insights.trackedPointsWon,
@@ -46,15 +63,18 @@ export function summarizePlayerPerformance(
     insights.trackedServicePoints,
   );
 
-  const taggedPointCount = insights.codes.reduce(
+  const validCodes = insights.codes
+    .filter((item) => isPointCode(item.code))
+    .map((item) => ({ ...item, code: item.code as PointCode }));
+  const taggedPointCount = validCodes.reduce(
     (total, item) => total + item.count,
     0,
   );
-  const shotTagCount = insights.codes.reduce(
+  const shotTagCount = validCodes.reduce(
     (total, item) => total + (shotCodes.includes(item.code) ? item.count : 0),
     0,
   );
-  const codeInsights = insights.codes
+  const codeInsights = validCodes
     .map((item) => ({
       code: item.code,
       count: item.count,
