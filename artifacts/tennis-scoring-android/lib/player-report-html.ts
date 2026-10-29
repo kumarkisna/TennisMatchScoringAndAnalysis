@@ -1,5 +1,6 @@
 import type { PointCode } from '@/lib/local-matches';
 import type {
+  ContextPerformanceInsight,
   PlayerPerformanceSummary,
   PlayerReportInsights,
 } from '@/lib/player-insights';
@@ -50,6 +51,25 @@ function rate(numerator: number, denominator: number): string {
   return denominator === 0
     ? '—'
     : `${numerator}/${denominator} (${exactPercent(numerator, denominator)})`;
+}
+
+function contextRows<T extends string>(
+  items: ContextPerformanceInsight<T>[],
+  emptyLabel: string,
+): string {
+  if (items.every((item) => item.count === 0)) {
+    return `<tr><td colspan="3">${emptyLabel}</td></tr>`;
+  }
+  return items
+    .map(
+      (item) => `
+        <tr>
+          <td>${escapeHtml(item.label)}</td>
+          <td>${item.count}</td>
+          <td>${item.count === 0 ? '—' : item.trackedWinPercent === null ? 'Not shown · need 3 tags' : rate(item.trackedWon, item.count)}</td>
+        </tr>`,
+    )
+    .join('');
 }
 
 function setScore(set: PlayerReportInsights['sets'][number]): string {
@@ -198,6 +218,14 @@ export function buildPlayerReportHtml(
         .join('')
     : '<tr><td colspan="5">No set data recorded.</td></tr>';
   const taggedPercent = exactPercent(summary.taggedPointCount, insights.pointCount);
+  const directionRows = contextRows(
+    summary.shotDirections,
+    'No tracked-player shot directions recorded.',
+  );
+  const rallyRows = contextRows(
+    summary.rallyLengths,
+    'No rally-length tags recorded.',
+  );
   const pointsWonTile = rate(insights.trackedPointsWon, insights.pointCount);
   const serviceWonTile = rate(insights.servicePointsWon, insights.trackedServicePoints);
   const returnWonTile = rate(insights.returnPointsWon, insights.trackedReturnPoints);
@@ -238,6 +266,8 @@ export function buildPlayerReportHtml(
       .trend-note { background: #f7f4eb; border-radius: 6px; color: #53685f; font-size: 10px; line-height: 1.5; margin: 9px 0 0; padding: 9px 11px; }
       .note { color: #718078; font-size: 8px; line-height: 1.5; margin-top: 20px; }
       .note a { color: #245d4b; }
+      h3 { break-after: avoid; color: #183a30; font-size: 11px; margin: 14px 0 6px; }
+      .context-coverage { color: #60746c; font-size: 9px; margin: 3px 0 7px; }
     </style>
   </head>
   <body>
@@ -313,8 +343,25 @@ export function buildPlayerReportHtml(
       </thead>
       <tbody>${shotRows}</tbody>
     </table>
+    <h2>Tactical context</h2>
+    <p class="context-coverage">
+      Direction records the tracked player's last shot on a point. Rally length counts shots including the serve.
+      A category's win rate is shown only after at least 3 tagged points.
+    </p>
+    <h3>Tracked-player shot direction</h3>
+    <p class="context-coverage">${summary.shotDirectionTaggedCount} of ${insights.pointCount} points tagged with direction</p>
+    <table>
+      <thead><tr><th>Direction</th><th>Tagged points</th><th>Tracked-player point win rate</th></tr></thead>
+      <tbody>${directionRows}</tbody>
+    </table>
+    <h3>Rally length</h3>
+    <p class="context-coverage">${summary.rallyLengthTaggedCount} of ${insights.pointCount} points tagged with rally length</p>
+    <table>
+      <thead><tr><th>Length (shots)</th><th>Tagged points</th><th>Tracked-player point win rate</th></tr></thead>
+      <tbody>${rallyRows}</tbody>
+    </table>
     <p class="note">
-      Generated on this device from the saved point log. Rates show count/denominator and percentage; tagged-ending analysis only covers tagged points. Small samples are directional, not conclusions. Break-point and rally-length statistics are omitted because the logger does not record them. Category layout references:
+      Generated on this device from the saved point log. Rates show count/denominator and percentage; tagged-ending analysis only covers tagged points. Small samples are directional, not conclusions. Break-point statistics are omitted because the logger does not record point-level game score. Category layout references:
       <a href="https://www.atptour.com/en/scores/stats-centre/archive/2018/605/ms001">ATP Tour Stats Centre</a> and
       <a href="https://www.itftennis.com/en/match?matchId=faa89f46-3451-48b3-9fae-cba92da84cf6">ITF match statistics</a>.
       No online match data or tour-average benchmarks are used.

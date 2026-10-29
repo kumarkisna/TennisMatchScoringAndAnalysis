@@ -1,7 +1,12 @@
-import type {
-  LocalSetInsights,
-  PointCode,
-  ServeSideStats,
+import {
+  RALLY_LENGTH_OPTIONS,
+  SHOT_DIRECTION_OPTIONS,
+  type LocalContextInsight,
+  type LocalSetInsights,
+  type PointCode,
+  type RallyLength,
+  type ServeSideStats,
+  type ShotDirection,
 } from '@/lib/local-matches';
 
 const shotCodes = ['A', 'F', 'B', 'V', 'O', 'P'] as const satisfies readonly PointCode[];
@@ -45,7 +50,19 @@ export interface PlayerPerformanceSummary {
   shotTagCount: number;
   taggedPointCount: number;
   codeInsights: PlayerCodeInsight[];
+  shotDirectionTaggedCount: number;
+  rallyLengthTaggedCount: number;
+  shotDirections: ContextPerformanceInsight<ShotDirection>[];
+  rallyLengths: ContextPerformanceInsight<RallyLength>[];
   feedback: string[];
+}
+
+export interface ContextPerformanceInsight<T extends string> {
+  value: T;
+  label: string;
+  count: number;
+  trackedWon: number;
+  trackedWinPercent: number | null;
 }
 
 export interface PlayerReportInsights {
@@ -58,6 +75,8 @@ export interface PlayerReportInsights {
   trackedFirstServeFaults: number;
   codes: { code: string; count: number; trackedWon: number }[];
   serveStats: Record<'tracked' | 'opponent', ServeSideStats>;
+  shotDirections: LocalContextInsight<ShotDirection>[];
+  rallyLengths: LocalContextInsight<RallyLength>[];
   sets: LocalSetInsights[];
 }
 
@@ -70,6 +89,24 @@ function isPointCode(value: string): value is PointCode {
 function percent(numerator: number, denominator: number): number | null {
   if (denominator === 0) return null;
   return Math.round((numerator / denominator) * 100);
+}
+
+function summarizeContext<T extends string>(
+  options: readonly { value: T; label: string }[],
+  records: readonly LocalContextInsight<T>[],
+): ContextPerformanceInsight<T>[] {
+  const byValue = new Map(records.map((record) => [record.value, record]));
+  return options.map((option) => {
+    const record = byValue.get(option.value);
+    const count = record?.count ?? 0;
+    const trackedWon = record?.trackedWon ?? 0;
+    return {
+      ...option,
+      count,
+      trackedWon,
+      trackedWinPercent: count >= 3 ? percent(trackedWon, count) : null,
+    };
+  });
 }
 
 export function summarizePlayerPerformance(
@@ -128,6 +165,23 @@ export function summarizePlayerPerformance(
       (a, b) =>
         b.count - a.count || a.code.localeCompare(b.code),
     );
+
+  const shotDirections = summarizeContext(
+    SHOT_DIRECTION_OPTIONS,
+    insights.shotDirections ?? [],
+  );
+  const rallyLengths = summarizeContext(
+    RALLY_LENGTH_OPTIONS,
+    insights.rallyLengths ?? [],
+  );
+  const shotDirectionTaggedCount = shotDirections.reduce(
+    (total, item) => total + item.count,
+    0,
+  );
+  const rallyLengthTaggedCount = rallyLengths.reduce(
+    (total, item) => total + item.count,
+    0,
+  );
 
   const feedback: string[] = [];
   const shotFeedback: string[] = [];
@@ -231,6 +285,10 @@ export function summarizePlayerPerformance(
     shotTagCount,
     taggedPointCount,
     codeInsights,
+    shotDirectionTaggedCount,
+    rallyLengthTaggedCount,
+    shotDirections,
+    rallyLengths,
     feedback: [...feedback.slice(0, 3), ...shotFeedback].slice(0, 4),
   };
 }

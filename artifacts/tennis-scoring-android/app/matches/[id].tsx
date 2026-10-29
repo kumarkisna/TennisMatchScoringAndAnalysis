@@ -33,6 +33,8 @@ import {
   localInsightsKey,
   localMatchKey,
   recordLocalPoint,
+  RALLY_LENGTH_OPTIONS,
+  SHOT_DIRECTION_OPTIONS,
   updateLocalMatchDetails,
   undoLocalPoint,
   validateLocalMatchDetails,
@@ -43,6 +45,8 @@ import {
   type NewLocalPoint,
   type PlayerSide,
   type PointCode,
+  type RallyLength,
+  type ShotDirection,
   type SetFormat,
 } from '@/lib/local-matches';
 import { summarizePlayerPerformance } from '@/lib/player-insights';
@@ -199,6 +203,9 @@ export default function MatchScreen() {
   const matchId = Array.isArray(params.id) ? params.id[0] ?? '' : params.id ?? '';
   const [endingCode, setEndingCode] = useState<PointCode | null>(null);
   const [firstServeFault, setFirstServeFault] = useState(false);
+  const [isPointContextExpanded, setIsPointContextExpanded] = useState(false);
+  const [shotDirection, setShotDirection] = useState<ShotDirection | null>(null);
+  const [rallyLength, setRallyLength] = useState<RallyLength | null>(null);
   const [isExportingReport, setIsExportingReport] = useState(false);
   const [reportExportError, setReportExportError] = useState('');
   const [customTiebreakTarget, setCustomTiebreakTarget] = useState('');
@@ -219,6 +226,11 @@ export default function MatchScreen() {
   });
   useEffect(() => {
     setSelectedReviewSetNumber(null);
+    setEndingCode(null);
+    setFirstServeFault(false);
+    setShotDirection(null);
+    setRallyLength(null);
+    setIsPointContextExpanded(false);
   }, [matchId, matchQuery.data?.setNumber]);
   const onUpdated = (updatedMatch: LocalMatch) => {
     queryClient.setQueryData(localMatchKey(matchId), updatedMatch);
@@ -231,6 +243,8 @@ export default function MatchScreen() {
     onSuccess: (updatedMatch) => {
       setEndingCode(null);
       setFirstServeFault(false);
+      setShotDirection(null);
+      setRallyLength(null);
       onUpdated(updatedMatch);
     },
   });
@@ -328,7 +342,13 @@ export default function MatchScreen() {
 
   function addPoint(winner: Side) {
     if (!match || isReviewingHistoricalSet || match.score.isComplete || isBusy) return;
-    recordPoint.mutate({ winner, endingCode, firstServeFault });
+    recordPoint.mutate({
+      winner,
+      endingCode,
+      firstServeFault,
+      shotDirection,
+      rallyLength,
+    });
   }
 
   function addNextSet(format: SetFormat, tiebreakTarget = 10) {
@@ -1048,6 +1068,139 @@ export default function MatchScreen() {
               </View>
             </View>
 
+            <Pressable
+              testID="toggle-point-context"
+              accessibilityRole="button"
+              accessibilityLabel="Optional shot direction and rally length"
+              accessibilityState={{ expanded: isPointContextExpanded }}
+              onPress={() => setIsPointContextExpanded((current) => !current)}
+              style={[
+                styles.contextToggle,
+                { borderTopColor: colors.border },
+              ]}
+            >
+              <Ionicons
+                name={isPointContextExpanded ? 'chevron-up-outline' : 'add-circle-outline'}
+                size={17}
+                color={colors.primary}
+              />
+              <View style={styles.contextToggleCopy}>
+                <Text style={[styles.contextToggleTitle, { color: colors.foreground }]}>
+                  Shot context · optional
+                </Text>
+                <Text style={[styles.contextToggleHint, { color: colors.mutedForeground }]}>
+                  {[
+                    shotDirection
+                      ? SHOT_DIRECTION_OPTIONS.find((option) => option.value === shotDirection)?.label
+                      : null,
+                    rallyLength
+                      ? RALLY_LENGTH_OPTIONS.find((option) => option.value === rallyLength)?.label
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ') || 'Add direction or rally length'}
+                </Text>
+              </View>
+              <Ionicons
+                name={isPointContextExpanded ? 'chevron-up' : 'chevron-down'}
+                size={15}
+                color={colors.mutedForeground}
+              />
+            </Pressable>
+            {isPointContextExpanded ? (
+              <View
+                style={[
+                  styles.contextPanel,
+                  { backgroundColor: colors.background, borderColor: colors.border },
+                ]}
+              >
+                <Text style={[styles.codeGroupLabel, { color: colors.mutedForeground }]}>
+                  TRACKED PLAYER’S LAST SHOT
+                </Text>
+                <View style={styles.codeWrap}>
+                  {SHOT_DIRECTION_OPTIONS.map((option) => {
+                    const selected = shotDirection === option.value;
+                    return (
+                      <Pressable
+                        key={option.value}
+                        testID={`shot-direction-${option.value}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Tracked-player shot direction: ${option.label}`}
+                        accessibilityState={{ selected }}
+                        onPress={() =>
+                          setShotDirection((current) =>
+                            current === option.value ? null : option.value,
+                          )
+                        }
+                        style={[
+                          styles.contextChip,
+                          {
+                            backgroundColor: selected ? colors.primary : colors.card,
+                            borderColor: selected ? colors.primary : colors.border,
+                            borderRadius: colors.radius,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.contextChipText,
+                            { color: selected ? colors.primaryForeground : colors.foreground },
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <Text style={[styles.contextHelp, { color: colors.mutedForeground }]}>
+                  Leave blank if you did not observe a tracked-player shot.
+                </Text>
+                <Text style={[styles.codeGroupLabel, { color: colors.mutedForeground }]}>
+                  RALLY LENGTH
+                </Text>
+                <View style={styles.codeWrap}>
+                  {RALLY_LENGTH_OPTIONS.map((option) => {
+                    const selected = rallyLength === option.value;
+                    return (
+                      <Pressable
+                        key={option.value}
+                        testID={`rally-length-${option.value}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Rally length: ${option.label}`}
+                        accessibilityState={{ selected }}
+                        onPress={() =>
+                          setRallyLength((current) =>
+                            current === option.value ? null : option.value,
+                          )
+                        }
+                        style={[
+                          styles.contextChip,
+                          {
+                            backgroundColor: selected ? colors.primary : colors.card,
+                            borderColor: selected ? colors.primary : colors.border,
+                            borderRadius: colors.radius,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.contextChipText,
+                            { color: selected ? colors.primaryForeground : colors.foreground },
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <Text style={[styles.contextHelp, { color: colors.mutedForeground }]}>
+                  Count all shots, including the serve. Both fields can stay blank.
+                </Text>
+              </View>
+            ) : null}
+
             {recordError ? (
               <View accessibilityRole="alert" style={styles.mutationError}>
                 <Ionicons name="alert-circle-outline" size={16} color={colors.destructive} />
@@ -1318,6 +1471,69 @@ export default function MatchScreen() {
                 </Text>
               </View>
             )}
+            <View style={[styles.codeStats, { borderTopColor: colors.border }]}>
+              <Text style={[styles.codeStatsTitle, { color: colors.foreground }]}>
+                TACTICAL CONTEXT
+              </Text>
+              <Text style={[styles.insightHint, { color: colors.mutedForeground }]}>
+                {performance.shotDirectionTaggedCount === 0 &&
+                performance.rallyLengthTaggedCount === 0
+                  ? 'No direction or rally-length tags yet. Expand Shot context while recording a point.'
+                  : `Direction: ${performance.shotDirectionTaggedCount}/${insightsQuery.data.pointCount} points · Rally length: ${performance.rallyLengthTaggedCount}/${insightsQuery.data.pointCount}. Rates require 3 tags in a category.`}
+              </Text>
+              {performance.shotDirections.some((item) => item.count > 0) ? (
+                <View style={styles.contextInsightsGroup}>
+                  <Text style={[styles.contextInsightsTitle, { color: colors.foreground }]}>
+                    Tracked-player last shot
+                  </Text>
+                  {performance.shotDirections
+                    .filter((item) => item.count > 0)
+                    .map((item) => (
+                      <View key={item.value} style={styles.contextInsightRow}>
+                        <View style={styles.contextInsightCopy}>
+                          <Text style={[styles.contextInsightLabel, { color: colors.foreground }]}>
+                            {item.label} · {item.count} tagged
+                          </Text>
+                          <Text style={[styles.codeStatDetail, { color: colors.mutedForeground }]}>
+                            {item.trackedWon}/{item.count} tracked-player points won
+                          </Text>
+                        </View>
+                        <Text style={[styles.contextInsightRate, { color: colors.primary }]}>
+                          {item.trackedWinPercent === null
+                            ? 'Need 3 tags'
+                            : `${item.trackedWinPercent}%`}
+                        </Text>
+                      </View>
+                    ))}
+                </View>
+              ) : null}
+              {performance.rallyLengths.some((item) => item.count > 0) ? (
+                <View style={styles.contextInsightsGroup}>
+                  <Text style={[styles.contextInsightsTitle, { color: colors.foreground }]}>
+                    Rally length · shots including serve
+                  </Text>
+                  {performance.rallyLengths
+                    .filter((item) => item.count > 0)
+                    .map((item) => (
+                      <View key={item.value} style={styles.contextInsightRow}>
+                        <View style={styles.contextInsightCopy}>
+                          <Text style={[styles.contextInsightLabel, { color: colors.foreground }]}>
+                            {item.label} · {item.count} tagged
+                          </Text>
+                          <Text style={[styles.codeStatDetail, { color: colors.mutedForeground }]}>
+                            {item.trackedWon}/{item.count} tracked-player points won
+                          </Text>
+                        </View>
+                        <Text style={[styles.contextInsightRate, { color: colors.primary }]}>
+                          {item.trackedWinPercent === null
+                            ? 'Need 3 tags'
+                            : `${item.trackedWinPercent}%`}
+                        </Text>
+                      </View>
+                    ))}
+                </View>
+              ) : null}
+            </View>
           </View>
         ) : (
           <View style={[styles.insightCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -1385,6 +1601,12 @@ export default function MatchScreen() {
                       Game {point.gameNumber}
                       {point.isTiebreak ? ' · tie-break' : ''}
                       {point.firstServeFault ? ' · first fault' : ''}
+                      {point.shotDirection
+                        ? ` · ${SHOT_DIRECTION_OPTIONS.find((option) => option.value === point.shotDirection)?.label ?? 'Direction tagged'}`
+                        : ''}
+                      {point.rallyLength
+                        ? ` · ${RALLY_LENGTH_OPTIONS.find((option) => option.value === point.rallyLength)?.label ?? 'Rally tagged'}`
+                        : ''}
                     </Text>
                   </View>
                   <Text style={[styles.logCode, { color: colors.accent }]}>
@@ -1796,6 +2018,14 @@ const styles = StyleSheet.create({
   codeChip: { minHeight: 35, borderWidth: 1, borderRadius: 7, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 4 },
   codeChipCode: { fontFamily: 'DMSans_700Bold', fontSize: 10 },
   codeChipLabel: { fontFamily: 'DMSans_400Regular', fontSize: 9 },
+  contextToggle: { marginTop: 12, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  contextToggleCopy: { flex: 1, gap: 2 },
+  contextToggleTitle: { fontFamily: 'DMSans_600SemiBold', fontSize: 10 },
+  contextToggleHint: { fontFamily: 'DMSans_400Regular', fontSize: 9 },
+  contextPanel: { marginTop: 8, borderWidth: 1, borderRadius: 9, padding: 10, gap: 7 },
+  contextChip: { minHeight: 31, borderWidth: 1, paddingHorizontal: 9, justifyContent: 'center' },
+  contextChipText: { fontFamily: 'DMSans_500Medium', fontSize: 9 },
+  contextHelp: { fontFamily: 'DMSans_400Regular', fontSize: 9, lineHeight: 13 },
   mutationError: { marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 7 },
   mutationErrorText: { flex: 1, fontFamily: 'DMSans_500Medium', fontSize: 11 },
   sectionHeader: { marginTop: 25, marginBottom: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
@@ -1844,6 +2074,12 @@ const styles = StyleSheet.create({
   codeStats: { marginTop: 12, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
   codeStatsTitle: { marginBottom: 6, fontFamily: 'DMSans_700Bold', fontSize: 8, letterSpacing: 1 },
   codeStatRow: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  contextInsightsGroup: { marginTop: 8, gap: 4 },
+  contextInsightsTitle: { marginBottom: 2, fontFamily: 'DMSans_600SemiBold', fontSize: 9 },
+  contextInsightRow: { minHeight: 33, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  contextInsightCopy: { flex: 1 },
+  contextInsightLabel: { fontFamily: 'DMSans_500Medium', fontSize: 9 },
+  contextInsightRate: { minWidth: 64, textAlign: 'right', fontFamily: 'DMSans_700Bold', fontSize: 9, fontVariant: ['tabular-nums'] },
   statCode: { width: 28, fontFamily: 'DMSans_700Bold', fontSize: 11 },
   codeStatCopy: { flex: 1 },
   statCodeLabel: { fontFamily: 'DMSans_600SemiBold', fontSize: 10 },

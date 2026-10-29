@@ -6,6 +6,23 @@ export type CourtSurface = 'Hard' | 'Clay' | 'Grass' | 'Carpet' | 'Other';
 export type SetFormat = 'standard' | 'match_tiebreak';
 export type LocalSyncStatus = 'local_only' | 'pending' | 'synced' | 'error';
 
+export const SHOT_DIRECTION_OPTIONS = [
+  { value: 'cross_court', label: 'Cross-court' },
+  { value: 'down_the_line', label: 'Down the line' },
+  { value: 'middle', label: 'Middle' },
+] as const;
+
+export type ShotDirection = (typeof SHOT_DIRECTION_OPTIONS)[number]['value'];
+
+export const RALLY_LENGTH_OPTIONS = [
+  { value: '1-3', label: '1–3 shots' },
+  { value: '4-6', label: '4–6 shots' },
+  { value: '7-9', label: '7–9 shots' },
+  { value: '10+', label: '10+ shots' },
+] as const;
+
+export type RallyLength = (typeof RALLY_LENGTH_OPTIONS)[number]['value'];
+
 export interface LocalSetRecord {
   setNumber: number;
   firstServer: PlayerSide;
@@ -42,6 +59,8 @@ export interface LocalPoint {
   winner: PlayerSide;
   endingCode: PointCode | null;
   firstServeFault: boolean;
+  shotDirection?: ShotDirection | null;
+  rallyLength?: RallyLength | null;
   syncStatus: 'pending' | 'synced';
   createdAt: string;
 }
@@ -93,6 +112,14 @@ export interface NewLocalPoint {
   winner: PlayerSide;
   endingCode?: PointCode | null;
   firstServeFault?: boolean;
+  shotDirection?: ShotDirection | null;
+  rallyLength?: RallyLength | null;
+}
+
+export interface LocalContextInsight<T extends string> {
+  value: T;
+  count: number;
+  trackedWon: number;
 }
 
 export interface LocalMatchSummary {
@@ -137,6 +164,8 @@ export interface LocalInsights {
   returnPointsWon: number;
   servicePointsWon: number;
   serveStats: Record<PlayerSide, ServeSideStats>;
+  shotDirections: LocalContextInsight<ShotDirection>[];
+  rallyLengths: LocalContextInsight<RallyLength>[];
   sets: LocalSetInsights[];
 }
 
@@ -612,6 +641,8 @@ export async function recordLocalPoint(
       winner: input.winner,
       endingCode: input.endingCode ?? null,
       firstServeFault: input.firstServeFault ?? false,
+      shotDirection: input.shotDirection ?? null,
+      rallyLength: input.rallyLength ?? null,
       syncStatus: 'synced',
       createdAt: new Date().toISOString(),
     };
@@ -884,6 +915,24 @@ export async function getLocalInsights(
     PointCode,
     { count: number; trackedWon: number; opponentWon: number }
   >();
+  const shotDirectionCounts = new Map<
+    ShotDirection,
+    { count: number; trackedWon: number }
+  >(
+    SHOT_DIRECTION_OPTIONS.map(({ value }) => [
+      value,
+      { count: 0, trackedWon: 0 },
+    ]),
+  );
+  const rallyLengthCounts = new Map<
+    RallyLength,
+    { count: number; trackedWon: number }
+  >(
+    RALLY_LENGTH_OPTIONS.map(({ value }) => [
+      value,
+      { count: 0, trackedWon: 0 },
+    ]),
+  );
   const serveStats: Record<PlayerSide, ServeSideStats> = {
     tracked: {
       servicePoints: 0,
@@ -921,6 +970,20 @@ export async function getLocalInsights(
   for (const point of allPoints) {
     if (point.winner === 'tracked') trackedPointsWon += 1;
     else opponentPointsWon += 1;
+    if (point.shotDirection) {
+      const directionStats = shotDirectionCounts.get(point.shotDirection);
+      if (directionStats) {
+        directionStats.count += 1;
+        if (point.winner === 'tracked') directionStats.trackedWon += 1;
+      }
+    }
+    if (point.rallyLength) {
+      const rallyStats = rallyLengthCounts.get(point.rallyLength);
+      if (rallyStats) {
+        rallyStats.count += 1;
+        if (point.winner === 'tracked') rallyStats.trackedWon += 1;
+      }
+    }
     const secondServePoint = point.firstServeFault || point.endingCode === 'D';
     if (secondServePoint) firstServeFaults += 1;
     const servingPlayer = serveStats[point.server];
@@ -1016,6 +1079,14 @@ export async function getLocalInsights(
     returnPointsWon,
     servicePointsWon,
     serveStats,
+    shotDirections: [...shotDirectionCounts.entries()].map(([value, stats]) => ({
+      value,
+      ...stats,
+    })),
+    rallyLengths: [...rallyLengthCounts.entries()].map(([value, stats]) => ({
+      value,
+      ...stats,
+    })),
     sets,
   };
 }
