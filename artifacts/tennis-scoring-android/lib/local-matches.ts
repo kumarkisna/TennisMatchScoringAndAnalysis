@@ -3,6 +3,20 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export type PlayerSide = 'tracked' | 'opponent';
 export type PointCode = 'A' | 'F' | 'B' | 'V' | 'O' | 'P' | 'N' | 'L' | 'W' | 'D' | 'FE';
 export type CourtSurface = 'Hard' | 'Clay' | 'Grass' | 'Carpet' | 'Other';
+export type SetFormat = 'standard' | 'match_tiebreak';
+
+export interface LocalSetRecord {
+  setNumber: number;
+  firstServer: PlayerSide;
+  format: SetFormat;
+  tiebreakTarget: number;
+  score: ScoreState;
+  points: LocalPoint[];
+}
+
+export interface LocalSetResult extends LocalSetRecord {
+  isCurrent: boolean;
+}
 
 export interface ScoreState {
   trackedGames: number;
@@ -41,6 +55,10 @@ export interface LocalMatch {
   chairCoach: string | null;
   surface: CourtSurface;
   firstServer: PlayerSide;
+  setFormat: SetFormat;
+  tiebreakTarget: number;
+  completedSets: LocalSetRecord[];
+  matchStatus: 'in_progress' | 'complete';
   status: 'in_progress' | 'complete';
   score: ScoreState;
   points: LocalPoint[];
@@ -78,6 +96,16 @@ export interface LocalMatchSummary {
   status: 'in_progress' | 'complete';
   trackedGames: number;
   opponentGames: number;
+  setScores: {
+    setNumber: number;
+    format: SetFormat;
+    tiebreakTarget: number;
+    trackedGames: number;
+    opponentGames: number;
+    trackedTiebreakPoints: number;
+    opponentTiebreakPoints: number;
+    isComplete: boolean;
+  }[];
   pointCount: number;
   winner: PlayerSide | null;
   updatedAt: string;
@@ -141,7 +169,26 @@ async function readMatch(id: string): Promise<LocalMatch | null> {
   if (!value || typeof value !== 'object' || !('id' in value) || value.id !== id) {
     throw new Error('A saved match could not be read. Its local data was not changed.');
   }
-  return value as LocalMatch;
+  return normalizeLocalMatch(value as Record<string, unknown>);
+}
+
+function normalizeLocalMatch(value: Record<string, unknown>): LocalMatch {
+  const legacyStatus = value.status === 'complete' ? 'complete' : 'in_progress';
+  return {
+    ...(value as unknown as LocalMatch),
+    setFormat: value.setFormat === 'match_tiebreak' ? 'match_tiebreak' : 'standard',
+    tiebreakTarget:
+      typeof value.tiebreakTarget === 'number' && value.tiebreakTarget >= 1
+        ? value.tiebreakTarget
+        : 10,
+    completedSets: Array.isArray(value.completedSets)
+      ? (value.completedSets as LocalSetRecord[])
+      : [],
+    matchStatus:
+      value.matchStatus === 'complete' || value.matchStatus === 'in_progress'
+        ? value.matchStatus
+        : legacyStatus,
+  };
 }
 
 async function writeMatch(match: LocalMatch): Promise<void> {
@@ -187,7 +234,7 @@ function tiebreakServer(
 }
 
 export function calculateLocalScore(
-  match: Pick<LocalMatch, 'firstServer'>,
+  match: Pick<LocalMatch, 'firstServer' | 'setFormat' | 'tiebreakTarget'>,
   points: Pick<LocalPoint, 'winner' | 'isTiebreak'>[],
 ): ScoreState {
   let trackedGames = 0;
@@ -203,18 +250,24 @@ export function calculateLocalScore(
       if (point.winner === 'tracked') trackedTiebreakPoints += 1;
       else opponentTiebreakPoints += 1;
 
+      const tiebreakTarget =
+        match.setFormat === 'match_tiebreak' ? match.tiebreakTarget : 7;
       if (
-        Math.max(trackedTiebreakPoints, opponentTiebreakPoints) >= 7 &&
+        Math.max(trackedTiebreakPoints, opponentTiebreakPoints) >= tiebreakTarget &&
         Math.abs(trackedTiebreakPoints - opponentTiebreakPoints) >= 2
       ) {
-        if (trackedTiebreakPoints > opponentTiebreakPoints) {
-          trackedGames = 7;
-          opponentGames = 6;
-          winner = 'tracked';
+        if (match.setFormat === 'standard') {
+          if (trackedTiebreakPoints > opponentTiebreakPoints) {
+            trackedGames = 7;
+            opponentGames = 6;
+            winner = 'tracked';
+          } else {
+            trackedGames = 6;
+            opponentGames = 7;
+            winner = 'opponent';
+          }
         } else {
-          trackedGames = 6;
-          opponentGames = 7;
-          winner = 'opponent';
+          winner = trackedTiebreakPoints > opponentTiebreakPoints ? 'tracked' : 'opponent';
         }
       }
       continue;
@@ -243,14 +296,18 @@ export function calculateLocalScore(
   }
 
   const isComplete = winner !== null;
-  const isTiebreak = !isComplete && trackedGames === 6 && opponentGames === 6;
+  const isMatchTiebreak = match.setFormat === 'match_tiebreak';
+  const isTiebreak =
+    isMatchTiebreak || (!isComplete && trackedGames === 6 && opponentGames === 6);
   const gameNumber = trackedGames + opponentGames + 1;
-  const nextServer = isTiebreak
-    ? tiebreakServer(
+  const nextServer = isMatchTiebreak && isComplete
+    ? opposite(match.firstServer)
+    : isTiebreak
+      ? tiebreakServer(
         match.firstServer,
         trackedTiebreakPoints + opponentTiebreakPoints,
       )
-    : gameServer(match.firstServer, gameNumber);
+      : gameServer(match.firstServer, gameNumber);
 
   return {
     trackedGames,
@@ -271,6 +328,9 @@ export function calculateLocalScore(
 }
 
 function summarize(match: LocalMatch): LocalMatchSummary {
+  const setHistory = getLocalSetHistory(match);
+  const trackedSetsWon = setHistory.filter((set) => set.score.winner === 'tracked').length;
+  const opponentSetsWon = setHistory.filter((set) => set.score.winner === 'opponent').length;
   return {
     id: match.id,
     matchDate: match.matchDate,
@@ -280,11 +340,26 @@ function summarize(match: LocalMatch): LocalMatchSummary {
     trackedPlayer: match.trackedPlayer,
     opponent: match.opponent,
     surface: match.surface,
-    status: match.status,
+    status: match.matchStatus,
     trackedGames: match.score.trackedGames,
     opponentGames: match.score.opponentGames,
-    pointCount: match.points.length,
-    winner: match.score.winner,
+    setScores: setHistory.map((set) => ({
+      setNumber: set.setNumber,
+      format: set.format,
+      tiebreakTarget: set.tiebreakTarget,
+      trackedGames: set.score.trackedGames,
+      opponentGames: set.score.opponentGames,
+      trackedTiebreakPoints: set.score.trackedTiebreakPoints,
+      opponentTiebreakPoints: set.score.opponentTiebreakPoints,
+      isComplete: set.score.isComplete,
+    })),
+    pointCount: setHistory.reduce((total, set) => total + set.points.length, 0),
+    winner:
+      match.matchStatus === 'complete' && trackedSetsWon !== opponentSetsWon
+        ? trackedSetsWon > opponentSetsWon
+          ? 'tracked'
+          : 'opponent'
+        : null,
     updatedAt: match.updatedAt,
   };
 }
@@ -300,7 +375,7 @@ export async function listLocalMatches(): Promise<LocalMatchSummary[]> {
     if (!value || typeof value !== 'object' || !('id' in value)) {
       throw new Error(`A local match record could not be read (${key}).`);
     }
-    matches.push(value as LocalMatch);
+    matches.push(normalizeLocalMatch(value as Record<string, unknown>));
   }
 
   return matches
@@ -319,6 +394,10 @@ export async function createLocalMatch(input: NewLocalMatch): Promise<LocalMatch
     const base = {
       id,
       ...input,
+      setFormat: 'standard' as const,
+      tiebreakTarget: 10,
+      completedSets: [] as LocalSetRecord[],
+      matchStatus: 'in_progress' as const,
       points: [] as LocalPoint[],
       createdAt: now,
       updatedAt: now,
@@ -346,11 +425,13 @@ export async function recordLocalPoint(
     const score = calculateLocalScore(match, match.points);
     if (score.isComplete) throw new Error('This set is already complete.');
 
-    const gameNumber = score.trackedGames + score.opponentGames + 1;
+    const gameNumber =
+      match.setFormat === 'match_tiebreak'
+        ? 1
+        : score.trackedGames + score.opponentGames + 1;
     const isTiebreak =
-      !score.isComplete &&
-      score.trackedGames === 6 &&
-      score.opponentGames === 6;
+      match.setFormat === 'match_tiebreak' ||
+      (!score.isComplete && score.trackedGames === 6 && score.opponentGames === 6);
     const tiebreakPointCount = match.points.filter((point) => point.isTiebreak).length;
     const point: LocalPoint = {
       id: newId(),
@@ -394,9 +475,87 @@ export async function undoLocalPoint(id: string): Promise<LocalMatch> {
       points,
       score,
       status: score.isComplete ? 'complete' : 'in_progress',
+      matchStatus: 'in_progress',
       updatedAt: new Date().toISOString(),
     };
 
+    await writeMatch(updated);
+    return updated;
+  });
+}
+
+export function getLocalSetHistory(match: LocalMatch): LocalSetResult[] {
+  return [
+    ...match.completedSets.map((set) => ({ ...set, isCurrent: false })),
+    {
+      setNumber: match.setNumber,
+      firstServer: match.firstServer,
+      format: match.setFormat,
+      tiebreakTarget: match.tiebreakTarget,
+      score: match.score,
+      points: match.points,
+      isCurrent: true,
+    },
+  ];
+}
+
+export async function addLocalSet(
+  id: string,
+  format: SetFormat,
+  tiebreakTarget = 10,
+): Promise<LocalMatch> {
+  return withWriteLock(async () => {
+    const match = await readMatch(id);
+    if (!match) throw new Error('This match is not saved on this device.');
+    if (!match.score.isComplete) {
+      throw new Error('Finish the current set before adding another set.');
+    }
+    if (
+      format === 'match_tiebreak' &&
+      (!Number.isInteger(tiebreakTarget) || tiebreakTarget < 1 || tiebreakTarget > 99)
+    ) {
+      throw new Error('A tiebreak target must be a whole number from 1 to 99.');
+    }
+
+    const completedSet: LocalSetRecord = {
+      setNumber: match.setNumber,
+      firstServer: match.firstServer,
+      format: match.setFormat,
+      tiebreakTarget: match.tiebreakTarget,
+      score: match.score,
+      points: match.points,
+    };
+    const next = {
+      ...match,
+      setNumber: match.setNumber + 1,
+      firstServer: match.score.nextServer,
+      setFormat: format,
+      tiebreakTarget: format === 'match_tiebreak' ? tiebreakTarget : 10,
+      completedSets: [...match.completedSets, completedSet],
+      matchStatus: 'in_progress' as const,
+      points: [] as LocalPoint[],
+      status: 'in_progress' as const,
+      updatedAt: new Date().toISOString(),
+    };
+    const score = calculateLocalScore(next, next.points);
+    const updated: LocalMatch = { ...next, score };
+    await writeMatch(updated);
+    return updated;
+  });
+}
+
+export async function finishLocalMatch(id: string): Promise<LocalMatch> {
+  return withWriteLock(async () => {
+    const match = await readMatch(id);
+    if (!match) throw new Error('This match is not saved on this device.');
+    if (!match.score.isComplete) {
+      throw new Error('Finish the current set before finishing the match.');
+    }
+    const updated: LocalMatch = {
+      ...match,
+      matchStatus: 'complete',
+      updatedAt: new Date().toISOString(),
+    };
     await writeMatch(updated);
     return updated;
   });
@@ -419,7 +578,8 @@ export async function getLocalInsights(id: string): Promise<LocalInsights | null
   let servicePointsWon = 0;
   let returnPointsWon = 0;
 
-  for (const point of match.points) {
+  const allPoints = getLocalSetHistory(match).flatMap((set) => set.points);
+  for (const point of allPoints) {
     if (point.winner === 'tracked') trackedPointsWon += 1;
     else opponentPointsWon += 1;
     if (point.firstServeFault) firstServeFaults += 1;
@@ -446,7 +606,7 @@ export async function getLocalInsights(id: string): Promise<LocalInsights | null
   }
 
   return {
-    pointCount: match.points.length,
+    pointCount: allPoints.length,
     trackedPointsWon,
     opponentPointsWon,
     firstServeFaults,

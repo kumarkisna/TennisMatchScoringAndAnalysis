@@ -9,6 +9,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import {
@@ -23,15 +24,20 @@ import * as Sharing from 'expo-sharing';
 import {
   getLocalInsights,
   getLocalMatch,
+  getLocalSetHistory,
   LOCAL_MATCH_LIST_KEY,
+  addLocalSet,
+  finishLocalMatch,
   localInsightsKey,
   localMatchKey,
   recordLocalPoint,
   undoLocalPoint,
   type LocalMatch,
+  type LocalSetResult,
   type NewLocalPoint,
   type PlayerSide,
   type PointCode,
+  type SetFormat,
 } from '@/lib/local-matches';
 import { summarizePlayerPerformance } from '@/lib/player-insights';
 import { buildPlayerReportHtml } from '@/lib/player-report-html';
@@ -77,6 +83,13 @@ function formatDate(value: string) {
 
 function formatPercent(value: number | null) {
   return value === null ? '—' : `${value}%`;
+}
+
+function formatSetResult(set: LocalSetResult) {
+  if (set.format === 'match_tiebreak') {
+    return `${set.score.trackedTiebreakPoints}–${set.score.opponentTiebreakPoints} TB`;
+  }
+  return `${set.score.trackedGames}–${set.score.opponentGames}`;
 }
 
 function CodeCell({
@@ -136,6 +149,7 @@ export default function MatchScreen() {
   const [firstServeFault, setFirstServeFault] = useState(false);
   const [isExportingReport, setIsExportingReport] = useState(false);
   const [reportExportError, setReportExportError] = useState('');
+  const [customTiebreakTarget, setCustomTiebreakTarget] = useState('');
 
   const matchQuery = useQuery({
     queryKey: localMatchKey(matchId),
@@ -166,9 +180,31 @@ export default function MatchScreen() {
     mutationFn: () => undoLocalPoint(matchId),
     onSuccess: onUpdated,
   });
+  const addSet = useMutation({
+    mutationFn: (input: { format: SetFormat; tiebreakTarget?: number }) =>
+      addLocalSet(matchId, input.format, input.tiebreakTarget),
+    onSuccess: (updatedMatch) => {
+      setCustomTiebreakTarget('');
+      onUpdated(updatedMatch);
+    },
+  });
+  const finishMatch = useMutation({
+    mutationFn: () => finishLocalMatch(matchId),
+    onSuccess: onUpdated,
+  });
 
   const match = matchQuery.data;
-  const isBusy = recordPoint.isPending || undoPoint.isPending;
+  const isBusy =
+    recordPoint.isPending ||
+    undoPoint.isPending ||
+    addSet.isPending ||
+    finishMatch.isPending;
+  const customTarget = Number(customTiebreakTarget);
+  const customTargetValid =
+    /^\d{1,2}$/.test(customTiebreakTarget) &&
+    Number.isInteger(customTarget) &&
+    customTarget >= 1 &&
+    customTarget <= 99;
   const performance = insightsQuery.data
     ? summarizePlayerPerformance(insightsQuery.data)
     : null;
@@ -176,6 +212,16 @@ export default function MatchScreen() {
   function addPoint(winner: Side) {
     if (!match || match.score.isComplete || isBusy) return;
     recordPoint.mutate({ winner, endingCode, firstServeFault });
+  }
+
+  function addNextSet(format: SetFormat, tiebreakTarget = 10) {
+    if (!match || !match.score.isComplete || isBusy) return;
+    addSet.mutate({ format, tiebreakTarget });
+  }
+
+  function finishCurrentMatch() {
+    if (!match || !match.score.isComplete || isBusy) return;
+    finishMatch.mutate();
   }
 
   function confirmUndo() {
@@ -272,6 +318,7 @@ export default function MatchScreen() {
 
   const trackedName = match.trackedPlayer;
   const opponentName = match.opponent;
+  const setHistory = getLocalSetHistory(match);
   const pointGroups = new Map<number, typeof match.points>();
   for (const point of match.points) {
     if (point.isTiebreak) continue;
@@ -297,8 +344,10 @@ export default function MatchScreen() {
   const serverName =
     match.score.nextServer === 'tracked' ? trackedName : opponentName;
   const recordError = recordPoint.error?.message || undoPoint.error?.message;
-  const pointTotal = match.score.trackedTiebreakPoints + match.score.opponentTiebreakPoints;
-  const maxTiebreakColumn = Math.max(7, tiebreakPoints.length);
+  const maxTiebreakColumn = Math.max(
+    match.setFormat === 'match_tiebreak' ? match.tiebreakTarget : 7,
+    tiebreakPoints.length,
+  );
 
   return (
     <SafeAreaView
@@ -354,12 +403,20 @@ export default function MatchScreen() {
         <View style={[styles.scoreboard, { backgroundColor: colors.primary }]}>
           <View style={styles.scoreboardTop}>
             <Text style={[styles.scoreboardLabel, { color: colors.primaryForeground }]}>
-              {match.score.isComplete ? `SET ${match.setNumber} COMPLETE` : match.score.isTiebreak ? 'TIE-BREAK' : `GAME ${currentGameNumber}`}
+              {match.score.isComplete
+                ? `SET ${match.setNumber} COMPLETE`
+                : match.setFormat === 'match_tiebreak'
+                  ? `MATCH TIE-BREAK · FIRST TO ${match.tiebreakTarget}`
+                  : match.score.isTiebreak
+                    ? 'TIE-BREAK'
+                    : `GAME ${currentGameNumber}`}
             </Text>
             <View style={styles.serverPill}>
               <Ionicons name="tennisball-outline" size={12} color={colors.primaryForeground} />
               <Text style={[styles.serverText, { color: colors.primaryForeground }]}>
-                SERVING · {serverName}
+                {match.score.isComplete
+                  ? `NEXT SET · ${serverName} SERVES`
+                  : `SERVING · ${serverName}`}
               </Text>
             </View>
           </View>
@@ -373,24 +430,37 @@ export default function MatchScreen() {
                 {opponentName}
               </Text>
             </View>
-            <View style={styles.scoreNumbers}>
-              <Text style={[styles.gamesNumber, { color: colors.primaryForeground }]}>
-                {match.score.trackedGames}
-              </Text>
-              <Text style={[styles.gamesDash, { color: colors.primaryForeground, opacity: 0.45 }]}>–</Text>
-              <Text style={[styles.gamesNumber, { color: colors.primaryForeground }]}>
-                {match.score.opponentGames}
-              </Text>
-            </View>
-            <View style={styles.pointNumbers}>
-              <Text style={[styles.pointNumber, { color: colors.primaryForeground }]}>
-                {match.score.trackedPoints}
-              </Text>
-              <Text style={[styles.pointDash, { color: colors.primaryForeground, opacity: 0.42 }]}>–</Text>
-              <Text style={[styles.pointNumber, { color: colors.primaryForeground }]}>
-                {match.score.opponentPoints}
-              </Text>
-            </View>
+            {match.setFormat === 'match_tiebreak' ? (
+              <View style={styles.matchTiebreakScore}>
+                <Text style={[styles.matchTiebreakScoreLabel, { color: colors.primaryForeground, opacity: 0.72 }]}>
+                  TIE-BREAK POINTS
+                </Text>
+                <Text style={[styles.matchTiebreakScoreValue, { color: colors.primaryForeground }]}>
+                  {match.score.trackedTiebreakPoints} – {match.score.opponentTiebreakPoints}
+                </Text>
+              </View>
+            ) : (
+              <>
+                <View style={styles.scoreNumbers}>
+                  <Text style={[styles.gamesNumber, { color: colors.primaryForeground }]}>
+                    {match.score.trackedGames}
+                  </Text>
+                  <Text style={[styles.gamesDash, { color: colors.primaryForeground, opacity: 0.45 }]}>–</Text>
+                  <Text style={[styles.gamesNumber, { color: colors.primaryForeground }]}>
+                    {match.score.opponentGames}
+                  </Text>
+                </View>
+                <View style={styles.pointNumbers}>
+                  <Text style={[styles.pointNumber, { color: colors.primaryForeground }]}>
+                    {match.score.trackedPoints}
+                  </Text>
+                  <Text style={[styles.pointDash, { color: colors.primaryForeground, opacity: 0.42 }]}>–</Text>
+                  <Text style={[styles.pointNumber, { color: colors.primaryForeground }]}>
+                    {match.score.opponentPoints}
+                  </Text>
+                </View>
+              </>
+            )}
           </View>
 
           <View style={[styles.scoreFooter, { borderTopColor: 'rgba(255,255,255,0.17)' }]}>
@@ -400,7 +470,7 @@ export default function MatchScreen() {
             </Text>
             {match.score.isComplete ? (
               <Text style={[styles.winnerText, { color: colors.primaryForeground }]}>
-                {pointWinnerName(match.score.winner ?? 'tracked')} wins
+                {pointWinnerName(match.score.winner ?? 'tracked')} wins Set {match.setNumber}
               </Text>
             ) : (
               <Text style={[styles.scoreFooterText, { color: colors.primaryForeground, opacity: 0.72 }]}>
@@ -410,13 +480,180 @@ export default function MatchScreen() {
           </View>
         </View>
 
-        {match.score.isComplete ? (
-          <View style={[styles.completeBanner, { backgroundColor: colors.secondary }]}>
-            <Ionicons name="checkmark-circle" size={19} color={colors.primary} />
-            <Text style={[styles.completeText, { color: colors.secondaryForeground }]}>
-              Set {match.setNumber} recorded. Review the player report below.
+        <View style={[styles.setHistoryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.setHistoryTop}>
+            <Text style={[styles.setHistoryTitle, { color: colors.foreground }]}>MATCH SETS</Text>
+            <Text style={[styles.setHistoryCount, { color: colors.mutedForeground }]}>
+              {setHistory.length} {setHistory.length === 1 ? 'set' : 'sets'}
             </Text>
           </View>
+          <View style={styles.setHistoryWrap}>
+            {setHistory.map((set) => (
+              <View
+                key={set.setNumber}
+                style={[
+                  styles.setHistoryChip,
+                  {
+                    backgroundColor: set.isCurrent ? colors.secondary : colors.background,
+                    borderColor: set.isCurrent ? colors.primary : colors.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.setHistoryLabel,
+                    { color: set.isCurrent ? colors.primary : colors.mutedForeground },
+                  ]}
+                >
+                  SET {set.setNumber}{set.isCurrent ? ' · CURRENT' : ''}
+                </Text>
+                <Text style={[styles.setHistoryScore, { color: colors.foreground }]}>
+                  {formatSetResult(set)}
+                </Text>
+                {set.format === 'match_tiebreak' ? (
+                  <Text style={[styles.setHistoryTarget, { color: colors.mutedForeground }]}>
+                    FIRST TO {set.tiebreakTarget}
+                  </Text>
+                ) : null}
+              </View>
+            ))}
+          </View>
+          <Text style={[styles.setHistoryHint, { color: colors.mutedForeground }]}>
+            All sets and points stay together in this match.
+          </Text>
+        </View>
+
+        {match.score.isComplete ? (
+          <>
+            <View style={[styles.completeBanner, { backgroundColor: colors.secondary }]}>
+              <Ionicons name="checkmark-circle" size={19} color={colors.primary} />
+              <Text style={[styles.completeText, { color: colors.secondaryForeground }]}>
+                Set {match.setNumber} is complete. Add another set or finish the match.
+              </Text>
+            </View>
+            <View style={[styles.setActionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.setActionTitle, { color: colors.foreground }]}>
+                {match.matchStatus === 'complete' ? 'Match finished' : `Add Set ${match.setNumber + 1}`}
+              </Text>
+              <Text style={[styles.setActionHint, { color: colors.mutedForeground }]}>
+                {serverName} serves first in the next set. Choose a format:
+              </Text>
+              <Pressable
+                testID="button-add-standard-set"
+                accessibilityRole="button"
+                disabled={isBusy}
+                onPress={() => addNextSet('standard')}
+                style={({ pressed }) => [
+                  styles.setActionButton,
+                  { backgroundColor: colors.primary, opacity: isBusy ? 0.55 : pressed ? 0.82 : 1 },
+                ]}
+              >
+                <Text style={[styles.setActionButtonText, { color: colors.primaryForeground }]}>
+                  Add standard set
+                </Text>
+              </Pressable>
+              <View style={styles.setActionRow}>
+                {[7, 10].map((target) => (
+                  <Pressable
+                    key={target}
+                    testID={`button-add-tiebreak-set-${target}`}
+                    accessibilityRole="button"
+                    disabled={isBusy}
+                    onPress={() => addNextSet('match_tiebreak', target)}
+                    style={({ pressed }) => [
+                      styles.setActionButton,
+                      styles.setActionButtonHalf,
+                      {
+                        backgroundColor: colors.secondary,
+                        opacity: isBusy ? 0.55 : pressed ? 0.82 : 1,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.setActionSecondaryText, { color: colors.secondaryForeground }]}>
+                      Add tiebreak to {target}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <View style={styles.customTargetRow}>
+                <TextInput
+                  testID="input-custom-tiebreak-target"
+                  accessibilityLabel="Custom tiebreak target"
+                  value={customTiebreakTarget}
+                  onChangeText={(value) => setCustomTiebreakTarget(value.replace(/\D/g, '').slice(0, 2))}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                  placeholder="Custom target"
+                  placeholderTextColor={colors.mutedForeground}
+                  style={[
+                    styles.customTargetInput,
+                    {
+                      color: colors.foreground,
+                      borderColor: colors.border,
+                      backgroundColor: colors.background,
+                    },
+                  ]}
+                />
+                <Pressable
+                  testID="button-add-custom-tiebreak-set"
+                  accessibilityRole="button"
+                  disabled={isBusy || !customTargetValid}
+                  onPress={() => addNextSet('match_tiebreak', customTarget)}
+                  style={({ pressed }) => [
+                    styles.setActionButton,
+                    styles.customTargetButton,
+                    {
+                      backgroundColor: colors.secondary,
+                      opacity: isBusy || !customTargetValid ? 0.45 : pressed ? 0.82 : 1,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.setActionSecondaryText, { color: colors.secondaryForeground }]}>
+                    Add custom
+                  </Text>
+                </Pressable>
+              </View>
+              <Text style={[styles.setActionHint, { color: colors.mutedForeground }]}>
+                Tiebreaks are won by two points. Custom targets can be 1–99.
+              </Text>
+              {match.matchStatus === 'complete' ? (
+                <Text style={[styles.setActionHint, { color: colors.primary }]}>
+                  This match is marked final. Adding a set will reopen it.
+                </Text>
+              ) : (
+                <Pressable
+                  testID="button-finish-match"
+                  accessibilityRole="button"
+                  disabled={isBusy}
+                  onPress={finishCurrentMatch}
+                  style={({ pressed }) => [
+                    styles.finishMatchButton,
+                    { borderColor: colors.border, opacity: isBusy ? 0.55 : pressed ? 0.7 : 1 },
+                  ]}
+                >
+                  <Text style={[styles.finishMatchText, { color: colors.mutedForeground }]}>
+                    Finish match
+                  </Text>
+                </Pressable>
+              )}
+              {addSet.error ? (
+                <View accessibilityRole="alert" style={styles.mutationError}>
+                  <Ionicons name="alert-circle-outline" size={16} color={colors.destructive} />
+                  <Text style={[styles.mutationErrorText, { color: colors.destructive }]}>
+                    {addSet.error.message}
+                  </Text>
+                </View>
+              ) : null}
+              {finishMatch.error ? (
+                <View accessibilityRole="alert" style={styles.mutationError}>
+                  <Ionicons name="alert-circle-outline" size={16} color={colors.destructive} />
+                  <Text style={[styles.mutationErrorText, { color: colors.destructive }]}>
+                    {finishMatch.error.message}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          </>
         ) : (
           <View style={[styles.scoringPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={styles.panelHeading}>
@@ -536,9 +773,11 @@ export default function MatchScreen() {
 
         <View style={styles.sectionHeader}>
           <View>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Match matrix</Text>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Set {match.setNumber} matrix</Text>
             <Text style={[styles.sectionCaption, { color: colors.mutedForeground }]}>
-              Each marked cell is one point
+              {match.setFormat === 'match_tiebreak'
+                ? 'Each marked cell is one tiebreak point'
+                : 'Each marked cell is one point'}
             </Text>
           </View>
           <View style={styles.matrixLegend}>
@@ -571,7 +810,8 @@ export default function MatchScreen() {
               <Text style={[styles.matrixWinnerHeader, { color: colors.mutedForeground }]}>WIN</Text>
             </View>
 
-            {Array.from({ length: 13 }, (_, index) => index + 1).map((gameNumber) => {
+            {match.setFormat === 'standard' &&
+              Array.from({ length: 13 }, (_, index) => index + 1).map((gameNumber) => {
               const gamePoints = pointGroups.get(gameNumber) ?? [];
               const hasLaterGame = match.points.some((point) => point.gameNumber > gameNumber);
               const isCompleted =
@@ -650,11 +890,15 @@ export default function MatchScreen() {
                   </View>
                 </View>
               );
-            })}
+              })}
 
             <View style={[styles.tiebreakBlock, { borderTopColor: colors.border }]}>
               <View style={styles.tiebreakLabel}>
-                <Text style={[styles.tiebreakTitle, { color: colors.foreground }]}>TIE-BREAK</Text>
+                <Text style={[styles.tiebreakTitle, { color: colors.foreground }]}>
+                  {match.setFormat === 'match_tiebreak'
+                    ? `MATCH TIE-BREAK TO ${match.tiebreakTarget}`
+                    : 'TIE-BREAK'}
+                </Text>
                 <Text style={[styles.tiebreakScore, { color: colors.mutedForeground }]}>
                   {match.score.trackedTiebreakPoints} – {match.score.opponentTiebreakPoints}
                 </Text>
@@ -675,7 +919,7 @@ export default function MatchScreen() {
           <View>
             <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Player report</Text>
             <Text style={[styles.sectionCaption, { color: colors.mutedForeground }]}>
-              {match.points.length} points · calculated on this device
+              {insightsQuery.data?.pointCount ?? match.points.length} points across {setHistory.length} sets · calculated on this device
             </Text>
           </View>
           <Pressable
@@ -976,11 +1220,37 @@ const styles = StyleSheet.create({
   pointNumbers: { minWidth: 57, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 3 },
   pointNumber: { minWidth: 22, textAlign: 'center', fontFamily: 'DMSans_600SemiBold', fontSize: 14, fontVariant: ['tabular-nums'] },
   pointDash: { fontFamily: 'DMSans_400Regular', fontSize: 10 },
+  matchTiebreakScore: { minWidth: 112, alignItems: 'flex-end', gap: 4 },
+  matchTiebreakScoreLabel: { fontFamily: 'DMSans_700Bold', fontSize: 7, letterSpacing: 0.8 },
+  matchTiebreakScoreValue: { fontFamily: 'DMSans_700Bold', fontSize: 25, fontVariant: ['tabular-nums'] },
   scoreFooter: { minHeight: 30, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   scoreFooterText: { fontFamily: 'DMSans_400Regular', fontSize: 10 },
   winnerText: { fontFamily: 'DMSans_700Bold', fontSize: 11 },
   completeBanner: { marginTop: 12, borderRadius: 9, paddingHorizontal: 12, minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 8 },
   completeText: { flex: 1, fontFamily: 'DMSans_600SemiBold', fontSize: 12 },
+  setHistoryCard: { marginTop: 12, borderWidth: 1, borderRadius: 12, padding: 12, gap: 9 },
+  setHistoryTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  setHistoryTitle: { fontFamily: 'DMSans_700Bold', fontSize: 9, letterSpacing: 1.1 },
+  setHistoryCount: { fontFamily: 'DMSans_500Medium', fontSize: 10 },
+  setHistoryWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  setHistoryChip: { minWidth: 75, borderWidth: 1, borderRadius: 8, paddingHorizontal: 9, paddingVertical: 7 },
+  setHistoryLabel: { fontFamily: 'DMSans_700Bold', fontSize: 7, letterSpacing: 0.6 },
+  setHistoryScore: { marginTop: 3, fontFamily: 'DMSans_700Bold', fontSize: 13, fontVariant: ['tabular-nums'] },
+  setHistoryTarget: { marginTop: 2, fontFamily: 'DMSans_500Medium', fontSize: 7, letterSpacing: 0.4 },
+  setHistoryHint: { fontFamily: 'DMSans_400Regular', fontSize: 9 },
+  setActionCard: { marginTop: 10, borderWidth: 1, borderRadius: 13, padding: 13, gap: 8 },
+  setActionTitle: { fontFamily: 'Manrope_700Bold', fontSize: 15 },
+  setActionHint: { fontFamily: 'DMSans_400Regular', fontSize: 10, lineHeight: 15 },
+  setActionButton: { minHeight: 42, borderRadius: 8, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' },
+  setActionButtonHalf: { flex: 1 },
+  setActionButtonText: { fontFamily: 'DMSans_700Bold', fontSize: 11 },
+  setActionSecondaryText: { fontFamily: 'DMSans_700Bold', fontSize: 10 },
+  setActionRow: { flexDirection: 'row', gap: 8 },
+  customTargetRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  customTargetInput: { flex: 1, minHeight: 42, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, fontFamily: 'DMSans_500Medium', fontSize: 12 },
+  customTargetButton: { width: 110 },
+  finishMatchButton: { minHeight: 38, borderWidth: 1, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  finishMatchText: { fontFamily: 'DMSans_600SemiBold', fontSize: 11 },
   scoringPanel: { marginTop: 12, borderRadius: 14, borderWidth: 1, padding: 14 },
   panelHeading: { marginBottom: 11, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 },
   panelTitle: { fontFamily: 'Manrope_700Bold', fontSize: 17, letterSpacing: -0.3 },

@@ -147,7 +147,7 @@ export default function HomeScreen() {
                   <Text style={[styles.matchDate, { color: colors.mutedForeground }]}>
                     {formatMatchDate(item.matchDate)}
                     {item.round ? ` · ${item.round}` : ''}
-                    {` · SET ${item.setNumber}`}
+                    {` · ${item.setScores.length} ${item.setScores.length === 1 ? 'SET' : 'SETS'}`}
                   </Text>
                 </View>
                 <View
@@ -182,17 +182,27 @@ export default function HomeScreen() {
                     {item.opponent}
                   </Text>
                 </View>
-                <View style={styles.matchScores}>
-                  <Text style={[styles.scoreText, { color: colors.foreground }]}>
-                    {item.trackedGames}
-                  </Text>
-                  <Text style={[styles.scoreDivider, { color: colors.mutedForeground }]}>
-                    –
-                  </Text>
-                  <Text style={[styles.scoreText, { color: colors.foreground }]}>
-                    {item.opponentGames}
-                  </Text>
-                </View>
+              </View>
+              <View style={styles.matchSetScores}>
+                {item.setScores.map((set) => {
+                  const result =
+                    set.format === 'match_tiebreak'
+                      ? `${set.trackedTiebreakPoints}–${set.opponentTiebreakPoints} TB`
+                      : `${set.trackedGames}–${set.opponentGames}`;
+                  return (
+                    <View
+                      key={set.setNumber}
+                      style={[styles.matchSetScore, { backgroundColor: colors.background }]}
+                    >
+                      <Text style={[styles.matchSetNumber, { color: colors.mutedForeground }]}>
+                        S{set.setNumber}
+                      </Text>
+                      <Text style={[styles.matchSetResult, { color: colors.foreground }]}>
+                        {result}
+                      </Text>
+                    </View>
+                  );
+                })}
               </View>
 
               <View style={[styles.matchCardBottom, { borderTopColor: colors.border }]}>
@@ -357,14 +367,18 @@ const styles = StyleSheet.create({
   matchStatusText: { fontFamily: 'DMSans_700Bold', fontSize: 8, letterSpacing: 1 },
   matchScoreRow: {
     marginTop: 18,
-    marginBottom: 15,
+    marginBottom: 10,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
   },
   matchNames: { flex: 1, gap: 7, paddingRight: 12 },
   matchPlayer: { fontFamily: 'DMSans_700Bold', fontSize: 15 },
   matchOpponent: { fontFamily: 'DMSans_400Regular', fontSize: 13 },
+  matchSetScores: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 13 },
+  matchSetScore: { minHeight: 29, borderRadius: 6, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  matchSetNumber: { fontFamily: 'DMSans_700Bold', fontSize: 8, letterSpacing: 0.5 },
+  matchSetResult: { fontFamily: 'DMSans_700Bold', fontSize: 11, fontVariant: ['tabular-nums'] },
   matchScores: { flexDirection: 'row', alignItems: 'center', gap: 12, minWidth: 67 },
   scoreText: { fontFamily: 'DMSans_700Bold', fontSize: 21, fontVariant: ['tabular-nums'] },
   scoreDivider: { fontFamily: 'DMSans_400Regular', fontSize: 16 },

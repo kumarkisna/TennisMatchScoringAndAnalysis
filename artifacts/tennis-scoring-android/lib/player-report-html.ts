@@ -1,4 +1,5 @@
 import type { LocalInsights, LocalMatch, PointCode } from '@/lib/local-matches';
+import { getLocalSetHistory } from '@/lib/local-matches';
 import type { PlayerPerformanceSummary } from '@/lib/player-insights';
 
 const codeLabels: Record<PointCode, string> = {
@@ -58,6 +59,15 @@ export function buildPlayerReportHtml(
   const event = match.event?.trim() || 'Match session';
   const round = match.round?.trim() || 'Not specified';
   const coach = match.chairCoach?.trim() || 'Not specified';
+  const setResults = getLocalSetHistory(match)
+    .map((set) => {
+      const score =
+        set.format === 'match_tiebreak'
+          ? `${set.score.trackedTiebreakPoints}–${set.score.opponentTiebreakPoints} (match tiebreak to ${set.tiebreakTarget})`
+          : `${set.score.trackedGames}–${set.score.opponentGames}`;
+      return `Set ${set.setNumber}: ${score}${set.score.isComplete ? '' : ' (in progress)'}`;
+    })
+    .join(' · ');
 
   return `<!doctype html>
 <html>
@@ -96,10 +106,10 @@ export function buildPlayerReportHtml(
       <div><strong>Date:</strong> ${escape(match.matchDate)}</div>
       <div><strong>Event:</strong> ${escape(event)}</div>
       <div><strong>Round:</strong> ${escape(round)}</div>
-      <div><strong>Set:</strong> ${match.setNumber}</div>
+      <div><strong>Set results:</strong> ${escape(setResults)}</div>
       <div><strong>Surface:</strong> ${escape(match.surface)}</div>
       <div><strong>Chair / coach:</strong> ${escape(coach)}</div>
-      <div><strong>Score:</strong> ${match.score.trackedGames}–${match.score.opponentGames}</div>
+      <div><strong>Match status:</strong> ${match.matchStatus === 'complete' ? 'Finished' : 'In progress'}</div>
       <div><strong>Recorded points:</strong> ${insights.pointCount}</div>
     </div>
 
