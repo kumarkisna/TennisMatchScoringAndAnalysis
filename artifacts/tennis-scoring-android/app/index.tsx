@@ -96,7 +96,7 @@ export default function HomeScreen() {
       ]);
       Alert.alert(
         'Backup loaded',
-        `Added ${result.matchesAdded} matches and ${result.playersAdded} players. Existing records were left unchanged.`,
+        `Added ${result.matchesAdded} matches and ${result.playersAdded} players. Skipped ${result.matchesSkipped} existing matches and ${result.playersSkipped} saved players; existing records were left unchanged.`,
       );
     },
     onError: (error) => Alert.alert('Could not load backup', error.message),

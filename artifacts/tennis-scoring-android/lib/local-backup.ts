@@ -20,7 +20,9 @@ import {
   getActiveLocalPlayerId,
   listLocalPlayers,
   setActiveLocalPlayerId,
+  validateLocalPlayerDetails,
   type LocalPlayer,
+  type LocalPlayerDetailsInput,
 } from '@/lib/local-players';
 
 interface LocalBackup {
@@ -88,11 +90,26 @@ function isNullableNumber(value: unknown) {
   return value === null || (typeof value === 'number' && Number.isFinite(value));
 }
 
+function isNonnegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+function isTimestamp(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && Number.isFinite(Date.parse(value));
+}
+
+function isCalendarDate(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 function isBackupPlayer(value: unknown): value is LocalPlayer {
   if (!isRecord(value)) return false;
-  return (
+  const hasValidShape =
     typeof value.id === 'string' &&
     value.id.length > 0 &&
+    value.id.length <= 100 &&
     typeof value.name === 'string' &&
     value.name.trim().length > 0 &&
     value.name.length <= 80 &&
@@ -110,19 +127,35 @@ function isBackupPlayer(value: unknown): value is LocalPlayer {
     isNullableNumber(value.weightKg) &&
     Array.isArray(value.profileUrls) &&
     value.profileUrls.every((url) => typeof url === 'string') &&
-    typeof value.createdAt === 'string'
-  );
+    isTimestamp(value.createdAt);
+  if (!hasValidShape) return false;
+
+  const details: LocalPlayerDetailsInput = {
+    dateOfBirth: value.dateOfBirth as string | null,
+    atpPlayerId: value.atpPlayerId as string | null,
+    itfPlayerId: value.itfPlayerId as string | null,
+    atpRanking: value.atpRanking as number | null,
+    itfRanking: value.itfRanking as number | null,
+    nationality: value.nationality as string | null,
+    playingHand: value.playingHand as LocalPlayerDetailsInput['playingHand'],
+    heightCm: value.heightCm as number | null,
+    weightKg: value.weightKg as number | null,
+    profileUrls: value.profileUrls as string[],
+  };
+  return validateLocalPlayerDetails(details) === null;
 }
 
 function isScore(value: unknown): boolean {
   if (!isRecord(value)) return false;
   return (
-    Number.isInteger(value.trackedGames) &&
-    Number.isInteger(value.opponentGames) &&
+    isNonnegativeInteger(value.trackedGames) &&
+    isNonnegativeInteger(value.opponentGames) &&
     typeof value.trackedPoints === 'string' &&
+    ['0', '15', '30', '40', 'AD'].includes(value.trackedPoints) &&
     typeof value.opponentPoints === 'string' &&
-    Number.isInteger(value.trackedTiebreakPoints) &&
-    Number.isInteger(value.opponentTiebreakPoints) &&
+    ['0', '15', '30', '40', 'AD'].includes(value.opponentPoints) &&
+    isNonnegativeInteger(value.trackedTiebreakPoints) &&
+    isNonnegativeInteger(value.opponentTiebreakPoints) &&
     sides.includes(value.nextServer as (typeof sides)[number]) &&
     typeof value.isTiebreak === 'boolean' &&
     typeof value.isComplete === 'boolean' &&
@@ -134,9 +167,13 @@ function isBackupPoint(value: unknown): boolean {
   if (!isRecord(value)) return false;
   return (
     typeof value.id === 'string' &&
-    Number.isInteger(value.sequenceNumber) &&
-    Number.isInteger(value.setNumber) &&
-    Number.isInteger(value.gameNumber) &&
+    value.id.length > 0 &&
+    isNonnegativeInteger(value.sequenceNumber) &&
+    value.sequenceNumber >= 1 &&
+    isNonnegativeInteger(value.setNumber) &&
+    value.setNumber >= 1 &&
+    isNonnegativeInteger(value.gameNumber) &&
+    value.gameNumber >= 1 &&
     sides.includes(value.server as (typeof sides)[number]) &&
     typeof value.isTiebreak === 'boolean' &&
     sides.includes(value.winner as (typeof sides)[number]) &&
@@ -150,17 +187,20 @@ function isBackupPoint(value: unknown): boolean {
       value.rallyLength === null ||
       rallyLengths.includes(value.rallyLength as (typeof rallyLengths)[number])) &&
     (value.syncStatus === 'pending' || value.syncStatus === 'synced') &&
-    typeof value.createdAt === 'string'
+    isTimestamp(value.createdAt)
   );
 }
 
 function isBackupSet(value: unknown): boolean {
   if (!isRecord(value)) return false;
   return (
-    Number.isInteger(value.setNumber) &&
+    isNonnegativeInteger(value.setNumber) &&
+    value.setNumber >= 1 &&
     sides.includes(value.firstServer as (typeof sides)[number]) &&
     (value.format === 'standard' || value.format === 'match_tiebreak') &&
-    Number.isInteger(value.tiebreakTarget) &&
+    isNonnegativeInteger(value.tiebreakTarget) &&
+    value.tiebreakTarget >= 1 &&
+    value.tiebreakTarget <= 99 &&
     isScore(value.score) &&
     Array.isArray(value.points) &&
     value.points.every(isBackupPoint)
@@ -172,17 +212,27 @@ function isBackupMatch(value: unknown): value is LocalMatchBackupRecord {
   return (
     typeof value.id === 'string' &&
     /^[a-zA-Z0-9_-]{1,100}$/.test(value.id) &&
-    /^\d{4}-\d{2}-\d{2}$/.test(String(value.matchDate)) &&
+    isCalendarDate(value.matchDate) &&
     isNullableString(value.event) &&
+    (value.event === null || value.event.length <= 100) &&
     isNullableString(value.round) &&
-    Number.isInteger(value.setNumber) &&
+    (value.round === null || value.round.length <= 60) &&
+    isNonnegativeInteger(value.setNumber) &&
+    value.setNumber >= 1 &&
     typeof value.trackedPlayer === 'string' &&
+    value.trackedPlayer.trim().length > 0 &&
+    value.trackedPlayer.length <= 80 &&
     typeof value.opponent === 'string' &&
+    value.opponent.trim().length > 0 &&
+    value.opponent.length <= 80 &&
     isNullableString(value.chairCoach) &&
+    (value.chairCoach === null || value.chairCoach.length <= 80) &&
     surfaces.includes(value.surface as (typeof surfaces)[number]) &&
     sides.includes(value.firstServer as (typeof sides)[number]) &&
     (value.setFormat === 'standard' || value.setFormat === 'match_tiebreak') &&
-    Number.isInteger(value.tiebreakTarget) &&
+    isNonnegativeInteger(value.tiebreakTarget) &&
+    value.tiebreakTarget >= 1 &&
+    value.tiebreakTarget <= 99 &&
     Array.isArray(value.completedSets) &&
     value.completedSets.every(isBackupSet) &&
     (value.matchStatus === 'in_progress' || value.matchStatus === 'complete') &&
@@ -190,8 +240,8 @@ function isBackupMatch(value: unknown): value is LocalMatchBackupRecord {
     isScore(value.score) &&
     Array.isArray(value.points) &&
     value.points.every(isBackupPoint) &&
-    typeof value.createdAt === 'string' &&
-    typeof value.updatedAt === 'string'
+    isTimestamp(value.createdAt) &&
+    isTimestamp(value.updatedAt)
   );
 }
 
@@ -205,15 +255,24 @@ function parseLocalBackup(contents: string): LocalBackup {
   if (
     !isRecord(parsed) ||
     parsed.format !== 'tennis-scoring-local-backup' ||
-    parsed.version !== 1 ||
-    typeof parsed.exportedAt !== 'string' ||
-    !(parsed.activePlayerId === null || typeof parsed.activePlayerId === 'string') ||
-    !Array.isArray(parsed.players) ||
-    !parsed.players.every(isBackupPlayer) ||
-    !Array.isArray(parsed.matches) ||
-    !parsed.matches.every(isBackupMatch)
+    parsed.version !== 1
   ) {
     throw new Error('This is not a supported TennisScoring backup.');
+  }
+  if (
+    !isTimestamp(parsed.exportedAt) ||
+    !(parsed.activePlayerId === null ||
+      (typeof parsed.activePlayerId === 'string' && parsed.activePlayerId.length > 0)) ||
+    !Array.isArray(parsed.players) ||
+    !Array.isArray(parsed.matches)
+  ) {
+    throw new Error('The backup file is incomplete or damaged. No data was imported.');
+  }
+  if (!parsed.players.every(isBackupPlayer)) {
+    throw new Error('The backup contains invalid player details. No data was imported.');
+  }
+  if (!parsed.matches.every(isBackupMatch)) {
+    throw new Error('The backup contains invalid match or point history. No data was imported.');
   }
   const playerIds = parsed.players.map((player) => player.id);
   const matchIds = parsed.matches.map((match) => match.id);
@@ -269,8 +328,12 @@ export async function loadLocalBackupFromDevice(): Promise<
     multiple: false,
   });
   if (selection.canceled) return { cancelled: true };
+  const selectedAsset = selection.assets[0];
+  if (!selectedAsset?.uri) {
+    throw new Error('No backup file was selected. Choose a valid JSON backup and try again.');
+  }
 
-  const contents = await readAsStringAsync(selection.assets[0].uri, {
+  const contents = await readAsStringAsync(selectedAsset.uri, {
     encoding: EncodingType.UTF8,
   });
   const backup = parseLocalBackup(contents);
@@ -332,7 +395,7 @@ export async function saveLocalBackupToDevice(): Promise<
   }
 
   const contents = await createLocalBackupJson();
-  const fileName = backupFileName(false);
+  const fileName = backupFileName();
   const permission = await StorageAccessFramework.requestDirectoryPermissionsAsync();
   if (!permission.granted) return { cancelled: true };
 
@@ -344,7 +407,7 @@ export async function saveLocalBackupToDevice(): Promise<
   await StorageAccessFramework.writeAsStringAsync(uri, contents, {
     encoding: EncodingType.UTF8,
   });
-  return { cancelled: false, fileName: `${fileName}.json` };
+  return { cancelled: false, fileName };
 }
 
 export async function shareLocalBackup(): Promise<void> {

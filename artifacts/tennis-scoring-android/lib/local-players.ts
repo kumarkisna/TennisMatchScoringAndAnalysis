@@ -392,3 +392,14 @@ function normalizeProfileDetails(details: LocalPlayerDetailsInput): Omit<LocalPl
     profileUrls: normalizeProfileUrls(details.profileUrls),
   };
 }
+
+export function validateLocalPlayerDetails(
+  details: LocalPlayerDetailsInput,
+): string | null {
+  try {
+    normalizeProfileDetails(details);
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : 'Enter valid player details.';
+  }
+}
