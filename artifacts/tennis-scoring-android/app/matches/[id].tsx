@@ -4,6 +4,7 @@ import { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,6 +18,8 @@ import {
 } from '@tanstack/react-query';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import {
   getLocalInsights,
   getLocalMatch,
@@ -30,6 +33,8 @@ import {
   type PlayerSide,
   type PointCode,
 } from '@/lib/local-matches';
+import { summarizePlayerPerformance } from '@/lib/player-insights';
+import { buildPlayerReportHtml } from '@/lib/player-report-html';
 
 type Side = PlayerSide;
 
@@ -50,8 +55,6 @@ const errorCodes: { code: PointCode; label: string }[] = [
   { code: 'FE', label: 'Forced error' },
 ];
 
-const scoreColumns = ['15', '30', '40', 'AD', 'AD', 'AD', 'AD', 'WIN'];
-
 function otherSide(side: Side): Side {
   return side === 'tracked' ? 'opponent' : 'tracked';
 }
@@ -70,6 +73,10 @@ function formatDate(value: string) {
     year: 'numeric',
     timeZone: 'UTC',
   });
+}
+
+function formatPercent(value: number | null) {
+  return value === null ? '—' : `${value}%`;
 }
 
 function CodeCell({
@@ -127,6 +134,8 @@ export default function MatchScreen() {
   const matchId = Array.isArray(params.id) ? params.id[0] ?? '' : params.id ?? '';
   const [endingCode, setEndingCode] = useState<PointCode | null>(null);
   const [firstServeFault, setFirstServeFault] = useState(false);
+  const [isExportingReport, setIsExportingReport] = useState(false);
+  const [reportExportError, setReportExportError] = useState('');
 
   const matchQuery = useQuery({
     queryKey: localMatchKey(matchId),
@@ -160,6 +169,10 @@ export default function MatchScreen() {
 
   const match = matchQuery.data;
   const isBusy = recordPoint.isPending || undoPoint.isPending;
+  const performance = insightsQuery.data
+    ? summarizePlayerPerformance(insightsQuery.data)
+    : null;
+
   function addPoint(winner: Side) {
     if (!match || match.score.isComplete || isBusy) return;
     recordPoint.mutate({ winner, endingCode, firstServeFault });
@@ -179,6 +192,38 @@ export default function MatchScreen() {
         },
       ],
     );
+  }
+
+  async function exportPlayerReport() {
+    if (!match || !insightsQuery.data || isExportingReport) return;
+
+    setIsExportingReport(true);
+    setReportExportError('');
+    const summary = summarizePlayerPerformance(insightsQuery.data);
+    const html = buildPlayerReportHtml(match, insightsQuery.data, summary);
+
+    try {
+      if (Platform.OS === 'web') {
+        await Print.printAsync({ html });
+      } else {
+        const file = await Print.printToFileAsync({ html });
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(file.uri, {
+            mimeType: 'application/pdf',
+            dialogTitle: 'Save or share player report',
+            UTI: 'com.adobe.pdf',
+          });
+        } else {
+          await Print.printAsync({ html });
+        }
+      }
+    } catch (error) {
+      setReportExportError(
+        error instanceof Error ? error.message : 'Could not prepare the PDF report.',
+      );
+    } finally {
+      setIsExportingReport(false);
+    }
   }
 
   if (matchQuery.isLoading) {
@@ -234,6 +279,13 @@ export default function MatchScreen() {
     gamePoints.push(point);
     pointGroups.set(point.gameNumber, gamePoints);
   }
+  const matrixColumnCount = Math.max(
+    8,
+    ...Array.from(pointGroups.values(), (gamePoints) => gamePoints.length),
+  );
+  const scoreColumns = Array.from({ length: matrixColumnCount }, (_, index) =>
+    index < 3 ? ['15', '30', '40'][index] : 'AD',
+  );
   const tiebreakPoints = match.points.filter((point) => point.isTiebreak);
   const currentGameNumber = match.score.trackedGames + match.score.opponentGames + 1;
   const finalRegularGame =
@@ -302,7 +354,7 @@ export default function MatchScreen() {
         <View style={[styles.scoreboard, { backgroundColor: colors.primary }]}>
           <View style={styles.scoreboardTop}>
             <Text style={[styles.scoreboardLabel, { color: colors.primaryForeground }]}>
-              {match.score.isComplete ? 'SET COMPLETE' : match.score.isTiebreak ? 'TIE-BREAK' : `GAME ${currentGameNumber}`}
+              {match.score.isComplete ? `SET ${match.setNumber} COMPLETE` : match.score.isTiebreak ? 'TIE-BREAK' : `GAME ${currentGameNumber}`}
             </Text>
             <View style={styles.serverPill}>
               <Ionicons name="tennisball-outline" size={12} color={colors.primaryForeground} />
@@ -362,7 +414,7 @@ export default function MatchScreen() {
           <View style={[styles.completeBanner, { backgroundColor: colors.secondary }]}>
             <Ionicons name="checkmark-circle" size={19} color={colors.primary} />
             <Text style={[styles.completeText, { color: colors.secondaryForeground }]}>
-              Set recorded. Review the point patterns below.
+              Set {match.setNumber} recorded. Review the player report below.
             </Text>
           </View>
         ) : (
@@ -510,7 +562,7 @@ export default function MatchScreen() {
                   key={`${label}-${index}`}
                   style={[
                     styles.matrixColumnHeader,
-                    { color: label === 'WIN' ? colors.accent : colors.mutedForeground },
+                    { color: colors.mutedForeground },
                   ]}
                 >
                   {label}
@@ -557,7 +609,7 @@ export default function MatchScreen() {
                     </View>
                   </View>
                   {Array.from(
-                    { length: Math.max(8, gamePoints.length) },
+                    { length: matrixColumnCount },
                     (_, pointIndex) => (
                       <CodeCell
                         key={`${gameNumber}-${pointIndex}`}
@@ -621,13 +673,44 @@ export default function MatchScreen() {
 
         <View style={styles.sectionHeader}>
           <View>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Point patterns</Text>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Player report</Text>
             <Text style={[styles.sectionCaption, { color: colors.mutedForeground }]}>
-              Early signals for post-match review
+              {match.points.length} points · calculated on this device
             </Text>
           </View>
-          <Ionicons name="analytics-outline" size={19} color={colors.primary} />
+          <Pressable
+            testID="button-export-player-report"
+            accessibilityRole="button"
+            accessibilityLabel="Print or save player report as PDF"
+            disabled={isExportingReport || !insightsQuery.data}
+            onPress={() => void exportPlayerReport()}
+            style={[
+              styles.exportButton,
+              {
+                backgroundColor: colors.secondary,
+                opacity: isExportingReport || !insightsQuery.data ? 0.55 : 1,
+              },
+            ]}
+          >
+            {isExportingReport ? (
+              <ActivityIndicator size="small" color={colors.secondaryForeground} />
+            ) : (
+              <Ionicons name="print-outline" size={15} color={colors.secondaryForeground} />
+            )}
+            <Text style={[styles.exportButtonText, { color: colors.secondaryForeground }]}>
+              {isExportingReport ? 'Preparing…' : 'PDF report'}
+            </Text>
+          </Pressable>
         </View>
+
+        {reportExportError ? (
+          <View accessibilityRole="alert" style={styles.exportError}>
+            <Ionicons name="alert-circle-outline" size={15} color={colors.destructive} />
+            <Text style={[styles.insightHint, { color: colors.destructive }]}>
+              {reportExportError}
+            </Text>
+          </View>
+        ) : null}
 
         {insightsQuery.isLoading ? (
           <View style={[styles.insightCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -636,27 +719,73 @@ export default function MatchScreen() {
               Updating point patterns…
             </Text>
           </View>
-        ) : insightsQuery.data ? (
+        ) : insightsQuery.data && performance ? (
           <View style={[styles.insightCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.reportPlayer, { color: colors.foreground }]}>
+              {match.trackedPlayer}
+            </Text>
+            <Text style={[styles.reportCaption, { color: colors.mutedForeground }]}>
+              Based on recorded results and tags; small samples are directional.
+            </Text>
             <View style={styles.statGrid}>
-              <Stat label="POINTS WON" value={String(insightsQuery.data.trackedPointsWon)} colors={colors} />
-              <Stat label="FIRST FAULTS" value={String(insightsQuery.data.firstServeFaults)} colors={colors} />
-              <Stat label="ON SERVE" value={String(insightsQuery.data.servicePointsWon)} colors={colors} />
-              <Stat label="ON RETURN" value={String(insightsQuery.data.returnPointsWon)} colors={colors} />
+              <Stat
+                label="POINTS WON"
+                value={formatPercent(performance.overallWinPercent)}
+                detail={`${insightsQuery.data.trackedPointsWon} of ${insightsQuery.data.pointCount} points`}
+                colors={colors}
+              />
+              <Stat
+                label="SERVE WIN RATE"
+                value={formatPercent(performance.serviceWinPercent)}
+                detail={`${insightsQuery.data.servicePointsWon} of ${insightsQuery.data.trackedServicePoints} service points`}
+                colors={colors}
+              />
+              <Stat
+                label="RETURN WIN RATE"
+                value={formatPercent(performance.returnWinPercent)}
+                detail={`${insightsQuery.data.returnPointsWon} of ${insightsQuery.data.trackedReturnPoints} return points`}
+                colors={colors}
+              />
+              <Stat
+                label="FIRST-SERVE FAULT RATE"
+                value={formatPercent(performance.firstServeFaultPercent)}
+                detail={`${insightsQuery.data.trackedFirstServeFaults} marked across ${insightsQuery.data.trackedServicePoints} service points`}
+                colors={colors}
+              />
             </View>
-            {insightsQuery.data.codes.length > 0 ? (
+
+            <View style={[styles.feedbackBlock, { backgroundColor: colors.secondary }]}>
+              <Text style={[styles.codeStatsTitle, { color: colors.secondaryForeground }]}>
+                PLAYER FEEDBACK
+              </Text>
+              {performance.feedback.map((item, index) => (
+                <View key={`${index}-${item}`} style={styles.feedbackRow}>
+                  <View style={[styles.feedbackDot, { backgroundColor: colors.primary }]} />
+                  <Text style={[styles.feedbackText, { color: colors.secondaryForeground }]}>
+                    {item}
+                  </Text>
+                </View>
+              ))}
+            </View>
+
+            {performance.codeInsights.length > 0 ? (
               <View style={[styles.codeStats, { borderTopColor: colors.border }]}>
                 <Text style={[styles.codeStatsTitle, { color: colors.foreground }]}>
-                  POINT ENDINGS
+                  SHOT & POINT-ENDING PERCENTAGES
                 </Text>
-                {insightsQuery.data.codes.map((stat) => (
+                {performance.codeInsights.map((stat) => (
                   <View key={stat.code} testID={`insight-code-${stat.code}`} style={styles.codeStatRow}>
                     <Text style={[styles.statCode, { color: colors.primary }]}>{stat.code}</Text>
-                    <Text style={[styles.statCodeLabel, { color: colors.mutedForeground }]}>
-                      {labelForCode(stat.code)}
-                    </Text>
-                    <Text style={[styles.statCodeCount, { color: colors.foreground }]}>
-                      {stat.count}
+                    <View style={styles.codeStatCopy}>
+                      <Text style={[styles.statCodeLabel, { color: colors.foreground }]}>
+                        {labelForCode(stat.code)}
+                      </Text>
+                      <Text style={[styles.codeStatDetail, { color: colors.mutedForeground }]}>
+                        {stat.trackedWon}/{stat.count} tracked wins · {stat.sharePercent}% of tags
+                      </Text>
+                    </View>
+                    <Text style={[styles.statCodeCount, { color: colors.primary }]}>
+                      {stat.trackedWinPercent}%
                     </Text>
                   </View>
                 ))}
@@ -664,7 +793,7 @@ export default function MatchScreen() {
             ) : (
               <View style={[styles.noStats, { borderTopColor: colors.border }]}>
                 <Text style={[styles.insightHint, { color: colors.mutedForeground }]}>
-                  Add a shot or error code to a point to see patterns here.
+                  No shot or point-ending tags yet. Add tags while recording points to build shot percentages.
                 </Text>
               </View>
             )}
@@ -800,16 +929,19 @@ function labelForCode(code: string) {
 function Stat({
   label,
   value,
+  detail,
   colors,
 }: {
   label: string;
   value: string;
+  detail: string;
   colors: ReturnType<typeof useColors>;
 }) {
   return (
     <View style={[styles.statTile, { backgroundColor: colors.background }]}>
       <Text style={[styles.statValue, { color: colors.primary }]}>{value}</Text>
       <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{label}</Text>
+      <Text style={[styles.statDetail, { color: colors.mutedForeground }]}>{detail}</Text>
     </View>
   );
 }
@@ -871,6 +1003,9 @@ const styles = StyleSheet.create({
   sectionHeader: { marginTop: 25, marginBottom: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   sectionTitle: { fontFamily: 'Manrope_700Bold', fontSize: 18, letterSpacing: -0.4 },
   sectionCaption: { marginTop: 3, fontFamily: 'DMSans_400Regular', fontSize: 10 },
+  exportButton: { minHeight: 36, borderRadius: 8, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  exportButtonText: { fontFamily: 'DMSans_700Bold', fontSize: 11 },
+  exportError: { marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 7 },
   matrixLegend: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   legendDot: { width: 7, height: 7, borderRadius: 4, marginLeft: 3 },
   legendText: { fontFamily: 'DMSans_400Regular', fontSize: 8 },
@@ -897,16 +1032,25 @@ const styles = StyleSheet.create({
   tiebreakColumn: { width: 31, alignItems: 'center', gap: 3 },
   tiebreakColumnHeader: { fontFamily: 'DMSans_600SemiBold', fontSize: 7 },
   insightCard: { borderWidth: 1, borderRadius: 11, padding: 11 },
+  reportPlayer: { fontFamily: 'Manrope_700Bold', fontSize: 16 },
+  reportCaption: { marginTop: 3, marginBottom: 11, fontFamily: 'DMSans_400Regular', fontSize: 10 },
   statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
-  statTile: { width: '48%', minHeight: 67, borderRadius: 8, padding: 10, justifyContent: 'center' },
+  statTile: { width: '48%', minHeight: 79, borderRadius: 8, padding: 10, justifyContent: 'center' },
   statValue: { fontFamily: 'DMSans_700Bold', fontSize: 21, fontVariant: ['tabular-nums'] },
   statLabel: { marginTop: 2, fontFamily: 'DMSans_700Bold', fontSize: 7, letterSpacing: 0.8 },
+  statDetail: { marginTop: 3, fontFamily: 'DMSans_400Regular', fontSize: 8, lineHeight: 11 },
+  feedbackBlock: { marginTop: 12, borderRadius: 8, padding: 10, gap: 7 },
+  feedbackRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 7 },
+  feedbackDot: { width: 5, height: 5, borderRadius: 3, marginTop: 5 },
+  feedbackText: { flex: 1, fontFamily: 'DMSans_400Regular', fontSize: 10, lineHeight: 15 },
   codeStats: { marginTop: 12, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
   codeStatsTitle: { marginBottom: 6, fontFamily: 'DMSans_700Bold', fontSize: 8, letterSpacing: 1 },
-  codeStatRow: { minHeight: 27, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  codeStatRow: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 8 },
   statCode: { width: 28, fontFamily: 'DMSans_700Bold', fontSize: 11 },
-  statCodeLabel: { flex: 1, fontFamily: 'DMSans_400Regular', fontSize: 11 },
-  statCodeCount: { fontFamily: 'DMSans_700Bold', fontSize: 12, fontVariant: ['tabular-nums'] },
+  codeStatCopy: { flex: 1 },
+  statCodeLabel: { fontFamily: 'DMSans_600SemiBold', fontSize: 10 },
+  codeStatDetail: { marginTop: 2, fontFamily: 'DMSans_400Regular', fontSize: 8 },
+  statCodeCount: { minWidth: 38, textAlign: 'right', fontFamily: 'DMSans_700Bold', fontSize: 12, fontVariant: ['tabular-nums'] },
   noStats: { marginTop: 11, paddingTop: 11, borderTopWidth: StyleSheet.hairlineWidth },
   insightHint: { fontFamily: 'DMSans_400Regular', fontSize: 11, lineHeight: 16 },
   logCard: { borderWidth: 1, borderRadius: 11, paddingHorizontal: 12 },

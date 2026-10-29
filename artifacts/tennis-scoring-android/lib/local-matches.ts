@@ -88,6 +88,9 @@ export interface LocalInsights {
   trackedPointsWon: number;
   opponentPointsWon: number;
   firstServeFaults: number;
+  trackedFirstServeFaults: number;
+  trackedServicePoints: number;
+  trackedReturnPoints: number;
   codes: { code: PointCode; count: number; trackedWon: number; opponentWon: number }[];
   returnPointsWon: number;
   servicePointsWon: number;
@@ -410,6 +413,9 @@ export async function getLocalInsights(id: string): Promise<LocalInsights | null
   let trackedPointsWon = 0;
   let opponentPointsWon = 0;
   let firstServeFaults = 0;
+  let trackedFirstServeFaults = 0;
+  let trackedServicePoints = 0;
+  let trackedReturnPoints = 0;
   let servicePointsWon = 0;
   let returnPointsWon = 0;
 
@@ -417,8 +423,14 @@ export async function getLocalInsights(id: string): Promise<LocalInsights | null
     if (point.winner === 'tracked') trackedPointsWon += 1;
     else opponentPointsWon += 1;
     if (point.firstServeFault) firstServeFaults += 1;
-    if (point.winner === 'tracked' && point.server === 'tracked') servicePointsWon += 1;
-    if (point.winner === 'tracked' && point.server === 'opponent') returnPointsWon += 1;
+    if (point.server === 'tracked') {
+      trackedServicePoints += 1;
+      if (point.firstServeFault) trackedFirstServeFaults += 1;
+      if (point.winner === 'tracked') servicePointsWon += 1;
+    } else {
+      trackedReturnPoints += 1;
+      if (point.winner === 'tracked') returnPointsWon += 1;
+    }
 
     if (point.endingCode) {
       const stats = codeCounts.get(point.endingCode) ?? {
@@ -438,6 +450,9 @@ export async function getLocalInsights(id: string): Promise<LocalInsights | null
     trackedPointsWon,
     opponentPointsWon,
     firstServeFaults,
+    trackedFirstServeFaults,
+    trackedServicePoints,
+    trackedReturnPoints,
     codes: [...codeCounts.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([code, stats]) => ({ code, ...stats })),
