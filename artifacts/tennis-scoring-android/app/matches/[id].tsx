@@ -642,10 +642,10 @@ export default function MatchScreen() {
           <View style={styles.scoreLine}>
             <View style={styles.scoreNames}>
               <Text numberOfLines={1} style={[styles.playerNameOnDark, { color: colors.primaryForeground }]}>
-                {trackedName}
+                {trackedName} (T)
               </Text>
               <Text numberOfLines={1} style={[styles.playerNameOnDark, { color: colors.primaryForeground, opacity: 0.72 }]}>
-                {opponentName}
+                {opponentName} (O)
               </Text>
             </View>
             {match.setFormat === 'match_tiebreak' ? (
@@ -975,6 +975,7 @@ export default function MatchScreen() {
               <Pressable
                 testID="button-point-tracked"
                 accessibilityRole="button"
+                accessibilityLabel={`Award point to ${trackedName}, tracked player (T)`}
                 disabled={isBusy}
                 onPress={() => addPoint('tracked')}
                 style={({ pressed }) => [
@@ -983,13 +984,19 @@ export default function MatchScreen() {
                 ]}
               >
                 <Ionicons name="arrow-up-outline" size={17} color={colors.primaryForeground} />
-                <Text numberOfLines={1} style={[styles.awardButtonText, { color: colors.primaryForeground }]}>
-                  {trackedName}
-                </Text>
+                <View style={styles.awardPlayerRow}>
+                  <Text numberOfLines={1} style={[styles.awardPlayerName, { color: colors.primaryForeground }]}>
+                    {trackedName}
+                  </Text>
+                  <View style={[styles.awardSideBadge, { borderColor: colors.primaryForeground }]}>
+                    <Text style={[styles.awardSideBadgeText, { color: colors.primaryForeground }]}>T</Text>
+                  </View>
+                </View>
               </Pressable>
               <Pressable
                 testID="button-point-opponent"
                 accessibilityRole="button"
+                accessibilityLabel={`Award point to ${opponentName}, opponent (O)`}
                 disabled={isBusy}
                 onPress={() => addPoint('opponent')}
                 style={({ pressed }) => [
@@ -998,9 +1005,14 @@ export default function MatchScreen() {
                 ]}
               >
                 <Ionicons name="arrow-down-outline" size={17} color={colors.accentForeground} />
-                <Text numberOfLines={1} style={[styles.awardButtonText, { color: colors.accentForeground }]}>
-                  {opponentName}
-                </Text>
+                <View style={styles.awardPlayerRow}>
+                  <Text numberOfLines={1} style={[styles.awardPlayerName, { color: colors.accentForeground }]}>
+                    {opponentName}
+                  </Text>
+                  <View style={[styles.awardSideBadge, { borderColor: colors.accentForeground }]}>
+                    <Text style={[styles.awardSideBadgeText, { color: colors.accentForeground }]}>O</Text>
+                  </View>
+                </View>
               </Pressable>
             </View>
 
@@ -1229,9 +1241,13 @@ export default function MatchScreen() {
           </View>
           <View style={styles.matrixLegend}>
             <View style={[styles.legendDot, { backgroundColor: colors.primary }]} />
-            <Text style={[styles.legendText, { color: colors.mutedForeground }]}>tracked</Text>
+            <Text numberOfLines={1} style={[styles.legendText, { color: colors.mutedForeground }]}>
+              T = tracked
+            </Text>
             <View style={[styles.legendDot, { backgroundColor: colors.accent }]} />
-            <Text style={[styles.legendText, { color: colors.mutedForeground }]}>opponent</Text>
+            <Text numberOfLines={1} style={[styles.legendText, { color: colors.mutedForeground }]}>
+              O = opponent
+            </Text>
           </View>
         </View>
 
@@ -2007,7 +2023,10 @@ const styles = StyleSheet.create({
   panelHint: { fontFamily: 'DMSans_400Regular', fontSize: 10 },
   awardRow: { flexDirection: 'row', gap: 8 },
   awardButton: { flex: 1, minHeight: 57, borderRadius: 9, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  awardButtonText: { maxWidth: '80%', fontFamily: 'DMSans_700Bold', fontSize: 12 },
+  awardPlayerRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
+  awardPlayerName: { maxWidth: '80%', flexShrink: 1, fontFamily: 'DMSans_700Bold', fontSize: 12 },
+  awardSideBadge: { width: 18, height: 18, borderWidth: 1, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  awardSideBadgeText: { fontFamily: 'DMSans_700Bold', fontSize: 9 },
   faultToggle: { marginTop: 10, minHeight: 39, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
   faultIndicator: { width: 7, height: 7, borderRadius: 4 },
   faultToggleText: { fontFamily: 'DMSans_600SemiBold', fontSize: 11 },

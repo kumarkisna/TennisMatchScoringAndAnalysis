@@ -83,25 +83,18 @@ function setScore(set: PlayerReportInsights['sets'][number]): string {
     : games;
 }
 
-function setTrendNote(sets: PlayerReportInsights['sets']): string {
-  const samples = sets
-    .filter((set) => set.pointCount >= 5)
-    .map((set) => ({
-      set,
-      percent: (set.trackedPointsWon / set.pointCount) * 100,
-    }));
-  if (samples.length < 2) return '';
-
-  const best = [...samples].sort((a, b) => b.percent - a.percent)[0];
-  const lowest = [...samples].sort((a, b) => a.percent - b.percent)[0];
-  if (!best || !lowest) return '';
-
-  const spread = Math.round(best.percent - lowest.percent);
-  if (spread < 8) {
-    return `<p class="trend-note">Point-win rates stayed within ${spread} percentage points across sets with at least five logged points.</p>`;
+function setWinnerLabel(
+  set: PlayerReportInsights['sets'][number],
+  trackedPlayer: string,
+  opponent: string,
+): string {
+  if (!set.isComplete) return 'In progress';
+  if (set.format === 'match_tiebreak') {
+    return set.trackedTiebreakPoints > set.opponentTiebreakPoints
+      ? trackedPlayer
+      : opponent;
   }
-
-  return `<p class="trend-note"><strong>Set-to-set shift:</strong> point-win rate was ${exactPercent(best.set.trackedPointsWon, best.set.pointCount)} in set ${best.set.setNumber} and ${exactPercent(lowest.set.trackedPointsWon, lowest.set.pointCount)} in set ${lowest.set.setNumber} (${spread} percentage-point difference). This is descriptive, not a prediction.</p>`;
+  return set.trackedGames > set.opponentGames ? trackedPlayer : opponent;
 }
 
 export function buildPlayerReportHtml(
@@ -210,13 +203,11 @@ export function buildPlayerReportHtml(
             <tr>
               <td>Set ${set.setNumber}<span class="sub">${set.isComplete ? 'Complete' : 'In progress'}</span></td>
               <td>${setScore(set)}</td>
-              <td>${rate(set.trackedPointsWon, set.pointCount)}</td>
-              <td>${rate(set.servicePointsWon, set.trackedServicePoints)}</td>
-              <td>${rate(set.returnPointsWon, set.trackedReturnPoints)}</td>
+              <td>${escape(setWinnerLabel(set, match.trackedPlayer, match.opponent))}</td>
             </tr>`,
         )
         .join('')
-    : '<tr><td colspan="5">No set data recorded.</td></tr>';
+    : '<tr><td colspan="3">No set data recorded.</td></tr>';
   const taggedPercent = exactPercent(summary.taggedPointCount, insights.pointCount);
   const directionRows = contextRows(
     summary.shotDirections,
@@ -263,7 +254,6 @@ export function buildPlayerReportHtml(
       th { background: #245d4b; color: white; text-align: left; }
       th, td { border-bottom: 1px solid #dcded4; padding: 7px 5px; vertical-align: top; }
       .sub { color: #718078; display: block; font-size: 8px; margin-top: 3px; }
-      .trend-note { background: #f7f4eb; border-radius: 6px; color: #53685f; font-size: 10px; line-height: 1.5; margin: 9px 0 0; padding: 9px 11px; }
       .note { color: #718078; font-size: 8px; line-height: 1.5; margin-top: 20px; }
       .note a { color: #245d4b; }
       h3 { break-after: avoid; color: #183a30; font-size: 11px; margin: 14px 0 6px; }
@@ -323,12 +313,10 @@ export function buildPlayerReportHtml(
       </thead>
       <tbody>${serveCountRows}${serveRows}</tbody>
     </table>
-    ${setTrendNote(insights.sets)}
-
-    <h2>Performance by set</h2>
+    <h2>Set scores and winners</h2>
     <table>
       <thead>
-        <tr><th>Set</th><th>Score / format</th><th>Points won</th><th>Serve points</th><th>Return points</th></tr>
+        <tr><th>Set</th><th>Score / format</th><th>Set winner</th></tr>
       </thead>
       <tbody>${setRows}</tbody>
     </table>
