@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: tennis
+    description: Tennis match scoring
 paths:
   /healthz:
     get:
@@ -24,6 +26,129 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /matches:
+    get:
+      operationId: listMatches
+      tags: [tennis]
+      summary: List recent tennis matches
+      responses:
+        "200":
+          description: Match list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MatchListItem"
+    post:
+      operationId: createMatch
+      tags: [tennis]
+      summary: Create a set scoring session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MatchInput"
+      responses:
+        "201":
+          description: Match created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Match"
+  /matches/{id}:
+    get:
+      operationId: getMatch
+      tags: [tennis]
+      summary: Get a match and its point log
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Match with point history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Match"
+        "404":
+          description: Match not found
+  /matches/{id}/points:
+    post:
+      operationId: recordPoint
+      tags: [tennis]
+      summary: Record a point in the live match
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PointInput"
+      responses:
+        "201":
+          description: Point recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Match"
+        "404":
+          description: Match not found
+        "409":
+          description: Match is already complete
+  /matches/{id}/points/latest:
+    delete:
+      operationId: undoLatestPoint
+      tags: [tennis]
+      summary: Undo the latest point
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Updated match
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Match"
+        "404":
+          description: Match or point not found
+  /matches/{id}/insights:
+    get:
+      operationId: getMatchInsights
+      tags: [tennis]
+      summary: Summarize point patterns for a match
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Point pattern summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchInsights"
+        "404":
+          description: Match not found
 components:
   schemas:
     HealthStatus:
@@ -33,4 +158,213 @@ components:
           type: string
       required:
         - status
-
+    MatchInput:
+      type: object
+      properties:
+        matchDate:
+          type: string
+          format: date
+        event:
+          type: ["string", "null"]
+        round:
+          type: ["string", "null"]
+        setNumber:
+          type: integer
+          minimum: 1
+          default: 1
+        trackedPlayer:
+          type: string
+          minLength: 1
+        opponent:
+          type: string
+          minLength: 1
+        chairCoach:
+          type: ["string", "null"]
+        surface:
+          type: string
+          enum: [Hard, Clay, Grass, Carpet, Other]
+        firstServer:
+          type: string
+          enum: [tracked, opponent]
+      required: [matchDate, trackedPlayer, opponent, surface, firstServer]
+    PointInput:
+      type: object
+      properties:
+        winner:
+          type: string
+          enum: [tracked, opponent]
+        endingCode:
+          type: ["string", "null"]
+          enum: [A, F, B, V, O, P, N, L, W, D, FE, null]
+        firstServeFault:
+          type: boolean
+          default: false
+      required: [winner]
+    Point:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        sequenceNumber:
+          type: integer
+        setNumber:
+          type: integer
+        gameNumber:
+          type: integer
+        server:
+          type: string
+          enum: [tracked, opponent]
+        isTiebreak:
+          type: boolean
+        winner:
+          type: string
+          enum: [tracked, opponent]
+        endingCode:
+          type: ["string", "null"]
+          enum: [A, F, B, V, O, P, N, L, W, D, FE, null]
+        firstServeFault:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, sequenceNumber, setNumber, gameNumber, server, isTiebreak, winner, firstServeFault, createdAt]
+    Score:
+      type: object
+      properties:
+        trackedGames:
+          type: integer
+        opponentGames:
+          type: integer
+        trackedPoints:
+          type: string
+        opponentPoints:
+          type: string
+        trackedTiebreakPoints:
+          type: integer
+        opponentTiebreakPoints:
+          type: integer
+        nextServer:
+          type: string
+          enum: [tracked, opponent]
+        isTiebreak:
+          type: boolean
+        isComplete:
+          type: boolean
+        winner:
+          type: ["string", "null"]
+          enum: [tracked, opponent, null]
+      required: [trackedGames, opponentGames, trackedPoints, opponentPoints, trackedTiebreakPoints, opponentTiebreakPoints, nextServer, isTiebreak, isComplete]
+    Match:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        matchDate:
+          type: string
+          format: date
+        event:
+          type: ["string", "null"]
+        round:
+          type: ["string", "null"]
+        setNumber:
+          type: integer
+        trackedPlayer:
+          type: string
+        opponent:
+          type: string
+        chairCoach:
+          type: ["string", "null"]
+        surface:
+          type: string
+          enum: [Hard, Clay, Grass, Carpet, Other]
+        firstServer:
+          type: string
+          enum: [tracked, opponent]
+        status:
+          type: string
+          enum: [in_progress, complete]
+        score:
+          $ref: "#/components/schemas/Score"
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/Point"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, matchDate, setNumber, trackedPlayer, opponent, surface, firstServer, status, score, points, createdAt, updatedAt]
+    MatchListItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        matchDate:
+          type: string
+          format: date
+        event:
+          type: ["string", "null"]
+        round:
+          type: ["string", "null"]
+        setNumber:
+          type: integer
+        trackedPlayer:
+          type: string
+        opponent:
+          type: string
+        surface:
+          type: string
+          enum: [Hard, Clay, Grass, Carpet, Other]
+        status:
+          type: string
+          enum: [in_progress, complete]
+        trackedGames:
+          type: integer
+        opponentGames:
+          type: integer
+        pointCount:
+          type: integer
+        winner:
+          type: ["string", "null"]
+          enum: [tracked, opponent, null]
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, matchDate, setNumber, trackedPlayer, opponent, surface, status, trackedGames, opponentGames, pointCount, updatedAt]
+    MatchInsights:
+      type: object
+      properties:
+        pointCount:
+          type: integer
+        trackedPointsWon:
+          type: integer
+        opponentPointsWon:
+          type: integer
+        firstServeFaults:
+          type: integer
+        codes:
+          type: array
+          items:
+            $ref: "#/components/schemas/CodeCount"
+        returnPointsWon:
+          type: integer
+        servicePointsWon:
+          type: integer
+      required: [pointCount, trackedPointsWon, opponentPointsWon, firstServeFaults, codes, returnPointsWon, servicePointsWon]
+    CodeCount:
+      type: object
+      properties:
+        code:
+          type: string
+        count:
+          type: integer
+        trackedWon:
+          type: integer
+        opponentWon:
+          type: integer
+      required: [code, count, trackedWon, opponentWon]

@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "TennisScoringApp"
+description = "A live tennis match scoring app for families and coaches to record every point, review match history, and build a foundation for player development insights."
+version = "1.0.0"
+id = "artifacts/tennis-scoring"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 26261
+
+[services.development]
+run = "pnpm --filter @workspace/tennis-scoring run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/tennis-scoring", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/tennis-scoring/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "26261"
+BASE_PATH = "/"

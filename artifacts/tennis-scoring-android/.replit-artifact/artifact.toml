@@ -1,0 +1,24 @@
+kind = "mobile"
+previewPath = "/mobile/"
+title = "TennisScoring Android"
+description = "A native Android courtside scoring app for families and coaches to record each tennis point using the NOSAVA match matrix and review player-development patterns."
+version = "1.0.0"
+id = "artifacts/tennis-scoring-android"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/mobile/" ]
+localPort = 21976
+
+[services.development]
+run = "pnpm --filter @workspace/tennis-scoring-android run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/tennis-scoring-android", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/tennis-scoring-android", "run", "serve" ]
+
+[services.env]
+PORT = "21976"
+BASE_PATH = "/mobile/"
