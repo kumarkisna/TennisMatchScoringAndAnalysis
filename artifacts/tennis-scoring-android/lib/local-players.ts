@@ -12,6 +12,7 @@ export interface LocalPlayer {
   playingHand: PlayerHand | null;
   heightCm: number | null;
   weightKg: number | null;
+  profileUrls: string[];
   createdAt: string;
 }
 
@@ -27,6 +28,7 @@ export interface LocalPlayerDetailsInput {
   playingHand?: PlayerHand | null;
   heightCm?: string | number | null;
   weightKg?: string | number | null;
+  profileUrls?: string[] | null;
 }
 
 export const LOCAL_PLAYERS_KEY = ['device-players'] as const;
@@ -78,6 +80,9 @@ async function readPlayers(): Promise<LocalPlayer[]> {
         (player.playingHand !== undefined &&
           player.playingHand !== null &&
           !['right', 'left', 'ambidextrous'].includes(player.playingHand)) ||
+        (player.profileUrls !== undefined &&
+          (!Array.isArray(player.profileUrls) ||
+            player.profileUrls.some((url: unknown) => typeof url !== 'string'))) ||
         typeof player.createdAt !== 'string',
     )
   ) {
@@ -101,6 +106,7 @@ async function readPlayers(): Promise<LocalPlayer[]> {
         : null,
     heightCm: typeof player.heightCm === 'number' ? player.heightCm : null,
     weightKg: typeof player.weightKg === 'number' ? player.weightKg : null,
+    profileUrls: normalizeProfileUrls(player.profileUrls ?? []),
   })) as LocalPlayer[];
 }
 
@@ -202,6 +208,50 @@ function normalizeDateOfBirth(value: string | null): string | null {
   return dateText;
 }
 
+function normalizeProfileUrls(values: string[] | null | undefined): string[] {
+  const urls: string[] = [];
+  const seen = new Set<string>();
+
+  for (const value of values ?? []) {
+    const text = value.trim();
+    if (!text) continue;
+    if (text.length > 2048) {
+      throw new Error('Profile links must be 2,048 characters or fewer.');
+    }
+    if (/\s/.test(text) || text.startsWith('//')) {
+      throw new Error('Enter a valid http:// or https:// profile link.');
+    }
+
+    const hasScheme = text.includes('://') && /^[a-z][a-z\d+.-]*:\/\//i.test(text);
+    const candidate = hasScheme ? text : `https://${text}`;
+    let parsed: URL;
+    try {
+      parsed = new URL(candidate);
+    } catch {
+      throw new Error('Enter a valid http:// or https:// profile link.');
+    }
+
+    if (
+      (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') ||
+      !parsed.hostname ||
+      parsed.username ||
+      parsed.password
+    ) {
+      throw new Error('Profile links must use http:// or https:// and include a web address.');
+    }
+
+    const normalized = parsed.toString();
+    const dedupeKey = `${parsed.origin.toLowerCase()}${parsed.pathname}${parsed.search}${parsed.hash}`;
+    if (seen.has(dedupeKey)) {
+      throw new Error('Each profile link must be unique.');
+    }
+    seen.add(dedupeKey);
+    urls.push(normalized);
+  }
+
+  return urls;
+}
+
 function normalizeProfileDetails(details: LocalPlayerDetailsInput): Omit<LocalPlayer, 'id' | 'name' | 'createdAt'> {
   const normalizeText = (value: string | null | undefined, label: string, maxLength = 80) => {
     const text = value?.trim() ?? '';
@@ -244,5 +294,6 @@ function normalizeProfileDetails(details: LocalPlayerDetailsInput): Omit<LocalPl
     playingHand,
     heightCm: normalizeInteger(details.heightCm, 'Height in centimeters', 50, 250),
     weightKg: normalizeInteger(details.weightKg, 'Weight in kilograms', 10, 300),
+    profileUrls: normalizeProfileUrls(details.profileUrls),
   };
 }

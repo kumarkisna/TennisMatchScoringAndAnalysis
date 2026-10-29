@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
@@ -47,6 +47,7 @@ export default function PlayersScreen() {
   const [playingHand, setPlayingHand] = useState<PlayerHand | null>(null);
   const [heightCm, setHeightCm] = useState('');
   const [weightKg, setWeightKg] = useState('');
+  const [profileUrls, setProfileUrls] = useState<string[]>([]);
   const playersQuery = useQuery({
     queryKey: LOCAL_PLAYERS_KEY,
     queryFn: listLocalPlayers,
@@ -103,6 +104,7 @@ export default function PlayersScreen() {
         playingHand,
         heightCm,
         weightKg,
+        profileUrls,
       },
     });
   }
@@ -120,6 +122,7 @@ export default function PlayersScreen() {
     setPlayingHand(null);
     setHeightCm('');
     setWeightKg('');
+    setProfileUrls([]);
   }
 
   function beginEditing(player: LocalPlayer) {
@@ -135,12 +138,21 @@ export default function PlayersScreen() {
     setPlayingHand(player.playingHand);
     setHeightCm(player.heightCm?.toString() ?? '');
     setWeightKg(player.weightKg?.toString() ?? '');
+    setProfileUrls(player.profileUrls ?? []);
     savePlayer.reset();
   }
 
   function cancelEditing() {
     resetForm();
     savePlayer.reset();
+  }
+
+  async function openProfileLink(url: string) {
+    try {
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('Couldn’t open profile', 'Check that your device has a browser available and try again.');
+    }
   }
 
   return (
@@ -195,6 +207,59 @@ export default function PlayersScreen() {
               },
             ]}
           />
+          <View style={styles.profileLinksHeader}>
+            <Text style={[styles.dateLabel, { color: colors.mutedForeground }]}>
+              PROFILE LINKS · OPTIONAL
+            </Text>
+            <Pressable
+              testID="button-add-player-profile-link"
+              accessibilityRole="button"
+              accessibilityLabel="Add profile link"
+              onPress={() => setProfileUrls((urls) => [...urls, ''])}
+              style={({ pressed }) => [
+                styles.addLinkButton,
+                { opacity: pressed ? 0.65 : 1 },
+              ]}
+            >
+              <Ionicons name="add-circle-outline" size={17} color={colors.primary} />
+              <Text style={[styles.addLinkText, { color: colors.primary }]}>Add link</Text>
+            </Pressable>
+          </View>
+          {profileUrls.map((url, index) => (
+            <View key={`profile-url-${index}`} style={styles.profileLinkInputRow}>
+              <TextInput
+                testID={`input-player-profile-link-${index}`}
+                accessibilityLabel={`Player profile link ${index + 1}`}
+                value={url}
+                onChangeText={(value) =>
+                  setProfileUrls((urls) => urls.map((item, itemIndex) => itemIndex === index ? value : item))
+                }
+                placeholder="https://example.com/player"
+                placeholderTextColor={colors.mutedForeground}
+                keyboardType="url"
+                autoCapitalize="none"
+                autoCorrect={false}
+                maxLength={2048}
+                style={[
+                  styles.profileLinkInput,
+                  {
+                    color: colors.foreground,
+                    borderColor: colors.border,
+                    backgroundColor: colors.background,
+                  },
+                ]}
+              />
+              <Pressable
+                testID={`button-remove-player-profile-link-${index}`}
+                accessibilityRole="button"
+                accessibilityLabel={`Remove profile link ${index + 1}`}
+                onPress={() => setProfileUrls((urls) => urls.filter((_, itemIndex) => itemIndex !== index))}
+                style={({ pressed }) => [styles.removeLinkButton, { opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Ionicons name="close-circle-outline" size={20} color={colors.mutedForeground} />
+              </Pressable>
+            </View>
+          ))}
           <View style={styles.dateField}>
             <Text style={[styles.dateLabel, { color: colors.mutedForeground }]}>
               DATE OF BIRTH · OPTIONAL
@@ -542,6 +607,24 @@ export default function PlayersScreen() {
                         {profileSummary}
                       </Text>
                     ) : null}
+                    {player.profileUrls?.map((url, linkIndex) => {
+                      const host = new URL(url).hostname;
+                      return (
+                        <Pressable
+                          key={`${url}-${linkIndex}`}
+                          testID={`button-open-player-profile-${player.id}-${linkIndex}`}
+                          accessibilityRole="link"
+                          accessibilityLabel={`Open ${player.name} profile ${linkIndex + 1} at ${host}`}
+                          onPress={() => void openProfileLink(url)}
+                          style={({ pressed }) => [styles.profileLink, { opacity: pressed ? 0.65 : 1 }]}
+                        >
+                          <Ionicons name="open-outline" size={12} color={colors.primary} />
+                          <Text numberOfLines={1} style={[styles.profileLinkText, { color: colors.primary }]}>
+                            Profile {linkIndex + 1} · {host}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
                   </View>
                   <Pressable
                     testID={`button-edit-player-${player.id}`}
@@ -585,7 +668,7 @@ export default function PlayersScreen() {
         <View style={styles.localNote}>
           <Ionicons name="phone-portrait-outline" size={14} color={colors.mutedForeground} />
           <Text style={[styles.localNoteText, { color: colors.mutedForeground }]}>
-            Player names and profile details stay on this phone. Existing match sheets are not affected when you remove a name.
+            Player names, details, and profile links stay on this phone. Existing match sheets are not affected when you remove a name.
           </Text>
         </View>
       </ScrollView>
@@ -609,6 +692,14 @@ const styles = StyleSheet.create({
   addButtonText: { fontFamily: 'DMSans_700Bold', fontSize: 12 },
   dateField: { gap: 5 },
   dateLabel: { fontFamily: 'DMSans_700Bold', fontSize: 8, letterSpacing: 0.8 },
+  profileLinksHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  addLinkButton: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  addLinkText: { fontFamily: 'DMSans_600SemiBold', fontSize: 11 },
+  profileLinkInputRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  profileLinkInput: { flex: 1, minHeight: 40, borderWidth: 1, borderRadius: 8, paddingHorizontal: 9, fontFamily: 'DMSans_500Medium', fontSize: 12 },
+  removeLinkButton: { width: 36, height: 38, alignItems: 'center', justifyContent: 'center' },
+  profileLink: { alignSelf: 'flex-start', maxWidth: '100%', flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 2 },
+  profileLinkText: { flexShrink: 1, fontFamily: 'DMSans_600SemiBold', fontSize: 10, textDecorationLine: 'underline' },
   profileDetailsToggle: { minHeight: 40, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
   profileDetailsToggleText: { flex: 1, fontFamily: 'DMSans_600SemiBold', fontSize: 11 },
   tourDetails: { gap: 10 },
