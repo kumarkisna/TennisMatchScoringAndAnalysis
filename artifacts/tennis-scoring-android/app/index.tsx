@@ -2,8 +2,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { useAuth, useClerk } from '@clerk/expo';
-import { useListMatches } from '@workspace/api-client-react';
 import {
   ActivityIndicator,
   FlatList,
@@ -22,12 +20,6 @@ import {
 } from '@/lib/local-matches';
 import { listLocalPlayers, LOCAL_PLAYERS_KEY } from '@/lib/local-players';
 
-type MatchCardItem = Omit<LocalMatchSummary, 'setScores'> & {
-  setScores: LocalMatchSummary['setScores'];
-  isOwner: boolean;
-  source: 'device' | 'remote';
-};
-
 function formatMatchDate(date: string) {
   const normalizedDate = date.slice(0, 10);
   const [year, month, day] = normalizedDate.split('-').map(Number);
@@ -43,62 +35,17 @@ export default function HomeScreen() {
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { signOut } = useClerk();
-  const { userId, isLoaded } = useAuth();
   const [showCompletedMatches, setShowCompletedMatches] = useState(true);
   const matchesQuery = useQuery({
     queryKey: LOCAL_MATCH_LIST_KEY,
-    queryFn: () => listLocalMatches(userId ?? ''),
-    enabled: Boolean(isLoaded && userId),
+    queryFn: listLocalMatches,
   });
   const playersQuery = useQuery({
     queryKey: LOCAL_PLAYERS_KEY,
     queryFn: listLocalPlayers,
   });
-  const remoteMatchesQuery = useListMatches();
   const localMatches = matchesQuery.data ?? [];
-  const localRemoteIds = new Set(
-    localMatches
-      .map((match) => match.remoteMatchId)
-      .filter((id): id is string => Boolean(id)),
-  );
-  const remoteMatches: MatchCardItem[] = (remoteMatchesQuery.data ?? [])
-    .filter((match) => !localRemoteIds.has(match.id))
-    .map((match) => ({
-      id: match.id,
-      remoteMatchId: match.id,
-      matchDate: match.matchDate,
-      event: match.event ?? null,
-      round: match.round ?? null,
-      setNumber: match.setNumber,
-      trackedPlayer: match.trackedPlayer,
-      opponent: match.opponent,
-      surface: match.surface,
-      status: match.status,
-      syncStatus: 'synced',
-      pendingPointCount: 0,
-      trackedGames: match.trackedGames,
-      opponentGames: match.opponentGames,
-      setScores: [{
-        setNumber: match.setNumber,
-        format: 'standard' as const,
-        tiebreakTarget: 7,
-        trackedGames: match.trackedGames,
-        opponentGames: match.opponentGames,
-        trackedTiebreakPoints: 0,
-        opponentTiebreakPoints: 0,
-        isComplete: match.status === 'complete',
-      }],
-      pointCount: match.pointCount,
-      winner: match.winner ?? null,
-      updatedAt: match.updatedAt,
-      isOwner: match.isOwner,
-      source: 'remote',
-    }));
-  const matches: MatchCardItem[] = [
-    ...localMatches.map((match) => ({ ...match, isOwner: true, source: 'device' as const })),
-    ...remoteMatches,
-  ].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const matches: LocalMatchSummary[] = localMatches;
   const completedCount = matches.filter((match) => match.status === 'complete').length;
   const visibleMatches = showCompletedMatches
     ? matches
@@ -120,11 +67,8 @@ export default function HomeScreen() {
         scrollEnabled={matches.length > 0}
         refreshControl={
           <RefreshControl
-            refreshing={matchesQuery.isRefetching || remoteMatchesQuery.isRefetching}
-            onRefresh={() => {
-              void matchesQuery.refetch();
-              void remoteMatchesQuery.refetch();
-            }}
+            refreshing={matchesQuery.isRefetching}
+            onRefresh={() => void matchesQuery.refetch()}
             tintColor={colors.primary}
           />
         }
@@ -142,14 +86,6 @@ export default function HomeScreen() {
                 <Text style={[styles.courtBadgeText, { color: colors.mutedForeground }]}>
                   COURTSIDE
                 </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  testID="button-sign-out"
-                  onPress={() => void signOut()}
-                  hitSlop={8}
-                >
-                  <Text style={[styles.signOutText, { color: colors.primary }]}>Sign out</Text>
-                </Pressable>
               </View>
             </View>
 
@@ -215,7 +151,7 @@ export default function HomeScreen() {
                   Match book
                 </Text>
                 <Text style={[styles.sectionCaption, { color: colors.mutedForeground }]}>
-                  Saved on device first · new matches stay private unless shared
+                  Saved on this device · no account or internet needed
                 </Text>
               </View>
               <View style={styles.matchControls}>
@@ -274,7 +210,6 @@ export default function HomeScreen() {
                     {formatMatchDate(item.matchDate)}
                     {item.round ? ` · ${item.round}` : ''}
                     {` · ${item.setScores.length} ${item.setScores.length === 1 ? 'SET' : 'SETS'}`}
-                    {item.source === 'remote' && !item.isOwner ? ' · SHARED WITH YOU' : ''}
                   </Text>
                 </View>
                 <View
@@ -337,9 +272,7 @@ export default function HomeScreen() {
                   {item.surface.toUpperCase()} COURT
                 </Text>
                 <Text style={[styles.matchBottomText, { color: colors.mutedForeground }]}>
-                  {item.source === 'device' && item.syncStatus !== 'synced'
-                    ? 'ON THIS DEVICE'
-                    : `${item.pointCount} ${item.pointCount === 1 ? 'POINT' : 'POINTS'}`}
+                  {`${item.pointCount} ${item.pointCount === 1 ? 'POINT' : 'POINTS'}`}
                 </Text>
                 <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
               </View>
@@ -347,7 +280,7 @@ export default function HomeScreen() {
           );
         }}
         ListEmptyComponent={
-          matchesQuery.isLoading || remoteMatchesQuery.isLoading ? (
+          matchesQuery.isLoading ? (
             <View style={styles.stateBox}>
               <ActivityIndicator size="small" color={colors.primary} />
               <Text style={[styles.stateText, { color: colors.mutedForeground }]}>
@@ -427,7 +360,7 @@ export default function HomeScreen() {
           <View style={styles.footerNote}>
             <Ionicons name="shield-checkmark-outline" size={14} color={colors.mutedForeground} />
             <Text style={[styles.footerText, { color: colors.mutedForeground }]}>
-              Scores save on this device first · new matches sync privately; player profiles stay here
+              Scores and player profiles stay on this device · no online storage
             </Text>
           </View>
         }

@@ -26,9 +26,6 @@ import {
   LOCAL_PLAYERS_KEY,
 } from '@/lib/local-players';
 
-import { useAuth } from '@clerk/expo';
-import { requestMatchSync } from '@/lib/match-sync';
-
 type Side = 'tracked' | 'opponent';
 type Surface = 'Hard' | 'Clay' | 'Grass' | 'Carpet' | 'Other';
 
@@ -152,7 +149,6 @@ export default function NewMatchScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
-  const { userId } = useAuth();
   const [matchDate, setMatchDate] = useState(localDate());
   const [trackedPlayer, setTrackedPlayer] = useState('');
   const [opponent, setOpponent] = useState('');
@@ -178,12 +174,6 @@ export default function NewMatchScreen() {
       queryClient.setQueryData(localMatchKey(match.id), match);
       void queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
       router.replace({ pathname: '/matches/[id]', params: { id: match.id } });
-      void requestMatchSync(userId ?? '')
-        .catch(() => undefined)
-        .finally(() => {
-          void queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
-          void queryClient.invalidateQueries({ queryKey: localMatchKey(match.id) });
-        });
     },
   });
 
@@ -200,10 +190,6 @@ export default function NewMatchScreen() {
       surface,
       firstServer,
     };
-    if (!userId) {
-      setFormError('Sign in before creating a match.');
-      return;
-    }
     const detailsError = validateLocalMatchDetails(details);
     if (detailsError) {
       setFormError(detailsError);
@@ -215,7 +201,6 @@ export default function NewMatchScreen() {
     }
 
     createMatch.mutate({
-      ownerUserId: userId,
       ...details,
       setNumber: parsedSet,
     });
