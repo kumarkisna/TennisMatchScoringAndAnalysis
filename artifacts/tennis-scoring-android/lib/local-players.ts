@@ -32,8 +32,10 @@ export interface LocalPlayerDetailsInput {
 }
 
 export const LOCAL_PLAYERS_KEY = ['device-players'] as const;
+export const ACTIVE_LOCAL_PLAYER_KEY = ['device-active-player'] as const;
 
 const STORAGE_KEY = '@tennis-scoring/players/record-v1';
+const ACTIVE_PLAYER_STORAGE_KEY = '@tennis-scoring/players/active-id-v1';
 let writeQueue = Promise.resolve();
 
 function withWriteLock<T>(operation: () => Promise<T>): Promise<T> {
@@ -121,6 +123,27 @@ export async function listLocalPlayers(): Promise<LocalPlayer[]> {
   );
 }
 
+export async function getActiveLocalPlayerId(): Promise<string | null> {
+  const activeId = await AsyncStorage.getItem(ACTIVE_PLAYER_STORAGE_KEY);
+  if (!activeId) return null;
+
+  const players = await readPlayers();
+  if (players.some((player) => player.id === activeId)) return activeId;
+
+  await AsyncStorage.removeItem(ACTIVE_PLAYER_STORAGE_KEY);
+  return null;
+}
+
+export async function setActiveLocalPlayerId(id: string): Promise<void> {
+  return withWriteLock(async () => {
+    const players = await readPlayers();
+    if (!players.some((player) => player.id === id)) {
+      throw new Error('Choose a saved player to make the main tracked player.');
+    }
+    await AsyncStorage.setItem(ACTIVE_PLAYER_STORAGE_KEY, id);
+  });
+}
+
 export async function addLocalPlayer(
   name: string,
   details: LocalPlayerDetailsInput = {},
@@ -137,7 +160,12 @@ export async function addLocalPlayer(
     const existing = players.find(
       (player) => player.name.toLocaleLowerCase() === normalizedName.toLocaleLowerCase(),
     );
-    if (existing) return existing;
+    if (existing) {
+      if (!(await AsyncStorage.getItem(ACTIVE_PLAYER_STORAGE_KEY))) {
+        await AsyncStorage.setItem(ACTIVE_PLAYER_STORAGE_KEY, existing.id);
+      }
+      return existing;
+    }
 
     const player: LocalPlayer = {
       id: newPlayerId(),
@@ -146,6 +174,9 @@ export async function addLocalPlayer(
       createdAt: new Date().toISOString(),
     };
     await writePlayers([...players, player]);
+    if (!(await AsyncStorage.getItem(ACTIVE_PLAYER_STORAGE_KEY))) {
+      await AsyncStorage.setItem(ACTIVE_PLAYER_STORAGE_KEY, player.id);
+    }
     return player;
   });
 }
@@ -185,6 +216,14 @@ export async function deleteLocalPlayer(id: string): Promise<boolean> {
     const remaining = players.filter((player) => player.id !== id);
     if (remaining.length === players.length) return false;
     await writePlayers(remaining);
+    if ((await AsyncStorage.getItem(ACTIVE_PLAYER_STORAGE_KEY)) === id) {
+      const nextActivePlayer = remaining[0];
+      if (nextActivePlayer) {
+        await AsyncStorage.setItem(ACTIVE_PLAYER_STORAGE_KEY, nextActivePlayer.id);
+      } else {
+        await AsyncStorage.removeItem(ACTIVE_PLAYER_STORAGE_KEY);
+      }
+    }
     return true;
   });
 }

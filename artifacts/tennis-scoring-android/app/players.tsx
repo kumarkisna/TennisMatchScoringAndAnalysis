@@ -6,12 +6,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import {
+  ACTIVE_LOCAL_PLAYER_KEY,
   addLocalPlayer,
   deleteLocalPlayer,
   formatDateOfBirthInput,
+  getActiveLocalPlayerId,
   getDateOfBirthValidationError,
   listLocalPlayers,
   LOCAL_PLAYERS_KEY,
+  setActiveLocalPlayerId,
   updateLocalPlayer,
   type LocalPlayerDetailsInput,
   type LocalPlayer,
@@ -55,6 +58,10 @@ export default function PlayersScreen() {
     queryKey: LOCAL_PLAYERS_KEY,
     queryFn: listLocalPlayers,
   });
+  const activePlayerQuery = useQuery({
+    queryKey: ACTIVE_LOCAL_PLAYER_KEY,
+    queryFn: getActiveLocalPlayerId,
+  });
   const savePlayer = useMutation({
     mutationFn: ({
       id,
@@ -70,12 +77,27 @@ export default function PlayersScreen() {
         : addLocalPlayer(name, details),
     onSuccess: async () => {
       resetForm();
-      await queryClient.invalidateQueries({ queryKey: LOCAL_PLAYERS_KEY });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: LOCAL_PLAYERS_KEY }),
+        queryClient.invalidateQueries({ queryKey: ACTIVE_LOCAL_PLAYER_KEY }),
+      ]);
+    },
+  });
+  const setActivePlayer = useMutation({
+    mutationFn: setActiveLocalPlayerId,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ACTIVE_LOCAL_PLAYER_KEY });
+      router.back();
     },
   });
   const removePlayer = useMutation({
     mutationFn: deleteLocalPlayer,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: LOCAL_PLAYERS_KEY }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: LOCAL_PLAYERS_KEY }),
+        queryClient.invalidateQueries({ queryKey: ACTIVE_LOCAL_PLAYER_KEY }),
+      ]);
+    },
   });
 
   function confirmRemove(player: LocalPlayer) {
@@ -185,7 +207,7 @@ export default function PlayersScreen() {
         <Text style={[styles.eyebrow, { color: colors.accent }]}>ON THIS DEVICE</Text>
         <Text style={[styles.title, { color: colors.foreground }]}>Saved players</Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-          Keep a local player list and select names when setting up a match.
+          Choose the main tracked player for new match sheets. Switching never changes past matches.
         </Text>
 
         <View style={[styles.addCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -571,6 +593,11 @@ export default function PlayersScreen() {
               {removePlayer.error.message}
             </Text>
           ) : null}
+          {setActivePlayer.error ? (
+            <Text accessibilityRole="alert" style={[styles.errorText, { color: colors.destructive }]}>
+              {setActivePlayer.error.message}
+            </Text>
+          ) : null}
         </View>
 
         <View style={styles.listHeading}>
@@ -600,6 +627,7 @@ export default function PlayersScreen() {
           <View style={[styles.playersCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             {playersQuery.data.map((player, index) => {
               const profileSummary = playerProfileSummary(player);
+              const isMainPlayer = activePlayerQuery.data === player.id;
               return (
                 <View
                   key={player.id}
@@ -643,6 +671,37 @@ export default function PlayersScreen() {
                         </Pressable>
                       );
                     })}
+                    {isMainPlayer ? (
+                      <View
+                        testID={`main-tracked-player-${player.id}`}
+                        style={[styles.mainPlayerBadge, { backgroundColor: colors.secondary }]}
+                      >
+                        <Ionicons name="checkmark-circle" size={12} color={colors.primary} />
+                        <Text style={[styles.mainPlayerBadgeText, { color: colors.primary }]}>
+                          MAIN TRACKED PLAYER
+                        </Text>
+                      </View>
+                    ) : (
+                      <Pressable
+                        testID={`button-set-main-player-${player.id}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Use ${player.name} as the main tracked player`}
+                        disabled={setActivePlayer.isPending}
+                        onPress={() => setActivePlayer.mutate(player.id)}
+                        style={({ pressed }) => [
+                          styles.setMainPlayerButton,
+                          {
+                            borderColor: colors.border,
+                            opacity: setActivePlayer.isPending ? 0.45 : pressed ? 0.65 : 1,
+                          },
+                        ]}
+                      >
+                        <Ionicons name="radio-button-off" size={12} color={colors.primary} />
+                        <Text style={[styles.setMainPlayerText, { color: colors.primary }]}>
+                          Use for new matches
+                        </Text>
+                      </Pressable>
+                    )}
                   </View>
                   <Pressable
                     testID={`button-edit-player-${player.id}`}
@@ -740,6 +799,10 @@ const styles = StyleSheet.create({
   playerDetails: { flex: 1, gap: 3 },
   playerName: { fontFamily: 'DMSans_600SemiBold', fontSize: 13 },
   playerDate: { fontFamily: 'DMSans_400Regular', fontSize: 9 },
+  mainPlayerBadge: { alignSelf: 'flex-start', marginTop: 4, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  mainPlayerBadgeText: { fontFamily: 'DMSans_700Bold', fontSize: 7, letterSpacing: 0.6 },
+  setMainPlayerButton: { alignSelf: 'flex-start', marginTop: 4, minHeight: 25, borderWidth: 1, borderRadius: 6, paddingHorizontal: 6, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  setMainPlayerText: { fontFamily: 'DMSans_600SemiBold', fontSize: 9 },
   removeButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
   emptyCard: { minHeight: 152, borderWidth: 1, borderRadius: 12, padding: 18, alignItems: 'center', justifyContent: 'center', gap: 9 },
   emptyTitle: { fontFamily: 'DMSans_700Bold', fontSize: 15 },

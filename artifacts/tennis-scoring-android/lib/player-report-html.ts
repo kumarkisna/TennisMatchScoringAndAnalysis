@@ -14,6 +14,7 @@ interface ReportMatch {
   opponent: string;
   surface: string;
   matchStatus: 'in_progress' | 'complete';
+  score?: { winner: 'tracked' | 'opponent' | null };
 }
 
 const codeLabels: Record<PointCode, string> = {
@@ -41,6 +42,16 @@ function escapeHtml(value: string): string {
     };
     return replacements[character] ?? character;
   });
+}
+
+function formatReportDate(value: string): string {
+  const [year, month, day] = value.slice(0, 10).split('-').map(Number);
+  if (!year || !month || !day) return value;
+  const monthName = new Date(Date.UTC(year, month - 1, day)).toLocaleString(
+    undefined,
+    { month: 'long', timeZone: 'UTC' },
+  );
+  return `${monthName} ${day}, ${year}`;
 }
 
 function exactPercent(numerator: number, denominator: number): string {
@@ -299,20 +310,37 @@ export function buildPlayerReportHtml(
   const event = match.event?.trim() || 'Match session';
   const round = match.round?.trim() || 'Not specified';
   const coach = match.chairCoach?.trim() || 'Not specified';
+  const reportDate = formatReportDate(match.matchDate);
+  const matchWinner =
+    match.score?.winner === 'tracked'
+      ? match.trackedPlayer
+      : match.score?.winner === 'opponent'
+        ? match.opponent
+        : match.matchStatus === 'complete'
+          ? 'Not recorded'
+          : 'In progress';
 
   return `<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${escape(match.trackedPlayer)} — Tennis performance analysis</title>
+    <title>Tennis Match Report — ${escape(reportDate)}</title>
     <style>
-      @page { size: A4; margin: 15mm; }
+      @page { size: A4; margin: 0; }
       * { box-sizing: border-box; }
-      body { color: #183a30; font-family: Arial, Helvetica, sans-serif; margin: 0; }
+      body { color: #183a30; font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 14mm; }
       .eyebrow { color: #a45c45; font-size: 10px; font-weight: 700; letter-spacing: 2px; }
-      h1 { font-size: 28px; margin: 8px 0 4px; }
-      .versus { color: #60746c; font-size: 14px; margin: 0; }
+      .report-title { color: #183a30; font-size: 23px; letter-spacing: -0.3px; margin: 5px 0 14px; }
+      .match-heading { align-items: stretch; border-bottom: 1px solid #dcded4; display: grid; gap: 12px; grid-template-columns: 1fr auto 1fr; padding: 0 0 15px; }
+      .player-block { background: #f2f1e9; border-radius: 8px; min-width: 0; padding: 12px; }
+      .player-label { color: #60746c; font-size: 8px; font-weight: 700; letter-spacing: 1px; }
+      .player-name { color: #183a30; font-size: 15px; line-height: 1.3; margin-top: 7px; overflow-wrap: anywhere; }
+      .versus { align-self: center; color: #60746c; font-size: 11px; font-weight: 700; }
+      .date-result { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 12px 0 0; }
+      .date-result-item { display: flex; flex-direction: column; gap: 4px; }
+      .date-result-label { color: #60746c; font-size: 8px; font-weight: 700; letter-spacing: 1px; }
+      .date-result-value { color: #183a30; font-size: 12px; font-weight: 700; }
       .meta { border-bottom: 1px solid #dcded4; color: #53685f; display: grid; font-size: 11px; gap: 8px 18px; grid-template-columns: 1fr 1fr; margin: 18px 0; padding-bottom: 16px; }
       .meta strong { color: #183a30; }
       h2 { break-after: avoid; font-size: 15px; margin: 22px 0 10px; }
@@ -346,14 +374,34 @@ export function buildPlayerReportHtml(
       .note a { color: #245d4b; }
       h3 { break-after: avoid; color: #183a30; font-size: 11px; margin: 14px 0 6px; }
       .context-coverage { color: #60746c; font-size: 9px; margin: 3px 0 7px; }
+      @media print { html, body { margin: 0; } body { padding: 14mm; } }
     </style>
   </head>
   <body>
-    <div class="eyebrow">TENNISSCORING · PLAYER PERFORMANCE ANALYSIS</div>
-    <h1>${escape(match.trackedPlayer)}</h1>
-    <p class="versus">vs ${escape(match.opponent)}</p>
+    <div class="eyebrow">PLAYER DEVELOPMENT · LOCAL REPORT</div>
+    <h1 class="report-title">Tennis Match Report</h1>
+    <div class="match-heading">
+      <div class="player-block">
+        <div class="player-label">TRACKED PLAYER</div>
+        <div class="player-name">${escape(match.trackedPlayer)}</div>
+      </div>
+      <div class="versus">VS</div>
+      <div class="player-block">
+        <div class="player-label">OPPONENT</div>
+        <div class="player-name">${escape(match.opponent)}</div>
+      </div>
+    </div>
+    <div class="date-result">
+      <div class="date-result-item">
+        <span class="date-result-label">MATCH DATE</span>
+        <span class="date-result-value">${escape(reportDate)}</span>
+      </div>
+      <div class="date-result-item">
+        <span class="date-result-label">MATCH WINNER</span>
+        <span class="date-result-value">${escape(matchWinner)}</span>
+      </div>
+    </div>
     <div class="meta">
-      <div><strong>Date:</strong> ${escape(match.matchDate)}</div>
       <div><strong>Event:</strong> ${escape(event)}</div>
       <div><strong>Round:</strong> ${escape(round)}</div>
       <div><strong>Sets recorded:</strong> ${insights.sets.length}</div>
@@ -463,10 +511,10 @@ export function buildPlayerReportHtml(
       <tbody>${rallyRows}</tbody>
     </table>
     <p class="note">
-      Generated on this device from the saved point log. Rates show count/denominator and percentage; tagged-ending analysis only covers tagged points. Small samples are directional, not conclusions. Break-point totals are reconstructed from ordinary-game points; standard tie-break points and match tie-break sets are excluded. Rally-length statistics are omitted because the logger does not record them. Category layout references:
+      Generated on this device from the saved point log. Rates show count/denominator and percentage; tagged-ending analysis only covers tagged points. Small samples are directional, not conclusions. Break-point totals are reconstructed from ordinary-game points; standard tie-break points and match tie-break sets are excluded. Category layout references:
       <a href="https://www.atptour.com/en/scores/stats-centre/archive/2018/605/ms001">ATP Tour Stats Centre</a> and
       <a href="https://www.itftennis.com/en/match?matchId=faa89f46-3451-48b3-9fae-cba92da84cf6">ITF match statistics</a>.
-      No online match data or tour-average benchmarks are used.
+      The 2026 and 2026 Cincinnati reference figures are user-provided; no statistics are fetched online.
     </p>
   </body>
 </html>`;

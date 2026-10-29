@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import {
+  Alert,
   ActivityIndicator,
   FlatList,
   Pressable,
@@ -14,11 +15,24 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import {
+  deleteLocalMatch,
+  localInsightsKey,
+  localMatchKey,
   listLocalMatches,
   LOCAL_MATCH_LIST_KEY,
   type LocalMatchSummary,
 } from '@/lib/local-matches';
-import { listLocalPlayers, LOCAL_PLAYERS_KEY } from '@/lib/local-players';
+import {
+  ACTIVE_LOCAL_PLAYER_KEY,
+  getActiveLocalPlayerId,
+  listLocalPlayers,
+  LOCAL_PLAYERS_KEY,
+} from '@/lib/local-players';
+import {
+  loadLocalBackupFromDevice,
+  saveLocalBackupToDevice,
+  shareLocalBackup,
+} from '@/lib/local-backup';
 
 function formatMatchDate(date: string) {
   const normalizedDate = date.slice(0, 10);
@@ -35,6 +49,7 @@ export default function HomeScreen() {
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
   const [showCompletedMatches, setShowCompletedMatches] = useState(true);
   const matchesQuery = useQuery({
     queryKey: LOCAL_MATCH_LIST_KEY,
@@ -44,12 +59,72 @@ export default function HomeScreen() {
     queryKey: LOCAL_PLAYERS_KEY,
     queryFn: listLocalPlayers,
   });
+  const activePlayerQuery = useQuery({
+    queryKey: ACTIVE_LOCAL_PLAYER_KEY,
+    queryFn: getActiveLocalPlayerId,
+  });
+  const deleteMatch = useMutation({
+    mutationFn: deleteLocalMatch,
+    onSuccess: async (_deleted, matchId) => {
+      queryClient.removeQueries({ queryKey: localMatchKey(matchId) });
+      queryClient.removeQueries({ queryKey: localInsightsKey(matchId) });
+      await queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
+    },
+    onError: (error) => Alert.alert('Could not delete match', error.message),
+  });
+  const saveBackup = useMutation({
+    mutationFn: saveLocalBackupToDevice,
+    onSuccess: (result) => {
+      if (!result.cancelled) {
+        Alert.alert('Backup saved', `${result.fileName} was saved to the folder you chose.`);
+      }
+    },
+    onError: (error) => Alert.alert('Could not save backup', error.message),
+  });
+  const shareBackup = useMutation({
+    mutationFn: shareLocalBackup,
+    onError: (error) => Alert.alert('Could not share backup', error.message),
+  });
+  const loadBackup = useMutation({
+    mutationFn: loadLocalBackupFromDevice,
+    onSuccess: async (result) => {
+      if (result.cancelled) return;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY }),
+        queryClient.invalidateQueries({ queryKey: LOCAL_PLAYERS_KEY }),
+        queryClient.invalidateQueries({ queryKey: ACTIVE_LOCAL_PLAYER_KEY }),
+      ]);
+      Alert.alert(
+        'Backup loaded',
+        `Added ${result.matchesAdded} matches and ${result.playersAdded} players. Existing records were left unchanged.`,
+      );
+    },
+    onError: (error) => Alert.alert('Could not load backup', error.message),
+  });
   const localMatches = matchesQuery.data ?? [];
   const matches: LocalMatchSummary[] = localMatches;
+  const activePlayer = playersQuery.data?.find(
+    (player) => player.id === activePlayerQuery.data,
+  );
   const completedCount = matches.filter((match) => match.status === 'complete').length;
   const visibleMatches = showCompletedMatches
     ? matches
     : matches.filter((match) => match.status !== 'complete');
+
+  function confirmDeleteMatch(match: LocalMatchSummary) {
+    Alert.alert(
+      'Delete this match?',
+      `${match.trackedPlayer} vs ${match.opponent} and all recorded points will be permanently removed from this device. This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete match',
+          style: 'destructive',
+          onPress: () => deleteMatch.mutate(match.id),
+        },
+      ],
+    );
+  }
 
   return (
     <SafeAreaView
@@ -64,7 +139,7 @@ export default function HomeScreen() {
           { paddingBottom: Math.max(insets.bottom, 20) + 24 },
         ]}
         showsVerticalScrollIndicator={false}
-        scrollEnabled={matches.length > 0}
+        scrollEnabled
         refreshControl={
           <RefreshControl
             refreshing={matchesQuery.isRefetching}
@@ -122,6 +197,34 @@ export default function HomeScreen() {
               />
             </Pressable>
 
+            <View style={[styles.activePlayerCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={[styles.activePlayerIcon, { backgroundColor: colors.secondary }]}>
+                <Ionicons name="person-outline" size={16} color={colors.primary} />
+              </View>
+              <View style={styles.activePlayerInfo}>
+                <Text style={[styles.activePlayerLabel, { color: colors.mutedForeground }]}>
+                  MAIN TRACKED PLAYER
+                </Text>
+                <Text style={[styles.activePlayerName, { color: colors.foreground }]}>
+                  {activePlayer?.name ?? (playersQuery.data?.length ? 'Choose a player' : 'Add a player')}
+                </Text>
+              </View>
+              <Pressable
+                testID="button-switch-main-player"
+                accessibilityRole="button"
+                accessibilityLabel={activePlayer ? 'Switch main tracked player' : 'Choose main tracked player'}
+                onPress={() => router.push('/players')}
+                style={({ pressed }) => [
+                  styles.switchPlayerButton,
+                  { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
+                ]}
+              >
+                <Text style={[styles.switchPlayerText, { color: colors.primary }]}>
+                  {activePlayer ? 'Switch' : 'Choose'}
+                </Text>
+              </Pressable>
+            </View>
+
             <Pressable
               testID="button-open-saved-players"
               accessibilityRole="button"
@@ -144,6 +247,69 @@ export default function HomeScreen() {
               </Text>
               <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
             </Pressable>
+
+            <View style={styles.backupActions}>
+              <Pressable
+                testID="button-save-local-backup"
+                accessibilityRole="button"
+                disabled={saveBackup.isPending || shareBackup.isPending || loadBackup.isPending}
+                onPress={() => saveBackup.mutate()}
+                style={({ pressed }) => [
+                  styles.backupButton,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                    opacity: saveBackup.isPending || shareBackup.isPending || loadBackup.isPending ? 0.5 : pressed ? 0.7 : 1,
+                  },
+                ]}
+              >
+                <Ionicons name="download-outline" size={16} color={colors.primary} />
+                <Text style={[styles.backupButtonText, { color: colors.foreground }]}>
+                  {saveBackup.isPending ? 'Preparing…' : 'Save backup'}
+                </Text>
+              </Pressable>
+              <Pressable
+                testID="button-share-local-backup"
+                accessibilityRole="button"
+                disabled={saveBackup.isPending || shareBackup.isPending || loadBackup.isPending}
+                onPress={() => shareBackup.mutate()}
+                style={({ pressed }) => [
+                  styles.backupButton,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                    opacity: saveBackup.isPending || shareBackup.isPending || loadBackup.isPending ? 0.5 : pressed ? 0.7 : 1,
+                  },
+                ]}
+              >
+                <Ionicons name="share-outline" size={16} color={colors.primary} />
+                <Text style={[styles.backupButtonText, { color: colors.foreground }]}>
+                  {shareBackup.isPending ? 'Preparing…' : 'Share backup'}
+                </Text>
+              </Pressable>
+            </View>
+            <Pressable
+              testID="button-load-local-backup"
+              accessibilityRole="button"
+              disabled={saveBackup.isPending || shareBackup.isPending || loadBackup.isPending}
+              onPress={() => loadBackup.mutate()}
+              style={({ pressed }) => [
+                styles.loadBackupButton,
+                {
+                  borderColor: colors.border,
+                  backgroundColor: colors.card,
+                  opacity: saveBackup.isPending || shareBackup.isPending || loadBackup.isPending ? 0.5 : pressed ? 0.7 : 1,
+                },
+              ]}
+            >
+              <Ionicons name="folder-open-outline" size={16} color={colors.primary} />
+              <Text style={[styles.backupButtonText, { color: colors.foreground }]}>
+                {loadBackup.isPending ? 'Loading…' : 'Load backup'}
+              </Text>
+            </Pressable>
+            <Text style={[styles.backupNote, { color: colors.mutedForeground }]}>
+              Backups include players and full point history. Loading adds missing records and never overwrites existing ones.
+            </Text>
 
             <View style={styles.sectionHeader}>
               <View>
@@ -188,19 +354,25 @@ export default function HomeScreen() {
         renderItem={({ item }) => {
           const finished = item.status === 'complete';
           return (
-            <Pressable
+            <View
               testID={`match-card-${item.id}`}
-              accessibilityRole="button"
-              onPress={() => router.push(`/matches/${item.id}`)}
-              style={({ pressed }) => [
+              style={[
                 styles.matchCard,
                 {
                   backgroundColor: colors.card,
                   borderColor: colors.border,
-                  opacity: pressed ? 0.84 : 1,
                 },
               ]}
             >
+              <Pressable
+                testID={`button-open-match-${item.id}`}
+                accessibilityRole="button"
+                onPress={() => router.push(`/matches/${item.id}`)}
+                style={({ pressed }) => [
+                  styles.matchCardBody,
+                  { opacity: pressed ? 0.84 : 1 },
+                ]}
+              >
               <View style={styles.matchCardTop}>
                 <View style={styles.matchMeta}>
                   <Text style={[styles.matchEvent, { color: colors.mutedForeground }]}>
@@ -276,7 +448,27 @@ export default function HomeScreen() {
                 </Text>
                 <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
               </View>
-            </Pressable>
+              </Pressable>
+              <Pressable
+                testID={`button-delete-match-${item.id}`}
+                accessibilityRole="button"
+                accessibilityLabel={`Delete match ${item.trackedPlayer} versus ${item.opponent}`}
+                disabled={deleteMatch.isPending}
+                onPress={() => confirmDeleteMatch(item)}
+                style={({ pressed }) => [
+                  styles.deleteMatchAction,
+                  {
+                    borderTopColor: colors.border,
+                    opacity: deleteMatch.isPending ? 0.45 : pressed ? 0.65 : 1,
+                  },
+                ]}
+              >
+                <Ionicons name="trash-outline" size={14} color={colors.destructive} />
+                <Text style={[styles.deleteMatchText, { color: colors.destructive }]}>
+                  Delete match
+                </Text>
+              </Pressable>
+            </View>
           );
         }}
         ListEmptyComponent={
@@ -420,6 +612,18 @@ const styles = StyleSheet.create({
   playersButton: { marginTop: 10, minHeight: 42, borderWidth: 1, borderRadius: 9, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
   playersButtonText: { flex: 1, fontFamily: 'DMSans_600SemiBold', fontSize: 12 },
   playersButtonCount: { fontFamily: 'DMSans_700Bold', fontSize: 11 },
+  activePlayerCard: { marginTop: 11, minHeight: 58, paddingHorizontal: 11, borderWidth: 1, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  activePlayerIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  activePlayerInfo: { flex: 1, gap: 3 },
+  activePlayerLabel: { fontFamily: 'DMSans_700Bold', fontSize: 8, letterSpacing: 1 },
+  activePlayerName: { fontFamily: 'DMSans_700Bold', fontSize: 13 },
+  switchPlayerButton: { minHeight: 32, borderWidth: 1, borderRadius: 7, paddingHorizontal: 11, alignItems: 'center', justifyContent: 'center' },
+  switchPlayerText: { fontFamily: 'DMSans_700Bold', fontSize: 10 },
+  backupActions: { marginTop: 10, flexDirection: 'row', gap: 8 },
+  backupButton: { flex: 1, minHeight: 40, borderWidth: 1, borderRadius: 8, paddingHorizontal: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  backupButtonText: { fontFamily: 'DMSans_600SemiBold', fontSize: 11 },
+  loadBackupButton: { marginTop: 7, minHeight: 40, borderWidth: 1, borderRadius: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  backupNote: { marginTop: 5, fontFamily: 'DMSans_400Regular', fontSize: 10 },
   sectionHeader: {
     marginTop: 37,
     marginBottom: 15,
@@ -452,9 +656,12 @@ const styles = StyleSheet.create({
   matchCard: {
     borderWidth: 1,
     borderRadius: 14,
+    overflow: 'hidden',
+    marginBottom: 11,
+  },
+  matchCardBody: {
     paddingHorizontal: 16,
     paddingTop: 15,
-    marginBottom: 11,
   },
   matchCardTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
   matchMeta: { flex: 1, gap: 5 },
@@ -492,6 +699,8 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   matchBottomText: { fontFamily: 'DMSans_600SemiBold', fontSize: 9, letterSpacing: 0.7 },
+  deleteMatchAction: { minHeight: 38, marginHorizontal: 16, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
+  deleteMatchText: { fontFamily: 'DMSans_600SemiBold', fontSize: 10 },
   stateBox: { minHeight: 130, alignItems: 'center', justifyContent: 'center', gap: 10 },
   stateText: { fontFamily: 'DMSans_400Regular', fontSize: 13 },
   emptyCard: {

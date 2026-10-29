@@ -21,7 +21,9 @@ import {
   type LocalMatchDetails,
 } from '@/lib/local-matches';
 import {
+  ACTIVE_LOCAL_PLAYER_KEY,
   addLocalPlayer,
+  getActiveLocalPlayerId,
   listLocalPlayers,
   LOCAL_PLAYERS_KEY,
 } from '@/lib/local-players';
@@ -151,6 +153,7 @@ export default function NewMatchScreen() {
   const queryClient = useQueryClient();
   const [matchDate, setMatchDate] = useState(localDate());
   const [trackedPlayer, setTrackedPlayer] = useState('');
+  const [trackedPlayerEdited, setTrackedPlayerEdited] = useState(false);
   const [opponent, setOpponent] = useState('');
   const [event, setEvent] = useState('');
   const [round, setRound] = useState('');
@@ -163,9 +166,24 @@ export default function NewMatchScreen() {
     queryKey: LOCAL_PLAYERS_KEY,
     queryFn: listLocalPlayers,
   });
+  const activePlayerQuery = useQuery({
+    queryKey: ACTIVE_LOCAL_PLAYER_KEY,
+    queryFn: getActiveLocalPlayerId,
+  });
+  const players = playersQuery.data ?? [];
+  const activePlayerName =
+    players.find((player) => player.id === activePlayerQuery.data)?.name ?? '';
+  const trackedPlayerValue = trackedPlayerEdited
+    ? trackedPlayer
+    : activePlayerName || trackedPlayer;
   const savePlayers = useMutation({
     mutationFn: (names: string[]) => Promise.all(names.map((name) => addLocalPlayer(name))),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: LOCAL_PLAYERS_KEY }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: LOCAL_PLAYERS_KEY }),
+        queryClient.invalidateQueries({ queryKey: ACTIVE_LOCAL_PLAYER_KEY }),
+      ]);
+    },
   });
 
   const createMatch = useMutation({
@@ -182,7 +200,7 @@ export default function NewMatchScreen() {
     const parsedSet = Number(setNumber);
     const details: LocalMatchDetails = {
       matchDate,
-      trackedPlayer,
+      trackedPlayer: trackedPlayerValue,
       opponent,
       event,
       round,
@@ -207,14 +225,13 @@ export default function NewMatchScreen() {
   }
 
   function saveCurrentPlayers() {
-    const names = [...new Set([trackedPlayer.trim(), opponent.trim()].filter(Boolean))];
+    const names = [...new Set([trackedPlayerValue.trim(), opponent.trim()].filter(Boolean))];
     if (names.length > 0) savePlayers.mutate(names);
   }
 
-  const players = playersQuery.data ?? [];
   const nameFor = (side: Side) =>
     side === 'tracked'
-      ? trackedPlayer.trim() || 'Tracked player'
+      ? trackedPlayerValue.trim() || 'Tracked player'
       : opponent.trim() || 'Opponent';
 
   return (
@@ -275,17 +292,23 @@ export default function NewMatchScreen() {
 
           <Field
             label="TRACKED PLAYER"
-            value={trackedPlayer}
-            onChangeText={setTrackedPlayer}
+            value={trackedPlayerValue}
+            onChangeText={(value) => {
+              setTrackedPlayer(value);
+              setTrackedPlayerEdited(true);
+            }}
             placeholder="Player being recorded"
             testID="input-tracked-player"
             maxLength={80}
           />
           <SavedPlayerChoices
             players={players}
-            value={trackedPlayer}
+            value={trackedPlayerValue}
             testIDPrefix="tracked"
-            onSelect={setTrackedPlayer}
+            onSelect={(name) => {
+              setTrackedPlayer(name);
+              setTrackedPlayerEdited(true);
+            }}
           />
           <Field
             label="OPPONENT"

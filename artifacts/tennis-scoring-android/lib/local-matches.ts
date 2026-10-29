@@ -93,6 +93,16 @@ export interface LocalMatch {
   updatedAt: string;
 }
 
+export type LocalMatchBackupRecord = Omit<
+  LocalMatch,
+  | 'ownerUserId'
+  | 'syncStatus'
+  | 'syncToken'
+  | 'remoteMatchId'
+  | 'pendingPointDeletes'
+  | 'syncError'
+>;
+
 export interface LocalMatchDetails {
   matchDate: string;
   event: string | null;
@@ -618,6 +628,94 @@ export async function listLocalMatches(): Promise<LocalMatchSummary[]> {
 
 export async function getLocalMatch(id: string): Promise<LocalMatch | null> {
   return readMatch(id);
+}
+
+export async function deleteLocalMatch(id: string): Promise<boolean> {
+  return withWriteLock(async () => {
+    const key = matchStorageKey(id);
+    const savedMatch = await AsyncStorage.getItem(key);
+    const previousIndex = await AsyncStorage.getItem(INDEX_KEY);
+    const matchIds = await readIndex();
+    const remainingIds = matchIds.filter((matchId) => matchId !== id);
+
+    if (savedMatch === null) {
+      if (remainingIds.length !== matchIds.length) {
+        await AsyncStorage.setItem(INDEX_KEY, JSON.stringify(remainingIds));
+      }
+      return false;
+    }
+
+    try {
+      await AsyncStorage.removeItem(key);
+      await AsyncStorage.setItem(INDEX_KEY, JSON.stringify(remainingIds));
+    } catch (error) {
+      try {
+        await AsyncStorage.setItem(key, savedMatch);
+        if (previousIndex === null) {
+          await AsyncStorage.removeItem(INDEX_KEY);
+        } else {
+          await AsyncStorage.setItem(INDEX_KEY, previousIndex);
+        }
+      } catch {
+        throw new Error(
+          'The match could not be deleted cleanly. Export a backup before trying again.',
+        );
+      }
+      throw error;
+    }
+
+    return true;
+  });
+}
+
+export async function mergeLocalMatchesFromBackup(
+  backupMatches: readonly LocalMatchBackupRecord[],
+): Promise<{ added: number; skipped: number }> {
+  const candidates = backupMatches.map((backupMatch) => {
+    if (!/^[a-zA-Z0-9_-]{1,100}$/.test(backupMatch.id)) {
+      throw new Error('The backup contains an invalid match identifier.');
+    }
+    return normalizeLocalMatch({
+      ...backupMatch,
+      ownerUserId: null,
+      syncStatus: 'local_only',
+      syncToken: null,
+      remoteMatchId: null,
+      pendingPointDeletes: [],
+      syncError: null,
+    });
+  });
+
+  return withWriteLock(async () => {
+    const existingIds = await readIndex();
+    const knownIds = new Set(existingIds);
+    const newMatches: LocalMatch[] = [];
+    let skipped = 0;
+
+    for (const candidate of candidates) {
+      if (knownIds.has(candidate.id)) {
+        skipped += 1;
+        continue;
+      }
+      knownIds.add(candidate.id);
+      newMatches.push(candidate);
+    }
+
+    if (newMatches.length > 0) {
+      const nextIds = [
+        ...newMatches.map((match) => match.id),
+        ...existingIds,
+      ];
+      await AsyncStorage.multiSet([
+        ...newMatches.map(
+          (match) => [matchStorageKey(match.id), JSON.stringify(match)] as [string, string],
+        ),
+        [INDEX_KEY, JSON.stringify(nextIds)],
+      ]);
+    }
+
+    return { added: newMatches.length, skipped };
+  });
 }
 
 export async function createLocalMatch(input: NewLocalMatch): Promise<LocalMatch> {
