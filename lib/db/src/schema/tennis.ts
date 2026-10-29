@@ -26,6 +26,8 @@ export const tennisMatchesTable = pgTable(
     surface: text("surface").notNull(),
     firstServer: text("first_server").notNull(),
     status: text("status").notNull().default("in_progress"),
+    clientMatchId: text("client_match_id"),
+    syncTokenHash: text("sync_token_hash"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -37,6 +39,7 @@ export const tennisMatchesTable = pgTable(
   (table) => [
     index("tennis_matches_updated_at_idx").on(table.updatedAt),
     index("tennis_matches_date_idx").on(table.matchDate),
+    uniqueIndex("tennis_matches_client_match_id_idx").on(table.clientMatchId),
   ],
 );
 
@@ -55,6 +58,7 @@ export const tennisPointsTable = pgTable(
     winner: text("winner").notNull(),
     endingCode: text("ending_code"),
     firstServeFault: boolean("first_serve_fault").notNull().default(false),
+    clientPointId: text("client_point_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -63,6 +67,10 @@ export const tennisPointsTable = pgTable(
     uniqueIndex("tennis_points_match_sequence_idx").on(
       table.matchId,
       table.sequenceNumber,
+    ),
+    uniqueIndex("tennis_points_match_client_point_idx").on(
+      table.matchId,
+      table.clientPointId,
     ),
     index("tennis_points_match_game_idx").on(
       table.matchId,

@@ -20,6 +20,11 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  DevicePointDeleteResult,
+  DeviceSyncMatchInput,
+  DeviceSyncMatchResult,
+  DeviceSyncPointsInput,
+  DeviceSyncPointsResult,
   HealthStatus,
   Match,
   MatchInput,
@@ -296,6 +301,259 @@ export const useCreateMatch = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCreateMatchMutationOptions(options));
+    }
+
+export const getSyncDeviceMatchUrl = () => {
+
+
+
+
+  return `/api/matches/device-sync`
+}
+
+/**
+ * @summary Create or update a private device-synced match
+ */
+export const syncDeviceMatch = async (deviceSyncMatchInput: DeviceSyncMatchInput, options?: Parameters<typeof customFetch>[1]): Promise<DeviceSyncMatchResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<DeviceSyncMatchResult>(getSyncDeviceMatchUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(deviceSyncMatchInput)
+  }
+);}
+
+
+
+
+
+export const getSyncDeviceMatchMutationKey = () => ['syncDeviceMatch'] as const;
+
+export const getSyncDeviceMatchMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncDeviceMatch>>, TError,SyncDeviceMatchMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof syncDeviceMatch>>, TError,SyncDeviceMatchMutationVariables, TContext> => {
+
+const mutationKey = getSyncDeviceMatchMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof syncDeviceMatch>>, SyncDeviceMatchMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  syncDeviceMatch(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SyncDeviceMatchMutationResult = NonNullable<Awaited<ReturnType<typeof syncDeviceMatch>>>
+    export type SyncDeviceMatchMutationBody = BodyType<DeviceSyncMatchInput>
+    export type SyncDeviceMatchMutationError = ErrorType<void>
+    export type SyncDeviceMatchMutationVariables = {data: BodyType<DeviceSyncMatchInput>}
+
+    /**
+ * @summary Create or update a private device-synced match
+ */
+export const useSyncDeviceMatch = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncDeviceMatch>>, TError,SyncDeviceMatchMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof syncDeviceMatch>>,
+        TError,
+        SyncDeviceMatchMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSyncDeviceMatchMutationOptions(options));
+    }
+
+export const getSyncDevicePointsUrl = (id: string,) => {
+
+
+
+
+  return `/api/matches/${id}/sync-points`
+}
+
+/**
+ * @summary Synchronize an ordered batch of device-recorded points
+ */
+export const syncDevicePoints = async (id: string,
+    deviceSyncPointsInput: DeviceSyncPointsInput, options?: Parameters<typeof customFetch>[1]): Promise<DeviceSyncPointsResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<DeviceSyncPointsResult>(getSyncDevicePointsUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(deviceSyncPointsInput)
+  }
+);}
+
+
+
+
+
+export const getSyncDevicePointsMutationKey = () => ['syncDevicePoints'] as const;
+
+export const getSyncDevicePointsMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncDevicePoints>>, TError,SyncDevicePointsMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof syncDevicePoints>>, TError,SyncDevicePointsMutationVariables, TContext> => {
+
+const mutationKey = getSyncDevicePointsMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof syncDevicePoints>>, SyncDevicePointsMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  syncDevicePoints(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SyncDevicePointsMutationResult = NonNullable<Awaited<ReturnType<typeof syncDevicePoints>>>
+    export type SyncDevicePointsMutationBody = BodyType<DeviceSyncPointsInput>
+    export type SyncDevicePointsMutationError = ErrorType<void>
+    export type SyncDevicePointsMutationVariables = {id: string;data: BodyType<DeviceSyncPointsInput>}
+
+    /**
+ * @summary Synchronize an ordered batch of device-recorded points
+ */
+export const useSyncDevicePoints = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncDevicePoints>>, TError,SyncDevicePointsMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof syncDevicePoints>>,
+        TError,
+        SyncDevicePointsMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSyncDevicePointsMutationOptions(options));
+    }
+
+export const getDeleteSyncedDevicePointUrl = (id: string,
+    pointId: string,) => {
+
+
+
+
+  return `/api/matches/${id}/sync-points/${pointId}`
+}
+
+/**
+ * @summary Remove an undone device point from the end of the synchronized log
+ */
+export const deleteSyncedDevicePoint = async (id: string,
+    pointId: string, options?: Parameters<typeof customFetch>[1]): Promise<DevicePointDeleteResult> => {
+
+  return customFetch<DevicePointDeleteResult>(getDeleteSyncedDevicePointUrl(id,pointId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteSyncedDevicePointMutationKey = () => ['deleteSyncedDevicePoint'] as const;
+
+export const getDeleteSyncedDevicePointMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSyncedDevicePoint>>, TError,DeleteSyncedDevicePointMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteSyncedDevicePoint>>, TError,DeleteSyncedDevicePointMutationVariables, TContext> => {
+
+const mutationKey = getDeleteSyncedDevicePointMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteSyncedDevicePoint>>, DeleteSyncedDevicePointMutationVariables> = (props) => {
+          const {id,pointId} = props ?? {};
+
+          return  deleteSyncedDevicePoint(id,pointId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteSyncedDevicePointMutationResult = NonNullable<Awaited<ReturnType<typeof deleteSyncedDevicePoint>>>
+
+    export type DeleteSyncedDevicePointMutationError = ErrorType<void>
+    export type DeleteSyncedDevicePointMutationVariables = {id: string;pointId: string}
+
+    /**
+ * @summary Remove an undone device point from the end of the synchronized log
+ */
+export const useDeleteSyncedDevicePoint = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSyncedDevicePoint>>, TError,DeleteSyncedDevicePointMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteSyncedDevicePoint>>,
+        TError,
+        DeleteSyncedDevicePointMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteSyncedDevicePointMutationOptions(options));
     }
 
 export const getGetMatchUrl = (id: string,) => {

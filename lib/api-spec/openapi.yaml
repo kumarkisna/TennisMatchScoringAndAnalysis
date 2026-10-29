@@ -57,6 +57,97 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Match"
+  /matches/device-sync:
+    post:
+      operationId: syncDeviceMatch
+      tags: [tennis]
+      summary: Create or update a private device-synced match
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceSyncMatchInput"
+      responses:
+        "200":
+          description: Device match is ready for point synchronization
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceSyncMatchResult"
+        "400":
+          description: Invalid match data
+        "401":
+          description: Device sync credential is invalid
+  /matches/{id}/sync-points:
+    post:
+      operationId: syncDevicePoints
+      tags: [tennis]
+      summary: Synchronize an ordered batch of device-recorded points
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Match-Sync-Token
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceSyncPointsInput"
+      responses:
+        "200":
+          description: Points accepted through the returned sequence
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceSyncPointsResult"
+        "400":
+          description: Invalid point data
+        "401":
+          description: Device sync credential is invalid
+        "409":
+          description: Point order or idempotency key conflicts with stored data
+  /matches/{id}/sync-points/{pointId}:
+    delete:
+      operationId: deleteSyncedDevicePoint
+      tags: [tennis]
+      summary: Remove an undone device point from the end of the synchronized log
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: pointId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Match-Sync-Token
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Point deletion acknowledged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DevicePointDeleteResult"
+        "401":
+          description: Device sync credential is invalid
+        "409":
+          description: Only the latest point can be removed
   /matches/{id}:
     get:
       operationId: getMatch
@@ -200,6 +291,133 @@ components:
           type: boolean
           default: false
       required: [winner]
+    DeviceSyncMatchInput:
+      type: object
+      properties:
+        clientMatchId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        syncToken:
+          type: string
+          minLength: 20
+          maxLength: 256
+        matchDate:
+          type: string
+          format: date
+        event:
+          type: ["string", "null"]
+        round:
+          type: ["string", "null"]
+        setNumber:
+          type: integer
+          minimum: 1
+        trackedPlayer:
+          type: string
+          minLength: 1
+        opponent:
+          type: string
+          minLength: 1
+        chairCoach:
+          type: ["string", "null"]
+        surface:
+          type: string
+          enum: [Hard, Clay, Grass, Carpet, Other]
+        firstServer:
+          type: string
+          enum: [tracked, opponent]
+        status:
+          type: string
+          enum: [in_progress, complete]
+      required:
+        - clientMatchId
+        - syncToken
+        - matchDate
+        - setNumber
+        - trackedPlayer
+        - opponent
+        - surface
+        - firstServer
+        - status
+    DeviceSyncMatchResult:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        clientMatchId:
+          type: string
+        pointCount:
+          type: integer
+        nextSequence:
+          type: integer
+      required: [id, clientMatchId, pointCount, nextSequence]
+    DeviceSyncPoint:
+      type: object
+      properties:
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 128
+        sequenceNumber:
+          type: integer
+          minimum: 1
+        setNumber:
+          type: integer
+          minimum: 1
+        gameNumber:
+          type: integer
+          minimum: 1
+        server:
+          type: string
+          enum: [tracked, opponent]
+        isTiebreak:
+          type: boolean
+        winner:
+          type: string
+          enum: [tracked, opponent]
+        endingCode:
+          type: ["string", "null"]
+          enum: [A, F, B, V, O, P, N, L, W, D, FE, null]
+        firstServeFault:
+          type: boolean
+      required:
+        - idempotencyKey
+        - sequenceNumber
+        - setNumber
+        - gameNumber
+        - server
+        - isTiebreak
+        - winner
+        - firstServeFault
+    DeviceSyncPointsInput:
+      type: object
+      properties:
+        points:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/DeviceSyncPoint"
+      required: [points]
+    DeviceSyncPointsResult:
+      type: object
+      properties:
+        pointCount:
+          type: integer
+        nextSequence:
+          type: integer
+      required: [pointCount, nextSequence]
+    DevicePointDeleteResult:
+      type: object
+      properties:
+        deleted:
+          type: boolean
+        pointCount:
+          type: integer
+        nextSequence:
+          type: integer
+      required: [deleted, pointCount, nextSequence]
     Point:
       type: object
       properties:

@@ -56,6 +56,9 @@
   "dependencies": {
     "@expo-google-fonts/dm-sans": "^0.4.2",
     "@expo-google-fonts/manrope": "^0.4.2",
+    "@workspace/api-client-react": "workspace:*",
+    "expo-crypto": "~58.0.7",
+    "expo-network": "~58.0.4",
     "expo-print": "58.0.6",
     "expo-sharing": "58.0.18"
   }

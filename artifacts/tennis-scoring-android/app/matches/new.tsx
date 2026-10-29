@@ -17,6 +17,7 @@ import {
   LOCAL_MATCH_LIST_KEY,
   localMatchKey,
 } from '@/lib/local-matches';
+import { requestMatchSync } from '@/lib/match-sync';
 
 type Side = 'tracked' | 'opponent';
 type Surface = 'Hard' | 'Clay' | 'Grass' | 'Carpet' | 'Other';
@@ -97,6 +98,12 @@ export default function NewMatchScreen() {
       queryClient.setQueryData(localMatchKey(match.id), match);
       void queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
       router.replace({ pathname: '/matches/[id]', params: { id: match.id } });
+      void requestMatchSync()
+        .catch(() => undefined)
+        .finally(() => {
+          void queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
+          void queryClient.invalidateQueries({ queryKey: localMatchKey(match.id) });
+        });
     },
   });
 

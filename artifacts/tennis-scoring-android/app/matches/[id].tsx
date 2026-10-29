@@ -33,12 +33,14 @@ import {
   recordLocalPoint,
   undoLocalPoint,
   type LocalMatch,
+  type LocalPoint,
   type LocalSetResult,
   type NewLocalPoint,
   type PlayerSide,
   type PointCode,
   type SetFormat,
 } from '@/lib/local-matches';
+import { requestMatchSync } from '@/lib/match-sync';
 import { summarizePlayerPerformance } from '@/lib/player-insights';
 import { buildPlayerReportHtml } from '@/lib/player-report-html';
 
@@ -101,6 +103,7 @@ function CodeCell({
     winner: Side;
     endingCode?: string | null;
     firstServeFault: boolean;
+    syncStatus?: LocalPoint['syncStatus'];
   };
   colors: ReturnType<typeof useColors>;
 }) {
@@ -134,6 +137,11 @@ function CodeCell({
       {point.firstServeFault ? (
         <View style={[styles.faultDot, { backgroundColor: colors.primaryForeground }]} />
       ) : null}
+      {point.syncStatus === 'pending' ? (
+        <View style={[styles.syncPendingMarker, { backgroundColor: colors.primaryForeground }]}>
+          <Ionicons name="cloud-upload-outline" size={7} color={colors.primary} />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -166,6 +174,12 @@ export default function MatchScreen() {
     queryClient.setQueryData(localMatchKey(matchId), updatedMatch);
     void queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
     void queryClient.invalidateQueries({ queryKey: localInsightsKey(matchId) });
+    void requestMatchSync()
+      .catch(() => undefined)
+      .finally(() => {
+        void queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
+        void queryClient.invalidateQueries({ queryKey: localMatchKey(matchId) });
+      });
   };
 
   const recordPoint = useMutation({
@@ -191,6 +205,13 @@ export default function MatchScreen() {
   const finishMatch = useMutation({
     mutationFn: () => finishLocalMatch(matchId),
     onSuccess: onUpdated,
+  });
+  const retrySync = useMutation({
+    mutationFn: requestMatchSync,
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
+      void queryClient.invalidateQueries({ queryKey: localMatchKey(matchId) });
+    },
   });
 
   const match = matchQuery.data;
@@ -319,6 +340,18 @@ export default function MatchScreen() {
   const trackedName = match.trackedPlayer;
   const opponentName = match.opponent;
   const setHistory = getLocalSetHistory(match);
+  const pendingPointCount = setHistory
+    .flatMap((set) => set.points)
+    .filter((point) => point.syncStatus === 'pending').length;
+  const pendingEarlierSets = setHistory
+    .filter((set) => !set.isCurrent)
+    .map((set) => ({
+      setNumber: set.setNumber,
+      count: set.points.filter((point) => point.syncStatus === 'pending').length,
+    }))
+    .filter((set) => set.count > 0)
+    .map((set) => `Set ${set.setNumber}: ${set.count}`)
+    .join(' · ');
   const pointGroups = new Map<number, typeof match.points>();
   for (const point of match.points) {
     if (point.isTiebreak) continue;
@@ -577,6 +610,60 @@ export default function MatchScreen() {
             All sets and points stay together in this match.
           </Text>
         </View>
+
+        {match.syncStatus !== 'local_only' ? (
+          <View style={[styles.syncStatusCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons
+              name={match.syncStatus === 'synced' ? 'cloud-done-outline' : 'cloud-upload-outline'}
+              size={18}
+              color={match.syncStatus === 'synced' ? colors.primary : colors.accent}
+            />
+            <View style={styles.syncStatusCopy}>
+              <Text style={[styles.syncStatusTitle, { color: colors.foreground }]}>
+                {match.syncStatus === 'synced'
+                  ? 'All points synced'
+                  : match.syncStatus === 'error'
+                    ? 'Sync paused'
+                    : pendingPointCount > 0
+                      ? `${pendingPointCount} ${pendingPointCount === 1 ? 'point' : 'points'} waiting to sync`
+                      : 'Match details waiting to sync'}
+              </Text>
+              <Text style={[styles.syncStatusHint, { color: colors.mutedForeground }]}>
+                {match.syncStatus === 'error'
+                  ? (match.syncError ?? 'Your score is safe on this device.')
+                  : match.syncStatus === 'synced'
+                    ? 'Your device copy is kept.'
+                    : 'Saved on this device first. Cloud sync resumes when online.'}
+              </Text>
+              {pendingPointCount > 0 ? (
+                <Text style={[styles.syncStatusHint, { color: colors.mutedForeground }]}>
+                  Cloud markers identify pending points in the current set.
+                </Text>
+              ) : null}
+              {pendingEarlierSets ? (
+                <Text style={[styles.syncStatusHint, { color: colors.mutedForeground }]}>
+                  Earlier sets still waiting: {pendingEarlierSets}
+                </Text>
+              ) : null}
+            </View>
+            {match.syncStatus !== 'synced' ? (
+              <Pressable
+                testID="button-retry-match-sync"
+                accessibilityRole="button"
+                disabled={retrySync.isPending}
+                onPress={() => retrySync.mutate()}
+                style={[
+                  styles.syncRetryButton,
+                  { borderColor: colors.border, opacity: retrySync.isPending ? 0.6 : 1 },
+                ]}
+              >
+                <Text style={[styles.syncRetryText, { color: colors.primary }]}>
+                  {retrySync.isPending ? '…' : 'Retry'}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
 
         {!match.score.isComplete ? (
           <View style={[styles.liveGameCard, { backgroundColor: colors.card, borderColor: colors.primary }]}>
@@ -1319,6 +1406,12 @@ const styles = StyleSheet.create({
   setHistoryScore: { marginTop: 3, fontFamily: 'DMSans_700Bold', fontSize: 13, fontVariant: ['tabular-nums'] },
   setHistoryTarget: { marginTop: 2, fontFamily: 'DMSans_500Medium', fontSize: 7, letterSpacing: 0.4 },
   setHistoryHint: { fontFamily: 'DMSans_400Regular', fontSize: 9 },
+  syncStatusCard: { marginTop: 10, borderWidth: 1, borderRadius: 11, padding: 11, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  syncStatusCopy: { flex: 1, gap: 3 },
+  syncStatusTitle: { fontFamily: 'DMSans_700Bold', fontSize: 11 },
+  syncStatusHint: { fontFamily: 'DMSans_400Regular', fontSize: 9, lineHeight: 13 },
+  syncRetryButton: { minWidth: 48, minHeight: 31, paddingHorizontal: 8, borderWidth: 1, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
+  syncRetryText: { fontFamily: 'DMSans_700Bold', fontSize: 10 },
   setActionCard: { marginTop: 10, borderWidth: 1, borderRadius: 13, padding: 13, gap: 8 },
   setActionTitle: { fontFamily: 'Manrope_700Bold', fontSize: 15 },
   setActionHint: { fontFamily: 'DMSans_400Regular', fontSize: 10, lineHeight: 15 },
@@ -1383,6 +1476,7 @@ const styles = StyleSheet.create({
   serverCircle: { width: 20, height: 20, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   serverInitial: { fontFamily: 'DMSans_700Bold', fontSize: 8 },
   matrixCell: { width: 31, height: 27, borderWidth: 1, borderRadius: 4, alignItems: 'center', justifyContent: 'center', position: 'relative' },
+  syncPendingMarker: { position: 'absolute', top: 1, right: 1, width: 11, height: 11, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
   matrixCode: { fontFamily: 'DMSans_700Bold', fontSize: 8 },
   emptyCellText: { fontFamily: 'DMSans_400Regular', fontSize: 12 },
   faultDot: { position: 'absolute', left: 3, bottom: 3, width: 4, height: 4, borderRadius: 2 },

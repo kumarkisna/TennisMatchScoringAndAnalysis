@@ -81,6 +81,144 @@ export interface PointInput {
   firstServeFault?: boolean;
 }
 
+export type DeviceSyncMatchInputSurface = typeof DeviceSyncMatchInputSurface[keyof typeof DeviceSyncMatchInputSurface];
+
+
+export const DeviceSyncMatchInputSurface = {
+  Hard: 'Hard',
+  Clay: 'Clay',
+  Grass: 'Grass',
+  Carpet: 'Carpet',
+  Other: 'Other',
+} as const;
+
+export type DeviceSyncMatchInputFirstServer = typeof DeviceSyncMatchInputFirstServer[keyof typeof DeviceSyncMatchInputFirstServer];
+
+
+export const DeviceSyncMatchInputFirstServer = {
+  tracked: 'tracked',
+  opponent: 'opponent',
+} as const;
+
+export type DeviceSyncMatchInputStatus = typeof DeviceSyncMatchInputStatus[keyof typeof DeviceSyncMatchInputStatus];
+
+
+export const DeviceSyncMatchInputStatus = {
+  in_progress: 'in_progress',
+  complete: 'complete',
+} as const;
+
+export interface DeviceSyncMatchInput {
+  /**
+     * @minLength 1
+     * @maxLength 128
+     */
+  clientMatchId: string;
+  /**
+     * @minLength 20
+     * @maxLength 256
+     */
+  syncToken: string;
+  matchDate: string;
+  /** @nullable */
+  event?: string | null;
+  /** @nullable */
+  round?: string | null;
+  /** @minimum 1 */
+  setNumber: number;
+  /** @minLength 1 */
+  trackedPlayer: string;
+  /** @minLength 1 */
+  opponent: string;
+  /** @nullable */
+  chairCoach?: string | null;
+  surface: DeviceSyncMatchInputSurface;
+  firstServer: DeviceSyncMatchInputFirstServer;
+  status: DeviceSyncMatchInputStatus;
+}
+
+export interface DeviceSyncMatchResult {
+  id: string;
+  clientMatchId: string;
+  pointCount: number;
+  nextSequence: number;
+}
+
+export type DeviceSyncPointServer = typeof DeviceSyncPointServer[keyof typeof DeviceSyncPointServer];
+
+
+export const DeviceSyncPointServer = {
+  tracked: 'tracked',
+  opponent: 'opponent',
+} as const;
+
+export type DeviceSyncPointWinner = typeof DeviceSyncPointWinner[keyof typeof DeviceSyncPointWinner];
+
+
+export const DeviceSyncPointWinner = {
+  tracked: 'tracked',
+  opponent: 'opponent',
+} as const;
+
+/**
+ * @nullable
+ */
+export type DeviceSyncPointEndingCode = typeof DeviceSyncPointEndingCode[keyof typeof DeviceSyncPointEndingCode] | null;
+
+
+export const DeviceSyncPointEndingCode = {
+  A: 'A',
+  F: 'F',
+  B: 'B',
+  V: 'V',
+  O: 'O',
+  P: 'P',
+  N: 'N',
+  L: 'L',
+  W: 'W',
+  D: 'D',
+  FE: 'FE',
+} as const;
+
+export interface DeviceSyncPoint {
+  /**
+     * @minLength 1
+     * @maxLength 128
+     */
+  idempotencyKey: string;
+  /** @minimum 1 */
+  sequenceNumber: number;
+  /** @minimum 1 */
+  setNumber: number;
+  /** @minimum 1 */
+  gameNumber: number;
+  server: DeviceSyncPointServer;
+  isTiebreak: boolean;
+  winner: DeviceSyncPointWinner;
+  /** @nullable */
+  endingCode?: DeviceSyncPointEndingCode;
+  firstServeFault: boolean;
+}
+
+export interface DeviceSyncPointsInput {
+  /**
+     * @minItems 1
+     * @maxItems 100
+     */
+  points: DeviceSyncPoint[];
+}
+
+export interface DeviceSyncPointsResult {
+  pointCount: number;
+  nextSequence: number;
+}
+
+export interface DevicePointDeleteResult {
+  deleted: boolean;
+  pointCount: number;
+  nextSequence: number;
+}
+
 export type PointServer = typeof PointServer[keyof typeof PointServer];
 
 

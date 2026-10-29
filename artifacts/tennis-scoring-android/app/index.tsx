@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -29,11 +30,16 @@ export default function HomeScreen() {
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const [showCompletedMatches, setShowCompletedMatches] = useState(true);
   const matchesQuery = useQuery({
     queryKey: LOCAL_MATCH_LIST_KEY,
     queryFn: listLocalMatches,
   });
   const matches = matchesQuery.data ?? [];
+  const completedCount = matches.filter((match) => match.status === 'complete').length;
+  const visibleMatches = showCompletedMatches
+    ? matches
+    : matches.filter((match) => match.status !== 'complete');
 
   return (
     <SafeAreaView
@@ -41,7 +47,7 @@ export default function HomeScreen() {
       edges={['top', 'left', 'right']}
     >
       <FlatList
-        data={matches}
+        data={visibleMatches}
         keyExtractor={(item) => item.id}
         contentContainerStyle={[
           styles.content,
@@ -112,13 +118,36 @@ export default function HomeScreen() {
                   Match book
                 </Text>
                 <Text style={[styles.sectionCaption, { color: colors.mutedForeground }]}>
-                  Saved on this device · no cloud sync
+                  Saved locally first · syncs when online
                 </Text>
               </View>
-              <View style={[styles.countPill, { backgroundColor: colors.secondary }]}>
-                <Text style={[styles.countText, { color: colors.secondaryForeground }]}>
-                  {matches.length}
-                </Text>
+              <View style={styles.matchControls}>
+                {completedCount > 0 ? (
+                  <Pressable
+                    testID="toggle-completed-matches"
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: showCompletedMatches }}
+                    onPress={() => setShowCompletedMatches((value) => !value)}
+                    style={[
+                      styles.completedToggle,
+                      { borderColor: colors.border, backgroundColor: colors.card },
+                    ]}
+                  >
+                    <Ionicons
+                      name={showCompletedMatches ? 'eye-off-outline' : 'eye-outline'}
+                      size={13}
+                      color={colors.primary}
+                    />
+                    <Text style={[styles.completedToggleText, { color: colors.primary }]}>
+                      {showCompletedMatches ? 'Hide completed' : 'Show completed'}
+                    </Text>
+                  </Pressable>
+                ) : null}
+                <View style={[styles.countPill, { backgroundColor: colors.secondary }]}>
+                  <Text style={[styles.countText, { color: colors.secondaryForeground }]}>
+                    {matches.length}
+                  </Text>
+                </View>
               </View>
             </View>
           </View>
@@ -248,6 +277,33 @@ export default function HomeScreen() {
                 <Text style={[styles.retryText, { color: colors.primary }]}>Try again</Text>
               </Pressable>
             </View>
+          ) : matches.length > 0 ? (
+            <View
+              style={[
+                styles.emptyCard,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <View style={[styles.emptyIcon, { backgroundColor: colors.secondary }]}>
+                <Ionicons name="eye-off-outline" size={25} color={colors.primary} />
+              </View>
+              <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
+                Completed matches are hidden
+              </Text>
+              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
+                Show completed matches to review their scores and point data.
+              </Text>
+              <Pressable
+                testID="button-show-completed-matches"
+                accessibilityRole="button"
+                onPress={() => setShowCompletedMatches(true)}
+                style={[styles.retryButton, { borderColor: colors.border }]}
+              >
+                <Text style={[styles.retryText, { color: colors.primary }]}>
+                  Show completed matches
+                </Text>
+              </Pressable>
+            </View>
           ) : (
             <View
               style={[
@@ -272,7 +328,7 @@ export default function HomeScreen() {
             <View style={styles.footerNote}>
               <Ionicons name="shield-checkmark-outline" size={14} color={colors.mutedForeground} />
               <Text style={[styles.footerText, { color: colors.mutedForeground }]}>
-                Scores remain on this device
+                Scores save on device first · new matches sync online
               </Text>
             </View>
           ) : undefined
@@ -347,6 +403,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
   },
   countText: { fontFamily: 'DMSans_700Bold', fontSize: 12 },
+  matchControls: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  completedToggle: {
+    minHeight: 30,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  completedToggleText: { fontFamily: 'DMSans_600SemiBold', fontSize: 9 },
   matchCard: {
     borderWidth: 1,
     borderRadius: 14,

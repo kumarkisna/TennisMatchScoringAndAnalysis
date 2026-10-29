@@ -4,6 +4,7 @@ export type PlayerSide = 'tracked' | 'opponent';
 export type PointCode = 'A' | 'F' | 'B' | 'V' | 'O' | 'P' | 'N' | 'L' | 'W' | 'D' | 'FE';
 export type CourtSurface = 'Hard' | 'Clay' | 'Grass' | 'Carpet' | 'Other';
 export type SetFormat = 'standard' | 'match_tiebreak';
+export type LocalSyncStatus = 'local_only' | 'pending' | 'synced' | 'error';
 
 export interface LocalSetRecord {
   setNumber: number;
@@ -41,6 +42,7 @@ export interface LocalPoint {
   winner: PlayerSide;
   endingCode: PointCode | null;
   firstServeFault: boolean;
+  syncStatus: 'pending' | 'synced';
   createdAt: string;
 }
 
@@ -60,6 +62,11 @@ export interface LocalMatch {
   completedSets: LocalSetRecord[];
   matchStatus: 'in_progress' | 'complete';
   status: 'in_progress' | 'complete';
+  syncStatus: LocalSyncStatus;
+  syncToken: string | null;
+  remoteMatchId: string | null;
+  pendingPointDeletes: string[];
+  syncError: string | null;
   score: ScoreState;
   points: LocalPoint[];
   createdAt: string;
@@ -94,6 +101,8 @@ export interface LocalMatchSummary {
   opponent: string;
   surface: CourtSurface;
   status: 'in_progress' | 'complete';
+  syncStatus: LocalSyncStatus;
+  pendingPointCount: number;
   trackedGames: number;
   opponentGames: number;
   setScores: {
@@ -174,6 +183,26 @@ async function readMatch(id: string): Promise<LocalMatch | null> {
 
 function normalizeLocalMatch(value: Record<string, unknown>): LocalMatch {
   const legacyStatus = value.status === 'complete' ? 'complete' : 'in_progress';
+  const syncStatus: LocalSyncStatus =
+    value.syncStatus === 'pending' ||
+    value.syncStatus === 'synced' ||
+    value.syncStatus === 'error' ||
+    value.syncStatus === 'local_only'
+      ? value.syncStatus
+      : 'local_only';
+  const normalizePoint = (point: LocalPoint): LocalPoint => ({
+    ...point,
+    syncStatus:
+      point.syncStatus === 'synced'
+        ? 'synced'
+        : syncStatus === 'local_only'
+          ? 'synced'
+          : 'pending',
+  });
+  const normalizeSet = (set: LocalSetRecord): LocalSetRecord => ({
+    ...set,
+    points: Array.isArray(set.points) ? set.points.map(normalizePoint) : [],
+  });
   return {
     ...(value as unknown as LocalMatch),
     setFormat: value.setFormat === 'match_tiebreak' ? 'match_tiebreak' : 'standard',
@@ -182,12 +211,22 @@ function normalizeLocalMatch(value: Record<string, unknown>): LocalMatch {
         ? value.tiebreakTarget
         : 10,
     completedSets: Array.isArray(value.completedSets)
-      ? (value.completedSets as LocalSetRecord[])
+      ? (value.completedSets as LocalSetRecord[]).map(normalizeSet)
+      : [],
+    points: Array.isArray(value.points)
+      ? (value.points as LocalPoint[]).map(normalizePoint)
       : [],
     matchStatus:
       value.matchStatus === 'complete' || value.matchStatus === 'in_progress'
         ? value.matchStatus
         : legacyStatus,
+    syncStatus,
+    syncToken: typeof value.syncToken === 'string' ? value.syncToken : null,
+    remoteMatchId: typeof value.remoteMatchId === 'string' ? value.remoteMatchId : null,
+    pendingPointDeletes: Array.isArray(value.pendingPointDeletes)
+      ? value.pendingPointDeletes.filter((pointId): pointId is string => typeof pointId === 'string')
+      : [],
+    syncError: typeof value.syncError === 'string' ? value.syncError : null,
   };
 }
 
@@ -331,6 +370,7 @@ function summarize(match: LocalMatch): LocalMatchSummary {
   const setHistory = getLocalSetHistory(match);
   const trackedSetsWon = setHistory.filter((set) => set.score.winner === 'tracked').length;
   const opponentSetsWon = setHistory.filter((set) => set.score.winner === 'opponent').length;
+  const allPoints = setHistory.flatMap((set) => set.points);
   return {
     id: match.id,
     matchDate: match.matchDate,
@@ -341,6 +381,8 @@ function summarize(match: LocalMatch): LocalMatchSummary {
     opponent: match.opponent,
     surface: match.surface,
     status: match.matchStatus,
+    syncStatus: match.syncStatus,
+    pendingPointCount: allPoints.filter((point) => point.syncStatus === 'pending').length,
     trackedGames: match.score.trackedGames,
     opponentGames: match.score.opponentGames,
     setScores: setHistory.map((set) => ({
@@ -353,7 +395,7 @@ function summarize(match: LocalMatch): LocalMatchSummary {
       opponentTiebreakPoints: set.score.opponentTiebreakPoints,
       isComplete: set.score.isComplete,
     })),
-    pointCount: setHistory.reduce((total, set) => total + set.points.length, 0),
+    pointCount: allPoints.length,
     winner:
       match.matchStatus === 'complete' && trackedSetsWon !== opponentSetsWon
         ? trackedSetsWon > opponentSetsWon
@@ -398,6 +440,11 @@ export async function createLocalMatch(input: NewLocalMatch): Promise<LocalMatch
       tiebreakTarget: 10,
       completedSets: [] as LocalSetRecord[],
       matchStatus: 'in_progress' as const,
+      syncStatus: 'pending' as const,
+      syncToken: null,
+      remoteMatchId: null,
+      pendingPointDeletes: [] as string[],
+      syncError: null,
       points: [] as LocalPoint[],
       createdAt: now,
       updatedAt: now,
@@ -445,6 +492,7 @@ export async function recordLocalPoint(
       winner: input.winner,
       endingCode: input.endingCode ?? null,
       firstServeFault: input.firstServeFault ?? false,
+      syncStatus: match.syncStatus === 'local_only' ? 'synced' : 'pending',
       createdAt: new Date().toISOString(),
     };
     const points = [...match.points, point];
@@ -454,6 +502,11 @@ export async function recordLocalPoint(
       points,
       score: nextScore,
       status: nextScore.isComplete ? 'complete' : 'in_progress',
+      syncStatus:
+        match.syncStatus === 'local_only'
+          ? 'local_only'
+          : 'pending',
+      syncError: null,
       updatedAt: new Date().toISOString(),
     };
 
@@ -468,6 +521,7 @@ export async function undoLocalPoint(id: string): Promise<LocalMatch> {
     if (!match) throw new Error('This match is not saved on this device.');
     if (match.points.length === 0) throw new Error('There is no point to undo.');
 
+    const removedPoint = match.points[match.points.length - 1]!;
     const points = match.points.slice(0, -1);
     const score = calculateLocalScore(match, points);
     const updated: LocalMatch = {
@@ -476,6 +530,12 @@ export async function undoLocalPoint(id: string): Promise<LocalMatch> {
       score,
       status: score.isComplete ? 'complete' : 'in_progress',
       matchStatus: 'in_progress',
+      pendingPointDeletes:
+        match.syncStatus === 'local_only'
+          ? match.pendingPointDeletes
+          : [...new Set([...match.pendingPointDeletes, removedPoint.id])],
+      syncStatus: match.syncStatus === 'local_only' ? 'local_only' : 'pending',
+      syncError: null,
       updatedAt: new Date().toISOString(),
     };
 
@@ -535,6 +595,8 @@ export async function addLocalSet(
       matchStatus: 'in_progress' as const,
       points: [] as LocalPoint[],
       status: 'in_progress' as const,
+      syncStatus: match.syncStatus === 'local_only' ? 'local_only' as const : 'pending' as const,
+      syncError: null,
       updatedAt: new Date().toISOString(),
     };
     const score = calculateLocalScore(next, next.points);
@@ -554,10 +616,131 @@ export async function finishLocalMatch(id: string): Promise<LocalMatch> {
     const updated: LocalMatch = {
       ...match,
       matchStatus: 'complete',
+      syncStatus: match.syncStatus === 'local_only' ? 'local_only' : 'pending',
+      syncError: null,
       updatedAt: new Date().toISOString(),
     };
     await writeMatch(updated);
     return updated;
+  });
+}
+
+export async function listSyncableLocalMatches(): Promise<LocalMatch[]> {
+  const ids = await readIndex();
+  const records = await AsyncStorage.multiGet(ids.map(matchStorageKey));
+  const matches: LocalMatch[] = [];
+
+  for (const [key, raw] of records) {
+    if (raw === null) continue;
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== 'object' || !('id' in value)) {
+      throw new Error(`A local match record could not be read (${key}).`);
+    }
+    const match = normalizeLocalMatch(value as Record<string, unknown>);
+    if (match.syncStatus !== 'local_only') matches.push(match);
+  }
+
+  return matches.sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
+}
+
+export async function saveLocalSyncIdentity(
+  id: string,
+  syncToken: string,
+  remoteMatchId: string,
+): Promise<LocalMatch> {
+  return withWriteLock(async () => {
+    const match = await readMatch(id);
+    if (!match) throw new Error('This match is not saved on this device.');
+    const updated: LocalMatch = {
+      ...match,
+      syncToken,
+      remoteMatchId,
+      syncStatus: 'pending',
+      syncError: null,
+      updatedAt: new Date().toISOString(),
+    };
+    await writeMatch(updated);
+    return updated;
+  });
+}
+
+export async function markLocalPointsSynced(
+  id: string,
+  pointIds: string[],
+): Promise<LocalMatch> {
+  return withWriteLock(async () => {
+    const match = await readMatch(id);
+    if (!match) throw new Error('This match is not saved on this device.');
+    const ids = new Set(pointIds);
+    const mark = (point: LocalPoint): LocalPoint =>
+      ids.has(point.id) ? { ...point, syncStatus: 'synced' } : point;
+    const completedSets = match.completedSets.map((set) => ({
+      ...set,
+      points: set.points.map(mark),
+    }));
+    const points = match.points.map(mark);
+    const allPoints = [
+      ...completedSets.flatMap((set) => set.points),
+      ...points,
+    ];
+    const hasPending =
+      !match.remoteMatchId ||
+      match.pendingPointDeletes.length > 0 ||
+      allPoints.some((point) => point.syncStatus === 'pending');
+    const updated: LocalMatch = {
+      ...match,
+      completedSets,
+      points,
+      syncStatus: hasPending ? 'pending' : 'synced',
+      syncError: null,
+      updatedAt: new Date().toISOString(),
+    };
+    await writeMatch(updated);
+    return updated;
+  });
+}
+
+export async function markLocalPointDeletesSynced(
+  id: string,
+  pointIds: string[],
+): Promise<LocalMatch> {
+  return withWriteLock(async () => {
+    const match = await readMatch(id);
+    if (!match) throw new Error('This match is not saved on this device.');
+    const completed = new Set(pointIds);
+    const pendingPointDeletes = match.pendingPointDeletes.filter(
+      (pointId) => !completed.has(pointId),
+    );
+    const allPoints = getLocalSetHistory(match).flatMap((set) => set.points);
+    const hasPending =
+      !match.remoteMatchId ||
+      pendingPointDeletes.length > 0 ||
+      allPoints.some((point) => point.syncStatus === 'pending');
+    const updated: LocalMatch = {
+      ...match,
+      pendingPointDeletes,
+      syncStatus: hasPending ? 'pending' : 'synced',
+      syncError: null,
+      updatedAt: new Date().toISOString(),
+    };
+    await writeMatch(updated);
+    return updated;
+  });
+}
+
+export async function setLocalSyncError(
+  id: string,
+  message: string,
+): Promise<void> {
+  await withWriteLock(async () => {
+    const match = await readMatch(id);
+    if (!match || match.syncStatus === 'local_only') return;
+    await writeMatch({
+      ...match,
+      syncStatus: 'error',
+      syncError: message,
+      updatedAt: new Date().toISOString(),
+    });
   });
 }
 

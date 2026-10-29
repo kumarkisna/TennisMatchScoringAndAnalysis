@@ -3,8 +3,8 @@ name: Android scoring storage
 description: Durable storage constraint for the Android tennis-scoring app.
 ---
 
-**Rule:** Keep match details, scores, point logs, and derived insights on the user's device; do not send scoring records to an external database.
+**Rule:** Keep the device copy of match details, scores, and point logs authoritative. Newly created matches may sync to the private API when online; older local-only records must not be uploaded automatically.
 
-**Why:** The user explicitly asked for scoring to be saved locally on the mobile device rather than on an external database.
+**Why:** The user requires local mobile storage and later requested offline capture with sync after reconnecting. The local copy must remain available even when sync is unavailable.
 
-**How to apply:** Use app-private device storage for scoring state. Treat future sync or sharing as a separate feature requiring an explicit request.
+**How to apply:** Save scoring state on-device first, queue only new matches for idempotent private sync, and preserve local data on any sync failure. Do not silently migrate existing local-only history.
