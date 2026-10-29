@@ -7,6 +7,8 @@ import {
   type RallyLength,
   type ServiceGameStats,
   type ServeSideStats,
+  type LocalInsights,
+  type LocalStrokeTally,
   type ShotDirection,
   BreakPointStats,
 } from '@/lib/local-matches';
@@ -101,6 +103,8 @@ export interface PlayerReportInsights {
   shotDirections: LocalContextInsight<ShotDirection>[];
   rallyLengths: LocalContextInsight<RallyLength>[];
   sets: LocalSetInsights[];
+  strokeTallies: LocalStrokeTally[];
+  strokeNotes: LocalInsights['strokeNotes'];
 }
 
 const allPointCodes: PointCode[] = [...shotCodes, 'N', 'L', 'W', 'D', 'FE'];

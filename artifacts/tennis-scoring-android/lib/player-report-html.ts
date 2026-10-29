@@ -1,4 +1,4 @@
-import type { PointCode } from '@/lib/local-matches';
+import { STROKE_TYPE_OPTIONS, type PointCode, type StrokeType } from '@/lib/local-matches';
 import type {
   ContextPerformanceInsight,
   PlayerPerformanceSummary,
@@ -29,6 +29,10 @@ export const POINT_CODE_LABELS: Record<PointCode, string> = {
   D: 'Double fault',
   FE: 'Forced error',
 };
+
+const STROKE_LABELS = Object.fromEntries(
+  STROKE_TYPE_OPTIONS.map(({ value, label }) => [value, label]),
+) as Record<StrokeType, string>;
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => {
@@ -172,6 +176,63 @@ export function buildPlayerReportHtml(
   const feedbackRows = summary.feedback
     .map((item) => `<li>${escape(item)}</li>`)
     .join('');
+  const strokeResultLabels = {
+    in_play: 'In play',
+    error: 'Error',
+    winner: 'Winner',
+  } as const;
+  const strokeTallyRows = insights.strokeTallies
+    .filter((item) => item.sampleCount > 0)
+    .map((item) => `
+      <tr>
+        <td>${escape(item.player === 'tracked' ? match.trackedPlayer : match.opponent)}</td>
+        <td>${escape(STROKE_LABELS[item.strokeType])}</td>
+        <td>${item.inPlay}</td>
+        <td>${item.errors}</td>
+        <td>${item.winners}</td>
+        <td>${item.sampleCount}</td>
+      </tr>`)
+    .join('');
+  const strokeNoteRows = insights.strokeNotes
+    .map((item) => `
+      <tr>
+        <td>Set ${item.setNumber}, Game ${item.gameNumber}, Point ${item.sequenceNumber}</td>
+        <td>${escape(item.player === 'tracked' ? match.trackedPlayer : match.opponent)}</td>
+        <td>${escape(STROKE_LABELS[item.strokeType])}</td>
+        <td>${escape(strokeResultLabels[item.result])}</td>
+        <td>${escape(item.note)}</td>
+      </tr>`)
+    .join('');
+  const setObservationSections = insights.sets
+    .map((set) => {
+      const notes = [
+        ...set.gameNotes
+          .filter((item) => item.note.trim())
+          .map((item) => `Game ${item.gameNumber}: ${item.note.trim()}`),
+        ...Object.entries(set.review.strokeRatings).map(([type, rating]) => {
+          const note = set.review.strokeNotes[type as keyof typeof set.review.strokeNotes];
+          return `${STROKE_LABELS[type as keyof typeof STROKE_LABELS]} · rating ${rating}/5${note?.trim() ? ` · ${note.trim()}` : ''}`;
+        }),
+        ...Object.entries(set.review.strokeNotes)
+          .filter(([type, note]) => !set.review.strokeRatings[type as keyof typeof set.review.strokeRatings] && note.trim())
+          .map(([type, note]) => `${STROKE_LABELS[type as keyof typeof STROKE_LABELS]}: ${note.trim()}`),
+        ...(set.review.footworkNote.trim()
+          ? [`Footwork & court coverage: ${set.review.footworkNote.trim()}`]
+          : []),
+        ...(set.review.tacticalNote.trim()
+          ? [`Tactical adjustments: ${set.review.tacticalNote.trim()}`]
+          : []),
+        ...(set.review.mentalNote.trim()
+          ? [`Mental toughness / body language: ${set.review.mentalNote.trim()}`]
+          : []),
+      ];
+      if (!notes.length) return '';
+      return `<h3>Set ${set.setNumber} observations</h3><ul>${notes.map((note) => `<li>${escape(note)}</li>`).join('')}</ul>`;
+    })
+    .filter(Boolean)
+    .join('');
+  const setObservations =
+    setObservationSections || '<p class="context-coverage">No game or set observations recorded.</p>';
   const trackedServe = insights.serveStats.tracked;
   const opponentServe = insights.serveStats.opponent;
   const recordedSetCount = insights.sets.filter((set) => set.pointCount > 0).length;
@@ -506,6 +567,7 @@ export function buildPlayerReportHtml(
       .note a { color: #245d4b; }
       h3 { break-after: avoid; color: #183a30; font-size: 11px; margin: 14px 0 6px; }
       .context-coverage { color: #60746c; font-size: 9px; margin: 3px 0 7px; }
+      .observation-list { font-size: 9px; line-height: 1.5; margin: 5px 0 8px; padding-left: 18px; }
       @media print { html, body { margin: 0; } .report-page { padding: 14mm; -webkit-box-decoration-break: clone; box-decoration-break: clone; } }
     </style>
   </head>
@@ -654,6 +716,20 @@ export function buildPlayerReportHtml(
       </thead>
       <tbody>${codeLegendRows}</tbody>
     </table>
+    <h2>Recorded stroke counts</h2>
+    <p class="context-coverage">Only strokes explicitly recorded during point entry are counted. Each row’s total is the sample size for its in-play, error, and winner counts.</p>
+    <table>
+      <thead><tr><th>Player</th><th>Stroke type</th><th>In play</th><th>Errors</th><th>Winners</th><th>Total recorded</th></tr></thead>
+      <tbody>${strokeTallyRows || '<tr><td colspan="6">No stroke entries recorded.</td></tr>'}</tbody>
+    </table>
+    ${strokeNoteRows ? `
+      <h3>Point-level stroke notes</h3>
+      <table>
+        <thead><tr><th>Point</th><th>Player</th><th>Stroke</th><th>Result</th><th>Note</th></tr></thead>
+        <tbody>${strokeNoteRows}</tbody>
+      </table>` : ''}
+    <h2>Game and set observations</h2>
+    ${setObservations}
     <h2>Tactical context</h2>
     <p class="context-coverage">
       Direction records the tracked player's last shot on a point. Rally length counts shots including the serve.

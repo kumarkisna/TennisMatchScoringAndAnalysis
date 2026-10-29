@@ -12,6 +12,7 @@ import {
   getLocalMatch,
   listLocalMatches,
   mergeLocalMatchesFromBackup,
+  STROKE_TYPE_OPTIONS,
   type LocalMatch,
   type LocalMatchBackupRecord,
 } from '@/lib/local-matches';
@@ -67,6 +68,8 @@ function portableMatch(match: LocalMatch): LocalMatchBackupRecord {
     status: match.status,
     score: match.score,
     points: match.points,
+    gameNotes: match.gameNotes,
+    review: match.review,
     createdAt: match.createdAt,
     updatedAt: match.updatedAt,
   };
@@ -190,6 +193,21 @@ function isBackupPoint(value: unknown): boolean {
     (value.rallyLength === undefined ||
       value.rallyLength === null ||
       rallyLengths.includes(value.rallyLength as (typeof rallyLengths)[number])) &&
+    (value.strokes === undefined ||
+      (Array.isArray(value.strokes) &&
+        value.strokes.length <= 20 &&
+        value.strokes.every((stroke) => {
+          if (!isRecord(stroke)) return false;
+          return (
+            typeof stroke.id === 'string' &&
+            stroke.id.length > 0 &&
+            sides.includes(stroke.player as (typeof sides)[number]) &&
+            STROKE_TYPE_OPTIONS.some((option) => option.value === stroke.strokeType) &&
+            ['in_play', 'error', 'winner'].includes(String(stroke.result)) &&
+            isNullableString(stroke.note) &&
+            (stroke.note === null || stroke.note.length <= 200)
+          );
+        }))) &&
     (value.syncStatus === 'pending' || value.syncStatus === 'synced') &&
     isTimestamp(value.createdAt)
   );
@@ -207,7 +225,57 @@ function isBackupSet(value: unknown): boolean {
     value.tiebreakTarget <= 99 &&
     isScore(value.score) &&
     Array.isArray(value.points) &&
-    value.points.every(isBackupPoint)
+    value.points.every(isBackupPoint) &&
+    (value.gameNotes === undefined || isBackupGameNotes(value.gameNotes)) &&
+    (value.review === undefined || isBackupSetReview(value.review))
+  );
+}
+
+function isBackupGameNotes(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length <= 1000 &&
+    value.every(
+      (item) =>
+        isRecord(item) &&
+        isNonnegativeInteger(item.gameNumber) &&
+        item.gameNumber >= 1 &&
+        typeof item.note === 'string' &&
+        item.note.length <= 500,
+    )
+  );
+}
+
+function isBackupSetReview(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const validRatings =
+    value.strokeRatings === undefined ||
+    (isRecord(value.strokeRatings) &&
+      Object.entries(value.strokeRatings).every(
+        ([type, rating]) =>
+          STROKE_TYPE_OPTIONS.some((option) => option.value === type) &&
+          typeof rating === 'number' &&
+          Number.isInteger(rating) &&
+          rating >= 1 &&
+          rating <= 5,
+      ));
+  const validNotes =
+    value.strokeNotes === undefined ||
+    (isRecord(value.strokeNotes) &&
+      Object.entries(value.strokeNotes).every(
+        ([type, note]) =>
+          STROKE_TYPE_OPTIONS.some((option) => option.value === type) &&
+          typeof note === 'string' &&
+          note.length <= 500,
+      ));
+  return (
+    validRatings &&
+    validNotes &&
+    ['footworkNote', 'tacticalNote', 'mentalNote'].every(
+      (field) =>
+        value[field] === undefined ||
+        (typeof value[field] === 'string' && value[field].length <= 1000),
+    )
   );
 }
 
@@ -244,6 +312,8 @@ function isBackupMatch(value: unknown): value is LocalMatchBackupRecord {
     isScore(value.score) &&
     Array.isArray(value.points) &&
     value.points.every(isBackupPoint) &&
+    (value.gameNotes === undefined || isBackupGameNotes(value.gameNotes)) &&
+    (value.review === undefined || isBackupSetReview(value.review)) &&
     isTimestamp(value.createdAt) &&
     isTimestamp(value.updatedAt)
   );

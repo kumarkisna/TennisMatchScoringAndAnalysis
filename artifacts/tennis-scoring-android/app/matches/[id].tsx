@@ -29,12 +29,15 @@ import {
   getLocalSetHistory,
   LOCAL_MATCH_LIST_KEY,
   addLocalSet,
+  updateLocalGameNote,
+  updateLocalSetReview,
   finishLocalMatch,
   localInsightsKey,
   localMatchKey,
   recordLocalPoint,
   RALLY_LENGTH_OPTIONS,
   SHOT_DIRECTION_OPTIONS,
+  STROKE_TYPE_OPTIONS,
   updateLocalMatchDetails,
   undoLocalPoint,
   validateLocalMatchDetails,
@@ -42,17 +45,29 @@ import {
   type LocalMatch,
   type LocalMatchDetails,
   type LocalSetResult,
+  type LocalSetReview,
   type NewLocalPoint,
+  type NewLocalStroke,
   type PlayerSide,
   type PointCode,
   type RallyLength,
   type ShotDirection,
   type SetFormat,
+  type StrokeResult,
+  type StrokeType,
 } from '@/lib/local-matches';
 import { summarizePlayerPerformance } from '@/lib/player-insights';
 import { buildPlayerReportHtml } from '@/lib/player-report-html';
 
 type Side = PlayerSide;
+type NoteEditorTarget =
+  | { kind: 'game'; setNumber: number; gameNumber: number }
+  | { kind: 'stroke'; setNumber: number; strokeType: StrokeType }
+  | {
+      kind: 'observation';
+      setNumber: number;
+      field: 'footworkNote' | 'tacticalNote' | 'mentalNote';
+    };
 
 const courtSurfaces: CourtSurface[] = ['Hard', 'Clay', 'Grass', 'Carpet', 'Other'];
 
@@ -208,6 +223,15 @@ export default function MatchScreen() {
   const [endingCode, setEndingCode] = useState<PointCode | null>(null);
   const [firstServeFault, setFirstServeFault] = useState(false);
   const [isPointContextExpanded, setIsPointContextExpanded] = useState(false);
+  const [isStrokeEntryExpanded, setIsStrokeEntryExpanded] = useState(false);
+  const [strokeTypeDraft, setStrokeTypeDraft] = useState<StrokeType>('first_serve');
+  const [strokePlayerDraft, setStrokePlayerDraft] = useState<Side>('tracked');
+  const [strokeResultDraft, setStrokeResultDraft] = useState<StrokeResult>('in_play');
+  const [strokeNoteDraft, setStrokeNoteDraft] = useState('');
+  const [strokeDrafts, setStrokeDrafts] = useState<NewLocalStroke[]>([]);
+  const [isSetReviewExpanded, setIsSetReviewExpanded] = useState(false);
+  const [noteEditorTarget, setNoteEditorTarget] = useState<NoteEditorTarget | null>(null);
+  const [noteEditorDraft, setNoteEditorDraft] = useState('');
   const [shotDirection, setShotDirection] = useState<ShotDirection | null>(null);
   const [rallyLength, setRallyLength] = useState<RallyLength | null>(null);
   const [reportAction, setReportAction] = useState<'preview' | 'share' | null>(null);
@@ -236,6 +260,11 @@ export default function MatchScreen() {
     setShotDirection(null);
     setRallyLength(null);
     setIsPointContextExpanded(false);
+    setIsStrokeEntryExpanded(false);
+    setStrokeDrafts([]);
+    setStrokeNoteDraft('');
+    setIsSetReviewExpanded(false);
+    setNoteEditorTarget(null);
   }, [matchId, matchQuery.data?.setNumber]);
   const onUpdated = (updatedMatch: LocalMatch) => {
     queryClient.setQueryData(localMatchKey(matchId), updatedMatch);
@@ -250,6 +279,8 @@ export default function MatchScreen() {
       setFirstServeFault(false);
       setShotDirection(null);
       setRallyLength(null);
+      setStrokeDrafts([]);
+      setStrokeNoteDraft('');
       onUpdated(updatedMatch);
     },
   });
@@ -279,6 +310,24 @@ export default function MatchScreen() {
       setEditValidationError('');
     },
   });
+  const updateGameNote = useMutation({
+    mutationFn: (input: { setNumber: number; gameNumber: number; note: string }) =>
+      updateLocalGameNote(matchId, input.setNumber, input.gameNumber, input.note),
+    onSuccess: (updatedMatch) => {
+      onUpdated(updatedMatch);
+      setNoteEditorTarget(null);
+      setNoteEditorDraft('');
+    },
+  });
+  const updateSetReview = useMutation({
+    mutationFn: (input: { setNumber: number; review: LocalSetReview }) =>
+      updateLocalSetReview(matchId, input.setNumber, input.review),
+    onSuccess: (updatedMatch) => {
+      onUpdated(updatedMatch);
+      setNoteEditorTarget(null);
+      setNoteEditorDraft('');
+    },
+  });
   const match = matchQuery.data;
   const reportVersion =
     match && insightsQuery.data
@@ -297,7 +346,10 @@ export default function MatchScreen() {
     undoPoint.isPending ||
     addSet.isPending ||
     finishMatch.isPending ||
-    updateDetails.isPending;
+    updateDetails.isPending ||
+    updateGameNote.isPending ||
+    updateSetReview.isPending;
+
   const customTarget = Number(customTiebreakTarget);
   const customTargetValid =
     /^\d{1,2}$/.test(customTiebreakTarget) &&
@@ -360,6 +412,86 @@ export default function MatchScreen() {
       firstServeFault,
       shotDirection,
       rallyLength,
+      strokes: strokeDrafts,
+    });
+  }
+
+  function stageStroke() {
+    setStrokeDrafts((current) => [
+      ...current,
+      {
+        player: strokePlayerDraft,
+        strokeType: strokeTypeDraft,
+        result: strokeResultDraft,
+        note: strokeNoteDraft.trim(),
+      },
+    ]);
+    setStrokeNoteDraft('');
+  }
+
+  function openGameNoteEditor(setNumber: number, gameNumber: number) {
+    const note =
+      setHistory
+        .find((set) => set.setNumber === setNumber)
+        ?.gameNotes.find((item) => item.gameNumber === gameNumber)?.note ?? '';
+    updateGameNote.reset();
+    setNoteEditorTarget({ kind: 'game', setNumber, gameNumber });
+    setNoteEditorDraft(note);
+  }
+
+  function openStrokeNoteEditor(setNumber: number, strokeType: StrokeType) {
+    const review = setHistory.find((set) => set.setNumber === setNumber)?.review;
+    updateSetReview.reset();
+    setNoteEditorTarget({ kind: 'stroke', setNumber, strokeType });
+    setNoteEditorDraft(review?.strokeNotes[strokeType] ?? '');
+  }
+
+  function openObservationEditor(
+    setNumber: number,
+    field: 'footworkNote' | 'tacticalNote' | 'mentalNote',
+    initialValue: string,
+  ) {
+    updateSetReview.reset();
+    setNoteEditorTarget({ kind: 'observation', setNumber, field });
+    setNoteEditorDraft(initialValue);
+  }
+
+  function saveNoteEditor() {
+    if (!noteEditorTarget) return;
+    if (noteEditorTarget.kind === 'game') {
+      updateGameNote.mutate({
+        setNumber: noteEditorTarget.setNumber,
+        gameNumber: noteEditorTarget.gameNumber,
+        note: noteEditorDraft,
+      });
+      return;
+    }
+    const selectedSet = setHistory.find(
+      (set) => set.setNumber === noteEditorTarget.setNumber,
+    );
+    if (!selectedSet) return;
+    const review = { ...selectedSet.review };
+    if (noteEditorTarget.kind === 'stroke') {
+      review.strokeNotes = { ...review.strokeNotes };
+      if (noteEditorDraft.trim()) {
+        review.strokeNotes[noteEditorTarget.strokeType] = noteEditorDraft.trim();
+      } else {
+        delete review.strokeNotes[noteEditorTarget.strokeType];
+      }
+    } else {
+      review[noteEditorTarget.field] = noteEditorDraft.trim();
+    }
+    updateSetReview.mutate({ setNumber: noteEditorTarget.setNumber, review });
+  }
+
+  function saveStrokeRating(strokeType: StrokeType, rating: number | null) {
+    if (!displayedSet) return;
+    const strokeRatings = { ...displayedSet.review.strokeRatings };
+    if (rating === null) delete strokeRatings[strokeType];
+    else strokeRatings[strokeType] = rating;
+    updateSetReview.mutate({
+      setNumber: displayedSet.setNumber,
+      review: { ...displayedSet.review, strokeRatings },
     });
   }
 
@@ -495,6 +627,17 @@ export default function MatchScreen() {
     gamePoints.push(point);
     pointGroups.set(point.gameNumber, gamePoints);
   }
+  const reviewGameNumbers = [...new Set([
+    ...viewedSet.points.map((point) => point.gameNumber),
+    ...viewedSet.gameNotes.map((item) => item.gameNumber),
+    ...(viewedSet.isCurrent && !viewedSet.score.isComplete
+      ? [
+          viewedSet.format === 'match_tiebreak'
+            ? 1
+            : viewedSet.score.trackedGames + viewedSet.score.opponentGames + 1,
+        ]
+      : []),
+  ])].sort((a, b) => a - b);
   const matrixColumnCount = Math.max(
     8,
     ...Array.from(pointGroups.values(), (gamePoints) => gamePoints.length),
@@ -1113,6 +1256,203 @@ export default function MatchScreen() {
             </View>
 
             <Pressable
+              testID="toggle-stroke-entry"
+              accessibilityRole="button"
+              accessibilityState={{ expanded: isStrokeEntryExpanded }}
+              onPress={() => setIsStrokeEntryExpanded((current) => !current)}
+              style={[styles.contextToggle, { borderTopColor: colors.border }]}
+            >
+              <Ionicons
+                name={isStrokeEntryExpanded ? 'chevron-up-outline' : 'add-circle-outline'}
+                size={17}
+                color={colors.primary}
+              />
+              <View style={styles.contextToggleCopy}>
+                <Text style={[styles.contextToggleTitle, { color: colors.foreground }]}>
+                  Stroke details · optional
+                </Text>
+                <Text style={[styles.contextToggleHint, { color: colors.mutedForeground }]}>
+                  {strokeDrafts.length
+                    ? `${strokeDrafts.length} stroke${strokeDrafts.length === 1 ? '' : 's'} ready to save with this point`
+                    : 'Record observed strokes only'}
+                </Text>
+              </View>
+              <Ionicons
+                name={isStrokeEntryExpanded ? 'chevron-up' : 'chevron-down'}
+                size={15}
+                color={colors.mutedForeground}
+              />
+            </Pressable>
+            {isStrokeEntryExpanded ? (
+              <View
+                style={[
+                  styles.contextPanel,
+                  { backgroundColor: colors.background, borderColor: colors.border },
+                ]}
+              >
+                <Text style={[styles.codeGroupLabel, { color: colors.mutedForeground }]}>
+                  PLAYER
+                </Text>
+                <View style={styles.codeWrap}>
+                  {(['tracked', 'opponent'] as Side[]).map((side) => {
+                    const selected = strokePlayerDraft === side;
+                    return (
+                      <Pressable
+                        key={side}
+                        testID={`stroke-player-${side}`}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                        onPress={() => setStrokePlayerDraft(side)}
+                        style={[
+                          styles.contextChip,
+                          {
+                            backgroundColor: selected ? colors.primary : colors.card,
+                            borderColor: selected ? colors.primary : colors.border,
+                            borderRadius: colors.radius,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.contextChipText,
+                            { color: selected ? colors.primaryForeground : colors.foreground },
+                          ]}
+                        >
+                          {side === 'tracked' ? trackedName : opponentName}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <Text style={[styles.codeGroupLabel, { color: colors.mutedForeground }]}>
+                  STROKE TYPE
+                </Text>
+                <View style={styles.codeWrap}>
+                  {STROKE_TYPE_OPTIONS.map((option) => {
+                    const selected = strokeTypeDraft === option.value;
+                    return (
+                      <Pressable
+                        key={option.value}
+                        testID={`stroke-type-${option.value}`}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                        onPress={() => setStrokeTypeDraft(option.value)}
+                        style={[
+                          styles.contextChip,
+                          {
+                            backgroundColor: selected ? colors.primary : colors.card,
+                            borderColor: selected ? colors.primary : colors.border,
+                            borderRadius: colors.radius,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.contextChipText,
+                            { color: selected ? colors.primaryForeground : colors.foreground },
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <Text style={[styles.codeGroupLabel, { color: colors.mutedForeground }]}>
+                  RESULT
+                </Text>
+                <View style={styles.codeWrap}>
+                  {([
+                    ['in_play', 'In play'],
+                    ['error', 'Error'],
+                    ['winner', 'Winner'],
+                  ] as [StrokeResult, string][]).map(([result, label]) => {
+                    const selected = strokeResultDraft === result;
+                    return (
+                      <Pressable
+                        key={result}
+                        testID={`stroke-result-${result}`}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                        onPress={() => setStrokeResultDraft(result)}
+                        style={[
+                          styles.contextChip,
+                          {
+                            backgroundColor: selected ? colors.primary : colors.card,
+                            borderColor: selected ? colors.primary : colors.border,
+                            borderRadius: colors.radius,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.contextChipText,
+                            { color: selected ? colors.primaryForeground : colors.foreground },
+                          ]}
+                        >
+                          {label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <TextInput
+                  testID="stroke-note-input"
+                  accessibilityLabel="Short stroke note"
+                  value={strokeNoteDraft}
+                  onChangeText={setStrokeNoteDraft}
+                  maxLength={200}
+                  placeholder="Short note, if useful"
+                  placeholderTextColor={colors.mutedForeground}
+                  style={[
+                    styles.noteInput,
+                    {
+                      color: colors.foreground,
+                      borderColor: colors.border,
+                      backgroundColor: colors.card,
+                    },
+                  ]}
+                />
+                <Pressable
+                  testID="button-stage-stroke"
+                  accessibilityRole="button"
+                  disabled={strokeDrafts.length >= 20}
+                  onPress={stageStroke}
+                  style={[
+                    styles.noteActionButton,
+                    { backgroundColor: colors.secondary, opacity: strokeDrafts.length >= 20 ? 0.5 : 1 },
+                  ]}
+                >
+                  <Text style={[styles.noteActionText, { color: colors.primary }]}>
+                    Add stroke to this point
+                  </Text>
+                </Pressable>
+                {strokeDrafts.map((stroke, index) => (
+                  <View key={`${stroke.strokeType}-${index}`} style={styles.stagedStrokeRow}>
+                    <Text style={[styles.stagedStrokeText, { color: colors.foreground }]}>
+                      {stroke.player === 'tracked' ? trackedName : opponentName} ·{' '}
+                      {STROKE_TYPE_OPTIONS.find((item) => item.value === stroke.strokeType)?.label} ·{' '}
+                      {stroke.result.replace('_', ' ')}
+                      {stroke.note ? ` · ${stroke.note}` : ''}
+                    </Text>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove recorded ${stroke.strokeType}`}
+                      onPress={() =>
+                        setStrokeDrafts((current) => current.filter((_, itemIndex) => itemIndex !== index))
+                      }
+                    >
+                      <Ionicons name="close-circle-outline" size={19} color={colors.mutedForeground} />
+                    </Pressable>
+                  </View>
+                ))}
+                <Text style={[styles.contextHelp, { color: colors.mutedForeground }]}>
+                  These entries are saved only if you record the point.
+                </Text>
+              </View>
+            ) : null}
+
+            <Pressable
               testID="toggle-point-context"
               accessibilityRole="button"
               accessibilityLabel="Optional shot direction and rally length"
@@ -1392,6 +1732,193 @@ export default function MatchScreen() {
             {!matrixTiebreakIsLive ? matrixTiebreakRow : null}
           </View>
         </ScrollView>
+
+        <View
+          style={[
+            styles.observationCard,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          <View style={styles.observationHeader}>
+            <View style={styles.contextToggleCopy}>
+              <Text style={[styles.contextToggleTitle, { color: colors.foreground }]}>
+                Set {viewedSet.setNumber} · game notes
+              </Text>
+              <Text style={[styles.contextToggleHint, { color: colors.mutedForeground }]}>
+                Notes stay with their game and set
+              </Text>
+            </View>
+          </View>
+          {reviewGameNumbers.length ? (
+            reviewGameNumbers.map((gameNumber) => {
+              const note = viewedSet.gameNotes.find(
+                (item) => item.gameNumber === gameNumber,
+              )?.note;
+              return (
+                <Pressable
+                  key={gameNumber}
+                  testID={`edit-game-note-${viewedSet.setNumber}-${gameNumber}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Edit note for set ${viewedSet.setNumber}, game ${gameNumber}`}
+                  onPress={() => openGameNoteEditor(viewedSet.setNumber, gameNumber)}
+                  style={[styles.observationRow, { borderTopColor: colors.border }]}
+                >
+                  <Text style={[styles.observationLabel, { color: colors.foreground }]}>
+                    Game {gameNumber}
+                  </Text>
+                  <Text
+                    numberOfLines={2}
+                    style={[styles.observationValue, { color: colors.mutedForeground }]}
+                  >
+                    {note || 'Add a note'}
+                  </Text>
+                  <Ionicons name="create-outline" size={16} color={colors.primary} />
+                </Pressable>
+              );
+            })
+          ) : (
+            <Text style={[styles.contextHelp, { color: colors.mutedForeground }]}>
+              Game notes are available after a game starts.
+            </Text>
+          )}
+        </View>
+
+        <View
+          style={[
+            styles.observationCard,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          <Pressable
+            testID="toggle-set-review"
+            accessibilityRole="button"
+            accessibilityState={{ expanded: isSetReviewExpanded }}
+            onPress={() => setIsSetReviewExpanded((current) => !current)}
+            style={styles.observationHeader}
+          >
+            <View style={styles.contextToggleCopy}>
+              <Text style={[styles.contextToggleTitle, { color: colors.foreground }]}>
+                Set {viewedSet.setNumber} · stroke ratings and coaching
+              </Text>
+              <Text style={[styles.contextToggleHint, { color: colors.mutedForeground }]}>
+                Optional 1–5 ratings and observations
+              </Text>
+            </View>
+            <Ionicons
+              name={isSetReviewExpanded ? 'chevron-up' : 'chevron-down'}
+              size={16}
+              color={colors.mutedForeground}
+            />
+          </Pressable>
+          {isSetReviewExpanded ? (
+            <View style={styles.setReviewBody}>
+              <Text style={[styles.contextHelp, { color: colors.mutedForeground }]}>
+                Leave unrated strokes blank. Ratings are your observations, not calculated scores.
+              </Text>
+              {STROKE_TYPE_OPTIONS.map((option) => {
+                const rating = viewedSet.review.strokeRatings[option.value];
+                const note = viewedSet.review.strokeNotes[option.value] ?? '';
+                return (
+                  <View
+                    key={option.value}
+                    testID={`set-stroke-review-${option.value}`}
+                    style={[styles.strokeReviewRow, { borderTopColor: colors.border }]}
+                  >
+                    <View style={styles.strokeReviewTop}>
+                      <Text style={[styles.observationLabel, { color: colors.foreground }]}>
+                        {option.label}
+                      </Text>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Edit ${option.label} coaching note`}
+                        onPress={() =>
+                          openStrokeNoteEditor(viewedSet.setNumber, option.value)
+                        }
+                      >
+                        <Text
+                          numberOfLines={1}
+                          style={[styles.strokeNotePreview, { color: colors.mutedForeground }]}
+                        >
+                          {note || 'Add note'}
+                        </Text>
+                      </Pressable>
+                    </View>
+                    <View style={styles.ratingRow}>
+                      <Text style={[styles.ratingLabel, { color: colors.mutedForeground }]}>
+                        Rating
+                      </Text>
+                      {[1, 2, 3, 4, 5].map((value) => {
+                        const selected = rating === value;
+                        return (
+                          <Pressable
+                            key={value}
+                            testID={`rating-${option.value}-${value}`}
+                            accessibilityRole="button"
+                            accessibilityLabel={`${option.label} rating ${value}`}
+                            accessibilityState={{ selected }}
+                            disabled={updateSetReview.isPending}
+                            onPress={() =>
+                              saveStrokeRating(option.value, selected ? null : value)
+                            }
+                            style={[
+                              styles.ratingChip,
+                              {
+                                backgroundColor: selected ? colors.primary : colors.background,
+                                borderColor: selected ? colors.primary : colors.border,
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.ratingChipText,
+                                {
+                                  color: selected
+                                    ? colors.primaryForeground
+                                    : colors.foreground,
+                                },
+                              ]}
+                            >
+                              {value}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </View>
+                );
+              })}
+              {([
+                ['footworkNote', 'Footwork & court coverage'],
+                ['tacticalNote', 'Tactical adjustments'],
+                ['mentalNote', 'Mental toughness / body language'],
+              ] as const).map(([field, label]) => {
+                const value = viewedSet.review[field];
+                return (
+                  <Pressable
+                    key={field}
+                    testID={`edit-set-observation-${field}`}
+                    accessibilityRole="button"
+                    onPress={() =>
+                      openObservationEditor(viewedSet.setNumber, field, value)
+                    }
+                    style={[styles.observationRow, { borderTopColor: colors.border }]}
+                  >
+                    <Text style={[styles.observationLabel, { color: colors.foreground }]}>
+                      {label}
+                    </Text>
+                    <Text
+                      numberOfLines={2}
+                      style={[styles.observationValue, { color: colors.mutedForeground }]}
+                    >
+                      {value || 'Add observation'}
+                    </Text>
+                    <Ionicons name="create-outline" size={16} color={colors.primary} />
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+        </View>
 
         <View style={styles.sectionHeader}>
           <View style={styles.reportHeading}>
@@ -1821,7 +2348,18 @@ export default function MatchScreen() {
                       {point.rallyLength
                         ? ` · ${RALLY_LENGTH_OPTIONS.find((option) => option.value === point.rallyLength)?.label ?? 'Rally tagged'}`
                         : ''}
+                      {point.strokes?.length
+                        ? ` · ${point.strokes.length} stroke entr${point.strokes.length === 1 ? 'y' : 'ies'}`
+                        : ''}
                     </Text>
+                    {point.strokes?.some((stroke) => stroke.note) ? (
+                      <Text style={[styles.logDetail, { color: colors.mutedForeground }]}>
+                        {point.strokes
+                          .filter((stroke) => stroke.note)
+                          .map((stroke) => `${stroke.note}`)
+                          .join(' · ')}
+                      </Text>
+                    ) : null}
                   </View>
                   <Text style={[styles.logCode, { color: colors.accent }]}>
                     {point.endingCode || '—'}
@@ -1831,6 +2369,125 @@ export default function MatchScreen() {
           )}
         </View>
       </ScrollView>
+      <Modal
+        visible={Boolean(noteEditorTarget)}
+        animationType="slide"
+        onRequestClose={() => {
+          if (!updateGameNote.isPending && !updateSetReview.isPending) {
+            setNoteEditorTarget(null);
+          }
+        }}
+      >
+        <SafeAreaView
+          style={[styles.editModalSafeArea, { backgroundColor: colors.background }]}
+        >
+          <View style={[styles.editModalHeader, { borderBottomColor: colors.border }]}>
+            <Pressable
+              testID="button-cancel-edit-note"
+              accessibilityRole="button"
+              accessibilityLabel="Cancel editing note"
+              disabled={updateGameNote.isPending || updateSetReview.isPending}
+              onPress={() => setNoteEditorTarget(null)}
+              style={styles.editModalIconButton}
+            >
+              <Ionicons name="close" size={23} color={colors.foreground} />
+            </Pressable>
+            <View style={styles.editModalTitleGroup}>
+              <Text style={[styles.eyebrow, { color: colors.accent }]}>
+                MATCH OBSERVATIONS
+              </Text>
+              <Text style={[styles.editModalTitle, { color: colors.foreground }]}>
+                {noteEditorTarget?.kind === 'game'
+                  ? `Set ${noteEditorTarget.setNumber} · Game ${noteEditorTarget.gameNumber}`
+                  : noteEditorTarget?.kind === 'stroke'
+                    ? STROKE_TYPE_OPTIONS.find(
+                        (item) => item.value === noteEditorTarget.strokeType,
+                      )?.label ?? 'Stroke note'
+                    : noteEditorTarget?.field === 'footworkNote'
+                      ? 'Footwork & court coverage'
+                      : noteEditorTarget?.field === 'tacticalNote'
+                        ? 'Tactical adjustments'
+                        : 'Mental toughness / body language'}
+              </Text>
+            </View>
+            <Pressable
+              testID="button-save-note"
+              accessibilityRole="button"
+              accessibilityLabel="Save note"
+              disabled={updateGameNote.isPending || updateSetReview.isPending}
+              onPress={saveNoteEditor}
+              style={[
+                styles.noteSaveButton,
+                {
+                  backgroundColor: colors.primary,
+                  opacity:
+                    updateGameNote.isPending || updateSetReview.isPending ? 0.55 : 1,
+                },
+              ]}
+            >
+              {updateGameNote.isPending || updateSetReview.isPending ? (
+                <ActivityIndicator size="small" color={colors.primaryForeground} />
+              ) : (
+                <Text style={[styles.noteActionText, { color: colors.primaryForeground }]}>
+                  Save
+                </Text>
+              )}
+            </Pressable>
+          </View>
+          <KeyboardAwareScrollViewCompat
+            contentContainerStyle={styles.editModalContent}
+            bottomOffset={24}
+          >
+            <Text style={[styles.editModalNote, { color: colors.mutedForeground }]}>
+              Notes are saved on this device and can be changed later.
+            </Text>
+            <TextInput
+              testID="note-editor-input"
+              accessibilityLabel="Match observation note"
+              autoFocus
+              multiline
+              maxLength={
+                noteEditorTarget?.kind === 'game'
+                  ? 500
+                  : noteEditorTarget?.kind === 'stroke'
+                    ? 500
+                    : 1000
+              }
+              value={noteEditorDraft}
+              onChangeText={setNoteEditorDraft}
+              placeholder="Write an observation"
+              placeholderTextColor={colors.mutedForeground}
+              textAlignVertical="top"
+              style={[
+                styles.noteEditorInput,
+                {
+                  color: colors.foreground,
+                  borderColor: colors.border,
+                  backgroundColor: colors.card,
+                },
+              ]}
+            />
+            {(updateGameNote.error || updateSetReview.error) ? (
+              <View
+                accessibilityRole="alert"
+                style={[
+                  styles.editErrorBanner,
+                  { borderColor: colors.destructive, backgroundColor: colors.card },
+                ]}
+              >
+                <Ionicons
+                  name="alert-circle-outline"
+                  size={16}
+                  color={colors.destructive}
+                />
+                <Text style={[styles.editErrorText, { color: colors.destructive }]}>
+                  {updateGameNote.error?.message || updateSetReview.error?.message}
+                </Text>
+              </View>
+            ) : null}
+          </KeyboardAwareScrollViewCompat>
+        </SafeAreaView>
+      </Modal>
       <Modal
         visible={isEditingDetails}
         animationType="slide"
@@ -2243,6 +2900,26 @@ const styles = StyleSheet.create({
   contextChip: { minHeight: 31, borderWidth: 1, paddingHorizontal: 9, justifyContent: 'center' },
   contextChipText: { fontFamily: 'DMSans_500Medium', fontSize: 9 },
   contextHelp: { fontFamily: 'DMSans_400Regular', fontSize: 9, lineHeight: 13 },
+  noteInput: { minHeight: 40, borderWidth: 1, borderRadius: 7, paddingHorizontal: 9, fontFamily: 'DMSans_400Regular', fontSize: 11 },
+  noteActionButton: { minHeight: 36, borderRadius: 7, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' },
+  noteActionText: { fontFamily: 'DMSans_700Bold', fontSize: 10 },
+  stagedStrokeRow: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  stagedStrokeText: { flex: 1, fontFamily: 'DMSans_400Regular', fontSize: 9, lineHeight: 13 },
+  observationCard: { marginTop: 12, borderWidth: 1, borderRadius: 11, paddingHorizontal: 12, paddingVertical: 10 },
+  observationHeader: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  observationRow: { minHeight: 43, borderTopWidth: StyleSheet.hairlineWidth, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  observationLabel: { minWidth: 94, fontFamily: 'DMSans_600SemiBold', fontSize: 9 },
+  observationValue: { flex: 1, fontFamily: 'DMSans_400Regular', fontSize: 9, lineHeight: 13 },
+  setReviewBody: { gap: 8, paddingTop: 8 },
+  strokeReviewRow: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 8, gap: 6 },
+  strokeReviewTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  strokeNotePreview: { maxWidth: 175, fontFamily: 'DMSans_400Regular', fontSize: 9 },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  ratingLabel: { flex: 1, fontFamily: 'DMSans_400Regular', fontSize: 8 },
+  ratingChip: { width: 27, height: 27, borderWidth: 1, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
+  ratingChipText: { fontFamily: 'DMSans_700Bold', fontSize: 10 },
+  noteSaveButton: { minWidth: 62, height: 37, borderRadius: 7, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 9 },
+  noteEditorInput: { minHeight: 150, borderWidth: 1, borderRadius: 9, padding: 12, fontFamily: 'DMSans_400Regular', fontSize: 14, lineHeight: 20 },
   mutationError: { marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 7 },
   mutationErrorText: { flex: 1, fontFamily: 'DMSans_500Medium', fontSize: 11 },
   sectionHeader: { marginTop: 25, marginBottom: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },

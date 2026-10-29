@@ -6,6 +6,57 @@ export type CourtSurface = 'Hard' | 'Clay' | 'Grass' | 'Carpet' | 'Other';
 export type SetFormat = 'standard' | 'match_tiebreak';
 export type LocalSyncStatus = 'local_only' | 'pending' | 'synced' | 'error';
 
+export const STROKE_TYPE_OPTIONS = [
+  { value: 'first_serve', label: '1st serve' },
+  { value: 'second_serve', label: '2nd serve' },
+  { value: 'forehand_drive', label: 'Forehand drive' },
+  { value: 'forehand_slice_drop', label: 'Forehand slice/drop' },
+  { value: 'backhand_drive', label: 'Backhand drive' },
+  { value: 'backhand_slice_drop', label: 'Backhand slice/drop' },
+  { value: 'forehand_volley', label: 'Forehand volley' },
+  { value: 'backhand_volley', label: 'Backhand volley' },
+  { value: 'overhead_smash', label: 'Overhead smash' },
+  { value: 'return_of_serve', label: 'Return of serve' },
+  { value: 'passing_shot', label: 'Passing shot' },
+  { value: 'lob', label: 'Lob' },
+] as const;
+
+export type StrokeType = (typeof STROKE_TYPE_OPTIONS)[number]['value'];
+export type StrokeResult = 'in_play' | 'error' | 'winner';
+
+export interface NewLocalStroke {
+  player: PlayerSide;
+  strokeType: StrokeType;
+  result: StrokeResult;
+  note?: string;
+}
+
+export interface LocalStroke extends Omit<NewLocalStroke, 'note'> {
+  id: string;
+  note: string | null;
+}
+
+export interface LocalGameNote {
+  gameNumber: number;
+  note: string;
+}
+
+export interface LocalSetReview {
+  strokeRatings: Partial<Record<StrokeType, number>>;
+  strokeNotes: Partial<Record<StrokeType, string>>;
+  footworkNote: string;
+  tacticalNote: string;
+  mentalNote: string;
+}
+
+export const EMPTY_LOCAL_SET_REVIEW: LocalSetReview = {
+  strokeRatings: {},
+  strokeNotes: {},
+  footworkNote: '',
+  tacticalNote: '',
+  mentalNote: '',
+};
+
 export const SHOT_DIRECTION_OPTIONS = [
   { value: 'cross_court', label: 'Cross-court' },
   { value: 'down_the_line', label: 'Down the line' },
@@ -30,6 +81,8 @@ export interface LocalSetRecord {
   tiebreakTarget: number;
   score: ScoreState;
   points: LocalPoint[];
+  gameNotes: LocalGameNote[];
+  review: LocalSetReview;
 }
 
 export interface LocalSetResult extends LocalSetRecord {
@@ -61,6 +114,7 @@ export interface LocalPoint {
   firstServeFault: boolean;
   shotDirection?: ShotDirection | null;
   rallyLength?: RallyLength | null;
+  strokes?: LocalStroke[];
   syncStatus: 'pending' | 'synced';
   createdAt: string;
 }
@@ -89,6 +143,8 @@ export interface LocalMatch {
   syncError: string | null;
   score: ScoreState;
   points: LocalPoint[];
+  gameNotes: LocalGameNote[];
+  review: LocalSetReview;
   createdAt: string;
   updatedAt: string;
 }
@@ -124,6 +180,34 @@ export interface NewLocalPoint {
   firstServeFault?: boolean;
   shotDirection?: ShotDirection | null;
   rallyLength?: RallyLength | null;
+  strokes?: NewLocalStroke[];
+}
+
+const strokeTypes = STROKE_TYPE_OPTIONS.map(({ value }) => value);
+
+function validateStrokes(strokes: readonly NewLocalStroke[] = []): void {
+  if (strokes.length > 20) throw new Error('A point can include up to 20 recorded strokes.');
+  for (const stroke of strokes) {
+    if (
+      (stroke.player !== 'tracked' && stroke.player !== 'opponent') ||
+      !strokeTypes.includes(stroke.strokeType) ||
+      !['in_play', 'error', 'winner'].includes(stroke.result)
+    ) {
+      throw new Error('Choose a valid player, stroke type, and stroke result.');
+    }
+    if ((stroke.note?.length ?? 0) > 200) {
+      throw new Error('Stroke notes must be 200 characters or fewer.');
+    }
+  }
+}
+
+export interface LocalStrokeTally {
+  strokeType: StrokeType;
+  player: PlayerSide;
+  inPlay: number;
+  errors: number;
+  winners: number;
+  sampleCount: number;
 }
 
 export interface LocalContextInsight<T extends string> {
@@ -179,6 +263,16 @@ export interface LocalInsights {
   shotDirections: LocalContextInsight<ShotDirection>[];
   rallyLengths: LocalContextInsight<RallyLength>[];
   sets: LocalSetInsights[];
+  strokeTallies: LocalStrokeTally[];
+  strokeNotes: {
+    setNumber: number;
+    gameNumber: number;
+    sequenceNumber: number;
+    player: PlayerSide;
+    strokeType: StrokeType;
+    result: StrokeResult;
+    note: string;
+  }[];
 }
 
 export interface ServeSideStats {
@@ -223,6 +317,8 @@ export interface LocalSetInsights {
   tiebreakPointCount: number;
   trackedTiebreakPointsWon: number;
   breakPoints: Record<PlayerSide, BreakPointStats>;
+  gameNotes: LocalGameNote[];
+  review: LocalSetReview;
 }
 
 export const LOCAL_MATCH_LIST_KEY = ['device-matches'] as const;
@@ -337,6 +433,25 @@ function normalizeLocalMatch(value: Record<string, unknown>): LocalMatch {
       : 'local_only';
   const normalizePoint = (point: LocalPoint): LocalPoint => ({
     ...point,
+    strokes: Array.isArray(point.strokes)
+      ? point.strokes
+          .filter(
+            (stroke) =>
+              stroke &&
+              (stroke.player === 'tracked' || stroke.player === 'opponent') &&
+              STROKE_TYPE_OPTIONS.some((option) => option.value === stroke.strokeType) &&
+              (stroke.result === 'in_play' ||
+                stroke.result === 'error' ||
+                stroke.result === 'winner'),
+          )
+          .map((stroke) => ({
+            id: typeof stroke.id === 'string' ? stroke.id : newId(),
+            player: stroke.player,
+            strokeType: stroke.strokeType,
+            result: stroke.result,
+            note: typeof stroke.note === 'string' ? stroke.note.slice(0, 200) : null,
+          }))
+      : [],
     syncStatus:
       point.syncStatus === 'synced'
         ? 'synced'
@@ -344,9 +459,55 @@ function normalizeLocalMatch(value: Record<string, unknown>): LocalMatch {
           ? 'synced'
           : 'pending',
   });
+  const normalizeGameNotes = (notes: unknown): LocalGameNote[] =>
+    Array.isArray(notes)
+      ? notes
+          .filter(
+            (item): item is LocalGameNote =>
+              Boolean(item) &&
+              typeof item === 'object' &&
+              Number.isInteger((item as LocalGameNote).gameNumber) &&
+              (item as LocalGameNote).gameNumber >= 1 &&
+              typeof (item as LocalGameNote).note === 'string',
+          )
+          .map((item) => ({
+            gameNumber: item.gameNumber,
+            note: item.note.slice(0, 500),
+          }))
+      : [];
+  const normalizeReview = (review: unknown): LocalSetReview => {
+    if (!review || typeof review !== 'object' || Array.isArray(review)) {
+      return { ...EMPTY_LOCAL_SET_REVIEW };
+    }
+    const candidate = review as Partial<LocalSetReview>;
+    const strokeRatings: LocalSetReview['strokeRatings'] = {};
+    const strokeNotes: LocalSetReview['strokeNotes'] = {};
+    for (const option of STROKE_TYPE_OPTIONS) {
+      const rating = candidate.strokeRatings?.[option.value];
+      const note = candidate.strokeNotes?.[option.value];
+      if (Number.isInteger(rating) && rating! >= 1 && rating! <= 5) {
+        strokeRatings[option.value] = rating;
+      }
+      if (typeof note === 'string' && note.trim()) {
+        strokeNotes[option.value] = note.slice(0, 500);
+      }
+    }
+    return {
+      strokeRatings,
+      strokeNotes,
+      footworkNote:
+        typeof candidate.footworkNote === 'string' ? candidate.footworkNote.slice(0, 1000) : '',
+      tacticalNote:
+        typeof candidate.tacticalNote === 'string' ? candidate.tacticalNote.slice(0, 1000) : '',
+      mentalNote:
+        typeof candidate.mentalNote === 'string' ? candidate.mentalNote.slice(0, 1000) : '',
+    };
+  };
   const normalizeSet = (set: LocalSetRecord): LocalSetRecord => ({
     ...set,
     points: Array.isArray(set.points) ? set.points.map(normalizePoint) : [],
+    gameNotes: normalizeGameNotes(set.gameNotes),
+    review: normalizeReview(set.review),
   });
   return {
     ...(value as unknown as LocalMatch),
@@ -362,6 +523,8 @@ function normalizeLocalMatch(value: Record<string, unknown>): LocalMatch {
     points: Array.isArray(value.points)
       ? (value.points as LocalPoint[]).map(normalizePoint)
       : [],
+    gameNotes: normalizeGameNotes(value.gameNotes),
+    review: normalizeReview(value.review),
     matchStatus:
       value.matchStatus === 'complete' || value.matchStatus === 'in_progress'
         ? value.matchStatus
@@ -741,6 +904,8 @@ export async function createLocalMatch(input: NewLocalMatch): Promise<LocalMatch
       pendingPointDeletes: [] as string[],
       syncError: null,
       points: [] as LocalPoint[],
+      gameNotes: [] as LocalGameNote[],
+      review: { ...EMPTY_LOCAL_SET_REVIEW },
       createdAt: now,
       updatedAt: now,
     };
@@ -789,6 +954,7 @@ export async function recordLocalPoint(
 
     const score = calculateLocalScore(match, match.points);
     if (score.isComplete) throw new Error('This set is already complete.');
+    validateStrokes(input.strokes);
 
     const gameNumber =
       match.setFormat === 'match_tiebreak'
@@ -812,6 +978,11 @@ export async function recordLocalPoint(
       firstServeFault: input.firstServeFault ?? false,
       shotDirection: input.shotDirection ?? null,
       rallyLength: input.rallyLength ?? null,
+      strokes: (input.strokes ?? []).map((stroke) => ({
+        ...stroke,
+        id: newId(),
+        note: stroke.note?.trim() || null,
+      })),
       syncStatus: 'synced',
       createdAt: new Date().toISOString(),
     };
@@ -868,6 +1039,8 @@ export function getLocalSetHistory(match: LocalMatch): LocalSetResult[] {
       tiebreakTarget: match.tiebreakTarget,
       score: match.score,
       points: match.points,
+      gameNotes: match.gameNotes,
+      review: match.review,
       isCurrent: true,
     },
   ];
@@ -898,6 +1071,8 @@ export async function addLocalSet(
       tiebreakTarget: match.tiebreakTarget,
       score: match.score,
       points: match.points,
+      gameNotes: match.gameNotes,
+      review: match.review,
     };
     const next = {
       ...match,
@@ -908,6 +1083,8 @@ export async function addLocalSet(
       completedSets: [...match.completedSets, completedSet],
       matchStatus: 'in_progress' as const,
       points: [] as LocalPoint[],
+      gameNotes: [] as LocalGameNote[],
+      review: { ...EMPTY_LOCAL_SET_REVIEW },
       status: 'in_progress' as const,
       syncStatus: 'local_only' as const,
       syncError: null,
@@ -915,6 +1092,108 @@ export async function addLocalSet(
     };
     const score = calculateLocalScore(next, next.points);
     const updated: LocalMatch = { ...next, score };
+    await writeMatch(updated);
+    return updated;
+  });
+}
+
+export async function updateLocalGameNote(
+  id: string,
+  setNumber: number,
+  gameNumber: number,
+  note: string,
+): Promise<LocalMatch> {
+  const normalizedNote = note.trim();
+  if (!Number.isInteger(setNumber) || setNumber < 1 || !Number.isInteger(gameNumber) || gameNumber < 1) {
+    throw new Error('Choose a valid set and game number.');
+  }
+  if (normalizedNote.length > 500) throw new Error('Game notes must be 500 characters or fewer.');
+  return withWriteLock(async () => {
+    const match = await readMatch(id);
+    if (!match) throw new Error('This match is not saved on this device.');
+    const gameNotes = (notes: LocalGameNote[]) => {
+      const next = notes.filter((item) => item.gameNumber !== gameNumber);
+      if (normalizedNote) next.push({ gameNumber, note: normalizedNote });
+      return next.sort((a, b) => a.gameNumber - b.gameNumber);
+    };
+    let updated: LocalMatch;
+    if (match.setNumber === setNumber) {
+      updated = { ...match, gameNotes: gameNotes(match.gameNotes) };
+    } else {
+      const setIndex = match.completedSets.findIndex((set) => set.setNumber === setNumber);
+      if (setIndex < 0) throw new Error(`Set ${setNumber} is not part of this match.`);
+      const completedSets = [...match.completedSets];
+      const set = completedSets[setIndex]!;
+      completedSets[setIndex] = { ...set, gameNotes: gameNotes(set.gameNotes) };
+      updated = { ...match, completedSets };
+    }
+    updated = {
+      ...updated,
+      syncStatus: 'local_only',
+      syncError: null,
+      updatedAt: new Date().toISOString(),
+    };
+    await writeMatch(updated);
+    return updated;
+  });
+}
+
+export async function updateLocalSetReview(
+  id: string,
+  setNumber: number,
+  review: LocalSetReview,
+): Promise<LocalMatch> {
+  for (const [strokeType, rating] of Object.entries(review.strokeRatings)) {
+    if (
+      !strokeTypes.includes(strokeType as StrokeType) ||
+      !Number.isInteger(rating) ||
+      rating! < 1 ||
+      rating! > 5
+    ) {
+      throw new Error('Stroke ratings must be whole numbers from 1 to 5.');
+    }
+  }
+  for (const [strokeType, note] of Object.entries(review.strokeNotes)) {
+    if (!strokeTypes.includes(strokeType as StrokeType) || typeof note !== 'string') {
+      throw new Error('Choose a valid stroke type for each coaching note.');
+    }
+    if (note.length > 500) throw new Error('Stroke coaching notes must be 500 characters or fewer.');
+  }
+  for (const note of [review.footworkNote, review.tacticalNote, review.mentalNote]) {
+    if (typeof note !== 'string' || note.length > 1000) {
+      throw new Error('Set observation notes must be 1,000 characters or fewer.');
+    }
+  }
+  const normalized = normalizeLocalMatch({
+    id,
+    status: 'in_progress',
+    syncStatus: 'local_only',
+    points: [],
+    completedSets: [],
+    review,
+  }).review;
+  if (!Number.isInteger(setNumber) || setNumber < 1) {
+    throw new Error('Choose a valid set number.');
+  }
+  return withWriteLock(async () => {
+    const match = await readMatch(id);
+    if (!match) throw new Error('This match is not saved on this device.');
+    let updated: LocalMatch;
+    if (match.setNumber === setNumber) {
+      updated = { ...match, review: normalized };
+    } else {
+      const setIndex = match.completedSets.findIndex((set) => set.setNumber === setNumber);
+      if (setIndex < 0) throw new Error(`Set ${setNumber} is not part of this match.`);
+      const completedSets = [...match.completedSets];
+      completedSets[setIndex] = { ...completedSets[setIndex]!, review: normalized };
+      updated = { ...match, completedSets };
+    }
+    updated = {
+      ...updated,
+      syncStatus: 'local_only',
+      syncError: null,
+      updatedAt: new Date().toISOString(),
+    };
     await writeMatch(updated);
     return updated;
   });
@@ -1084,6 +1363,20 @@ export async function getLocalInsights(
     PointCode,
     { count: number; trackedWon: number; opponentWon: number }
   >();
+  const strokeTallyByKey = new Map<string, LocalStrokeTally>();
+  const strokeNotes: LocalInsights['strokeNotes'] = [];
+  for (const option of STROKE_TYPE_OPTIONS) {
+    for (const player of ['tracked', 'opponent'] as const) {
+      strokeTallyByKey.set(`${option.value}:${player}`, {
+        strokeType: option.value,
+        player,
+        inPlay: 0,
+        errors: 0,
+        winners: 0,
+        sampleCount: 0,
+      });
+    }
+  }
   const shotDirectionCounts = new Map<
     ShotDirection,
     { count: number; trackedWon: number }
@@ -1141,6 +1434,25 @@ export async function getLocalInsights(
 
   const allPoints = setHistory.flatMap((set) => set.points);
   for (const point of allPoints) {
+    for (const stroke of point.strokes ?? []) {
+      const tally = strokeTallyByKey.get(`${stroke.strokeType}:${stroke.player}`);
+      if (!tally) continue;
+      tally.sampleCount += 1;
+      if (stroke.result === 'in_play') tally.inPlay += 1;
+      else if (stroke.result === 'error') tally.errors += 1;
+      else tally.winners += 1;
+      if (stroke.note?.trim()) {
+        strokeNotes.push({
+          setNumber: point.setNumber,
+          gameNumber: point.gameNumber,
+          sequenceNumber: point.sequenceNumber,
+          player: stroke.player,
+          strokeType: stroke.strokeType,
+          result: stroke.result,
+          note: stroke.note.trim(),
+        });
+      }
+    }
     if (point.winner === 'tracked') trackedPointsWon += 1;
     else opponentPointsWon += 1;
     if (point.shotDirection) {
@@ -1284,6 +1596,8 @@ export async function getLocalInsights(
       tiebreakPointCount,
       trackedTiebreakPointsWon,
       breakPoints: calculateBreakPointStats(set.points, set.format),
+      gameNotes: set.gameNotes,
+      review: set.review,
     };
   });
 
@@ -1312,5 +1626,7 @@ export async function getLocalInsights(
       ...stats,
     })),
     sets,
+    strokeTallies: [...strokeTallyByKey.values()],
+    strokeNotes,
   };
 }

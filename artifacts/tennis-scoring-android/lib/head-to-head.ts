@@ -1,6 +1,7 @@
 import {
   RALLY_LENGTH_OPTIONS,
   SHOT_DIRECTION_OPTIONS,
+  STROKE_TYPE_OPTIONS,
   type BreakPointStats,
   type LocalContextInsight,
   type LocalInsights,
@@ -146,6 +147,17 @@ function emptyInsights(): LocalInsights {
     shotDirections: emptyContext(SHOT_DIRECTION_OPTIONS),
     rallyLengths: emptyContext(RALLY_LENGTH_OPTIONS),
     sets: [],
+    strokeTallies: STROKE_TYPE_OPTIONS.flatMap(({ value }) =>
+      (['tracked', 'opponent'] as const).map((player) => ({
+        strokeType: value,
+        player,
+        inPlay: 0,
+        errors: 0,
+        winners: 0,
+        sampleCount: 0,
+      })),
+    ),
+    strokeNotes: [],
   };
 }
 
@@ -207,6 +219,19 @@ export function aggregateLocalInsights(
 
     mergeContext(total.shotDirections, item.shotDirections);
     mergeContext(total.rallyLengths, item.rallyLengths);
+    for (const tally of item.strokeTallies) {
+      const target = total.strokeTallies.find(
+        (candidate) =>
+          candidate.strokeType === tally.strokeType &&
+          candidate.player === tally.player,
+      );
+      if (!target) continue;
+      target.inPlay += tally.inPlay;
+      target.errors += tally.errors;
+      target.winners += tally.winners;
+      target.sampleCount += tally.sampleCount;
+    }
+    total.strokeNotes.push(...item.strokeNotes);
     total.sets.push(...item.sets);
   }
 
