@@ -54,7 +54,9 @@ function serverForGame(firstServer: Side, gameNumber: number): Side {
 }
 
 function formatDate(value: string) {
-  const [year, month, day] = value.split('-').map(Number);
+  const normalizedDate = value.slice(0, 10);
+  const [year, month, day] = normalizedDate.split('-').map(Number);
+  if (!year || !month || !day) return value;
   return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(undefined, {
     month: 'short',
     day: 'numeric',

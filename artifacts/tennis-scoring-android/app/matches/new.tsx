@@ -89,9 +89,9 @@ export default function NewMatchScreen() {
 
   const createMatch = useCreateMatch({
     mutation: {
-      onSuccess: async (match) => {
-        await queryClient.invalidateQueries({ queryKey: getListMatchesQueryKey() });
-        router.replace(`/matches/${match.id}`);
+      onSuccess: (match) => {
+        void queryClient.invalidateQueries({ queryKey: getListMatchesQueryKey() });
+        router.replace({ pathname: '/matches/[id]', params: { id: match.id } });
       },
     },
   });
@@ -313,7 +313,11 @@ export default function NewMatchScreen() {
           >
             <Ionicons name="alert-circle-outline" size={18} color={colors.destructive} />
             <Text style={[styles.errorText, { color: colors.destructive }]}>
-              {formError || createMatch.error?.message || 'Could not create the match.'}
+              {formError ||
+                (createMatch.error?.message.toLowerCase().includes('fetch')
+                  ? 'Could not reach the scoring server. Check your connection and try again.'
+                  : createMatch.error?.message) ||
+                'Could not create the match.'}
             </Text>
           </View>
         ) : null}

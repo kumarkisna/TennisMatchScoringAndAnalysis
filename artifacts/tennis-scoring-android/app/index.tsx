@@ -14,7 +14,9 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useColors } from '@/hooks/useColors';
 
 function formatMatchDate(date: string) {
-  const [year, month, day] = date.split('-').map(Number);
+  const normalizedDate = date.slice(0, 10);
+  const [year, month, day] = normalizedDate.split('-').map(Number);
+  if (!year || !month || !day) return date;
   const monthLabel = new Date(Date.UTC(year, month - 1, 1)).toLocaleString(
     undefined,
     { month: 'short', timeZone: 'UTC' },
