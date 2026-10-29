@@ -1,15 +1,6 @@
-import {
-  getGetMatchInsightsQueryKey,
-  getGetMatchQueryKey,
-  getListMatchesQueryKey,
-  useGetMatch,
-  useGetMatchInsights,
-  useRecordPoint,
-  useUndoLatestPoint,
-} from '@workspace/api-client-react';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -19,12 +10,28 @@ import {
   Text,
   View,
 } from 'react-native';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useQueryClient } from '@tanstack/react-query';
 import { useColors } from '@/hooks/useColors';
+import {
+  getLocalInsights,
+  getLocalMatch,
+  LOCAL_MATCH_LIST_KEY,
+  localInsightsKey,
+  localMatchKey,
+  recordLocalPoint,
+  undoLocalPoint,
+  type LocalMatch,
+  type NewLocalPoint,
+  type PlayerSide,
+  type PointCode,
+} from '@/lib/local-matches';
 
-type Side = 'tracked' | 'opponent';
-type PointCode = 'A' | 'F' | 'B' | 'V' | 'O' | 'P' | 'N' | 'L' | 'W' | 'D' | 'FE';
+type Side = PlayerSide;
 
 const winnerCodes: { code: PointCode; label: string }[] = [
   { code: 'A', label: 'Ace' },
@@ -121,63 +128,41 @@ export default function MatchScreen() {
   const [endingCode, setEndingCode] = useState<PointCode | null>(null);
   const [firstServeFault, setFirstServeFault] = useState(false);
 
-  const matchQuery = useGetMatch(matchId, {
-    query: {
-      enabled: Boolean(matchId),
-      queryKey: getGetMatchQueryKey(matchId),
-      refetchInterval: 7000,
-    },
+  const matchQuery = useQuery({
+    queryKey: localMatchKey(matchId),
+    queryFn: () => getLocalMatch(matchId),
+    enabled: Boolean(matchId),
   });
-  const insightsQuery = useGetMatchInsights(matchId, {
-    query: {
-      enabled: Boolean(matchId),
-      queryKey: getGetMatchInsightsQueryKey(matchId),
-      refetchInterval: 15000,
-    },
+  const insightsQuery = useQuery({
+    queryKey: localInsightsKey(matchId),
+    queryFn: () => getLocalInsights(matchId),
+    enabled: Boolean(matchId),
   });
 
-  const onUpdated = async (updatedMatch: NonNullable<typeof matchQuery.data>) => {
-    queryClient.setQueryData(getGetMatchQueryKey(matchId), updatedMatch);
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: getListMatchesQueryKey() }),
-      queryClient.invalidateQueries({
-        queryKey: getGetMatchInsightsQueryKey(matchId),
-      }),
-    ]);
+  const onUpdated = (updatedMatch: LocalMatch) => {
+    queryClient.setQueryData(localMatchKey(matchId), updatedMatch);
+    void queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
+    void queryClient.invalidateQueries({ queryKey: localInsightsKey(matchId) });
   };
 
-  const recordPoint = useRecordPoint({
-    mutation: {
-      onSuccess: async (updatedMatch) => {
-        setEndingCode(null);
-        setFirstServeFault(false);
-        await onUpdated(updatedMatch);
-      },
+  const recordPoint = useMutation({
+    mutationFn: (input: NewLocalPoint) => recordLocalPoint(matchId, input),
+    onSuccess: (updatedMatch) => {
+      setEndingCode(null);
+      setFirstServeFault(false);
+      onUpdated(updatedMatch);
     },
   });
-  const undoPoint = useUndoLatestPoint({
-    mutation: {
-      onSuccess: onUpdated,
-    },
+  const undoPoint = useMutation({
+    mutationFn: () => undoLocalPoint(matchId),
+    onSuccess: onUpdated,
   });
 
   const match = matchQuery.data;
   const isBusy = recordPoint.isPending || undoPoint.isPending;
-  const maxGameNumber = useMemo(
-    () => Math.min(13, Math.max(1, ...((match?.points ?? []).map((point) => point.gameNumber)))),
-    [match?.points],
-  );
-
   function addPoint(winner: Side) {
     if (!match || match.score.isComplete || isBusy) return;
-    recordPoint.mutate({
-      id: matchId,
-      data: {
-        winner,
-        endingCode,
-        firstServeFault,
-      },
-    });
+    recordPoint.mutate({ winner, endingCode, firstServeFault });
   }
 
   function confirmUndo() {
@@ -190,7 +175,7 @@ export default function MatchScreen() {
         {
           text: 'Undo point',
           style: 'destructive',
-          onPress: () => undoPoint.mutate({ id: matchId }),
+          onPress: () => undoPoint.mutate(),
         },
       ],
     );
@@ -214,7 +199,7 @@ export default function MatchScreen() {
       <SafeAreaView
         style={[styles.safeArea, styles.centered, { backgroundColor: colors.background }]}
       >
-        <Ionicons name="cloud-offline-outline" size={28} color={colors.accent} />
+        <Ionicons name="document-text-outline" size={28} color={colors.accent} />
         <Text style={[styles.errorTitle, { color: colors.foreground }]}>
           {matchQuery.isError ? 'Couldn’t open this set' : 'Match not found'}
         </Text>
@@ -385,7 +370,7 @@ export default function MatchScreen() {
             <View style={styles.panelHeading}>
               <Text style={[styles.panelTitle, { color: colors.foreground }]}>Record a point</Text>
               <Text style={[styles.panelHint, { color: colors.mutedForeground }]}>
-                Tap the player who won
+                Tap the winner after each point; the score updates automatically.
               </Text>
             </View>
 
@@ -451,7 +436,7 @@ export default function MatchScreen() {
 
             <View style={styles.codeGroup}>
               <Text style={[styles.codeGroupLabel, { color: colors.mutedForeground }]}>
-                WINNING SHOTS
+                WINNING SHOTS · OPTIONAL
               </Text>
               <View style={styles.codeWrap}>
                 {winnerCodes.map((item) => (
@@ -687,7 +672,7 @@ export default function MatchScreen() {
         ) : (
           <View style={[styles.insightCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.insightHint, { color: colors.mutedForeground }]}>
-              Point patterns will appear when the connection returns.
+              Point patterns couldn’t be loaded from this device.
             </Text>
           </View>
         )}

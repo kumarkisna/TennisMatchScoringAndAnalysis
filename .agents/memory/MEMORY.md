@@ -1,0 +1,1 @@
+- [Android scoring storage](android-scoring-storage.md) — match records and point logs must stay on the user's device, not an external database.

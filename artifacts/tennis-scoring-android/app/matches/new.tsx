@@ -1,4 +1,3 @@
-import { getListMatchesQueryKey, useCreateMatch } from '@workspace/api-client-react';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -11,8 +10,13 @@ import {
 } from 'react-native';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useColors } from '@/hooks/useColors';
+import {
+  createLocalMatch,
+  LOCAL_MATCH_LIST_KEY,
+  localMatchKey,
+} from '@/lib/local-matches';
 
 type Side = 'tracked' | 'opponent';
 type Surface = 'Hard' | 'Clay' | 'Grass' | 'Carpet' | 'Other';
@@ -87,12 +91,12 @@ export default function NewMatchScreen() {
   const [firstServer, setFirstServer] = useState<Side>('tracked');
   const [formError, setFormError] = useState('');
 
-  const createMatch = useCreateMatch({
-    mutation: {
-      onSuccess: (match) => {
-        void queryClient.invalidateQueries({ queryKey: getListMatchesQueryKey() });
-        router.replace({ pathname: '/matches/[id]', params: { id: match.id } });
-      },
+  const createMatch = useMutation({
+    mutationFn: createLocalMatch,
+    onSuccess: (match) => {
+      queryClient.setQueryData(localMatchKey(match.id), match);
+      void queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
+      router.replace({ pathname: '/matches/[id]', params: { id: match.id } });
     },
   });
 
@@ -113,17 +117,15 @@ export default function NewMatchScreen() {
     }
 
     createMatch.mutate({
-      data: {
-        matchDate,
-        trackedPlayer: trackedPlayer.trim(),
-        opponent: opponent.trim(),
-        event: event.trim() || null,
-        round: round.trim() || null,
-        setNumber: parsedSet,
-        chairCoach: chairCoach.trim() || null,
-        surface,
-        firstServer,
-      },
+      matchDate,
+      trackedPlayer: trackedPlayer.trim(),
+      opponent: opponent.trim(),
+      event: event.trim() || null,
+      round: round.trim() || null,
+      setNumber: parsedSet,
+      chairCoach: chairCoach.trim() || null,
+      surface,
+      firstServer,
     });
   }
 
@@ -160,7 +162,7 @@ export default function NewMatchScreen() {
         <Text style={[styles.eyebrow, { color: colors.accent }]}>NEW SCORE SHEET</Text>
         <Text style={[styles.title, { color: colors.foreground }]}>Set up the set</Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-          The match matrix keeps each point tied to its player, server, and court conditions.
+          Enter both names, choose the court and first server, then open the live score.
         </Text>
 
         <View style={[styles.formCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -314,10 +316,8 @@ export default function NewMatchScreen() {
             <Ionicons name="alert-circle-outline" size={18} color={colors.destructive} />
             <Text style={[styles.errorText, { color: colors.destructive }]}>
               {formError ||
-                (createMatch.error?.message.toLowerCase().includes('fetch')
-                  ? 'Could not reach the scoring server. Check your connection and try again.'
-                  : createMatch.error?.message) ||
-                'Could not create the match.'}
+                createMatch.error?.message ||
+                'Could not save this match on this device.'}
             </Text>
           </View>
         ) : null}
@@ -348,6 +348,12 @@ export default function NewMatchScreen() {
             </>
           )}
         </Pressable>
+        <View style={styles.localNote}>
+          <Ionicons name="phone-portrait-outline" size={14} color={colors.mutedForeground} />
+          <Text style={[styles.localNoteText, { color: colors.mutedForeground }]}>
+            Saved only on this phone. No online database is used.
+          </Text>
+        </View>
       </KeyboardAwareScrollViewCompat>
     </SafeAreaView>
   );
@@ -379,4 +385,6 @@ const styles = StyleSheet.create({
   errorText: { flex: 1, fontFamily: 'DMSans_500Medium', fontSize: 12, lineHeight: 18 },
   submitButton: { marginTop: 16, minHeight: 54, borderRadius: 10, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   submitText: { fontFamily: 'DMSans_700Bold', fontSize: 14 },
+  localNote: { marginTop: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  localNoteText: { fontFamily: 'DMSans_400Regular', fontSize: 10 },
 });

@@ -1,6 +1,6 @@
-import { useListMatches } from '@workspace/api-client-react';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
 import {
   ActivityIndicator,
   FlatList,
@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
+import { listLocalMatches, LOCAL_MATCH_LIST_KEY } from '@/lib/local-matches';
 
 function formatMatchDate(date: string) {
   const normalizedDate = date.slice(0, 10);
@@ -28,7 +29,10 @@ export default function HomeScreen() {
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const matchesQuery = useListMatches();
+  const matchesQuery = useQuery({
+    queryKey: LOCAL_MATCH_LIST_KEY,
+    queryFn: listLocalMatches,
+  });
   const matches = matchesQuery.data ?? [];
 
   return (
@@ -77,7 +81,7 @@ export default function HomeScreen() {
                 Every point{'\n'}has a story.
               </Text>
               <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-                Keep a clear record of the match. Find the patterns that can move a player forward.
+                Enter the players, then tap the point winner as the match is played.
               </Text>
             </View>
 
@@ -108,7 +112,7 @@ export default function HomeScreen() {
                   Match book
                 </Text>
                 <Text style={[styles.sectionCaption, { color: colors.mutedForeground }]}>
-                  Your saved sets and point logs
+                  Saved on this device · no cloud sync
                 </Text>
               </View>
               <View style={[styles.countPill, { backgroundColor: colors.secondary }]}>
@@ -218,12 +222,12 @@ export default function HomeScreen() {
                 { backgroundColor: colors.card, borderColor: colors.border },
               ]}
             >
-              <Ionicons name="cloud-offline-outline" size={28} color={colors.accent} />
+              <Ionicons name="phone-portrait-outline" size={28} color={colors.accent} />
               <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
                 Couldn’t load matches
               </Text>
               <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-                Check your connection and try again.
+                Your saved match book couldn’t be read from this device.
               </Text>
               <Pressable
                 testID="button-retry-matches"
@@ -258,7 +262,7 @@ export default function HomeScreen() {
             <View style={styles.footerNote}>
               <Ionicons name="shield-checkmark-outline" size={14} color={colors.mutedForeground} />
               <Text style={[styles.footerText, { color: colors.mutedForeground }]}>
-                Point records stay attached to each set
+                Scores remain on this device
               </Text>
             </View>
           ) : undefined
