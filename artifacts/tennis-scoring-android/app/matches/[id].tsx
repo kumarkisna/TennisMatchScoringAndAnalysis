@@ -335,19 +335,71 @@ export default function MatchScreen() {
   );
   const tiebreakPoints = match.points.filter((point) => point.isTiebreak);
   const currentGameNumber = match.score.trackedGames + match.score.opponentGames + 1;
-  const finalRegularGame =
-    match.score.trackedGames === 7 || match.score.opponentGames === 7
-      ? 12
-      : match.score.trackedGames + match.score.opponentGames;
+  const completedRegularGameCount = Math.min(
+    12,
+    match.score.trackedGames + match.score.opponentGames,
+  );
+  const hasActiveRegularGame =
+    match.setFormat === 'standard' &&
+    !match.score.isComplete &&
+    !match.score.isTiebreak;
+  const regularGameNumbers = [
+    ...(hasActiveRegularGame ? [currentGameNumber] : []),
+    ...Array.from({ length: completedRegularGameCount }, (_, index) => index + 1),
+  ];
+  const showTiebreakRows =
+    match.setFormat === 'match_tiebreak' || match.score.isTiebreak || tiebreakPoints.length > 0;
+  const tiebreakIsLive =
+    !match.score.isComplete &&
+    (match.setFormat === 'match_tiebreak' || match.score.isTiebreak);
+  const liveGamePoints =
+    match.setFormat === 'match_tiebreak' || match.score.isTiebreak
+      ? tiebreakPoints
+      : pointGroups.get(currentGameNumber) ?? [];
+  const liveServerSide =
+    match.setFormat === 'match_tiebreak' || match.score.isTiebreak
+      ? match.score.nextServer
+      : serverForGame(match.firstServer, currentGameNumber);
+  const liveServerName = liveServerSide === 'tracked' ? trackedName : opponentName;
   const pointWinnerName =
     (side: Side) => (side === 'tracked' ? trackedName : opponentName);
   const serverName =
     match.score.nextServer === 'tracked' ? trackedName : opponentName;
   const recordError = recordPoint.error?.message || undoPoint.error?.message;
   const maxTiebreakColumn = Math.max(
-    match.setFormat === 'match_tiebreak' ? match.tiebreakTarget : 7,
+    match.setFormat === 'match_tiebreak' ? Math.min(match.tiebreakTarget, 10) : 7,
     tiebreakPoints.length,
   );
+  const tiebreakMatrixRow = showTiebreakRows ? (
+    <View
+      style={[
+        styles.tiebreakBlock,
+        {
+          borderTopColor: colors.border,
+          backgroundColor: tiebreakIsLive ? colors.secondary : 'transparent',
+        },
+      ]}
+    >
+      <View style={styles.tiebreakLabel}>
+        <Text style={[styles.tiebreakTitle, { color: colors.foreground }]}>
+          {match.setFormat === 'match_tiebreak'
+            ? `MATCH TIE-BREAK TO ${match.tiebreakTarget}`
+            : 'TIE-BREAK'}
+        </Text>
+        <Text style={[styles.tiebreakScore, { color: colors.mutedForeground }]}>
+          {match.score.trackedTiebreakPoints} – {match.score.opponentTiebreakPoints}
+        </Text>
+      </View>
+      {Array.from({ length: maxTiebreakColumn }, (_, index) => (
+        <View key={`tb-${index + 1}`} style={styles.tiebreakColumn}>
+          <Text style={[styles.tiebreakColumnHeader, { color: colors.mutedForeground }]}>
+            {index + 1}
+          </Text>
+          <CodeCell point={tiebreakPoints[index]} colors={colors} />
+        </View>
+      ))}
+    </View>
+  ) : null;
 
   return (
     <SafeAreaView
@@ -415,7 +467,9 @@ export default function MatchScreen() {
               <Ionicons name="tennisball-outline" size={12} color={colors.primaryForeground} />
               <Text style={[styles.serverText, { color: colors.primaryForeground }]}>
                 {match.score.isComplete
-                  ? `NEXT SET · ${serverName} SERVES`
+                  ? match.matchStatus === 'complete'
+                    ? 'MATCH FINAL'
+                    : `NEXT SET · ${serverName} SERVES`
                   : `SERVING · ${serverName}`}
               </Text>
             </View>
@@ -505,7 +559,8 @@ export default function MatchScreen() {
                     { color: set.isCurrent ? colors.primary : colors.mutedForeground },
                   ]}
                 >
-                  SET {set.setNumber}{set.isCurrent ? ' · CURRENT' : ''}
+                  SET {set.setNumber}
+                  {set.isCurrent ? (match.score.isComplete ? ' · LATEST' : ' · CURRENT') : ''}
                 </Text>
                 <Text style={[styles.setHistoryScore, { color: colors.foreground }]}>
                   {formatSetResult(set)}
@@ -522,6 +577,50 @@ export default function MatchScreen() {
             All sets and points stay together in this match.
           </Text>
         </View>
+
+        {!match.score.isComplete ? (
+          <View style={[styles.liveGameCard, { backgroundColor: colors.card, borderColor: colors.primary }]}>
+            <View style={styles.liveGameHeader}>
+              <View style={styles.liveGameCopy}>
+                <Text style={[styles.liveGameEyebrow, { color: colors.accent }]}>
+                  LIVE · SET {match.setNumber}
+                </Text>
+                <Text style={[styles.liveGameTitle, { color: colors.foreground }]}>
+                  {match.setFormat === 'match_tiebreak'
+                    ? `Match tiebreak to ${match.tiebreakTarget}`
+                    : match.score.isTiebreak
+                      ? 'Set tiebreak'
+                      : `Game ${currentGameNumber}`}
+                </Text>
+              </View>
+              <View style={styles.liveGameScoreBox}>
+                <Text style={[styles.liveGameScoreLabel, { color: colors.mutedForeground }]}>
+                  {match.setFormat === 'match_tiebreak' || match.score.isTiebreak
+                    ? 'TIE-BREAK'
+                    : 'POINTS'}
+                </Text>
+                <Text style={[styles.liveGameScore, { color: colors.primary }]}>
+                  {match.setFormat === 'match_tiebreak' || match.score.isTiebreak
+                    ? `${match.score.trackedTiebreakPoints}–${match.score.opponentTiebreakPoints}`
+                    : `${match.score.trackedPoints}–${match.score.opponentPoints}`}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.livePointRow}>
+              {liveGamePoints.map((point) => (
+                <CodeCell key={point.id} point={point} colors={colors} />
+              ))}
+              <View style={[styles.liveNextPoint, { borderColor: colors.primary, backgroundColor: colors.secondary }]}>
+                <Text style={[styles.liveNextPointText, { color: colors.primary }]}>NEXT</Text>
+              </View>
+            </View>
+            <Text style={[styles.liveGameServer, { color: colors.mutedForeground }]}>
+              {match.setFormat === 'match_tiebreak' || match.score.isTiebreak
+                ? `Next point server · ${liveServerName}`
+                : `Serving · ${liveServerName}`}
+            </Text>
+          </View>
+        ) : null}
 
         {match.score.isComplete ? (
           <>
@@ -776,8 +875,8 @@ export default function MatchScreen() {
             <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Set {match.setNumber} matrix</Text>
             <Text style={[styles.sectionCaption, { color: colors.mutedForeground }]}>
               {match.setFormat === 'match_tiebreak'
-                ? 'Each marked cell is one tiebreak point'
-                : 'Each marked cell is one point'}
+                ? 'Live tiebreak first; completed games follow in order'
+                : 'Current game first; completed games follow in order'}
             </Text>
           </View>
           <View style={styles.matrixLegend}>
@@ -810,14 +909,12 @@ export default function MatchScreen() {
               <Text style={[styles.matrixWinnerHeader, { color: colors.mutedForeground }]}>WIN</Text>
             </View>
 
-            {match.setFormat === 'standard' &&
-              Array.from({ length: 13 }, (_, index) => index + 1).map((gameNumber) => {
+            {tiebreakIsLive ? tiebreakMatrixRow : null}
+            {regularGameNumbers.map((gameNumber) => {
               const gamePoints = pointGroups.get(gameNumber) ?? [];
-              const hasLaterGame = match.points.some((point) => point.gameNumber > gameNumber);
-              const isCompleted =
-                hasLaterGame ||
-                (match.score.isComplete && gameNumber === finalRegularGame);
+              const isCompleted = gameNumber <= completedRegularGameCount;
               const rowWinner = isCompleted ? gamePoints.at(-1)?.winner : undefined;
+              const isActiveGame = hasActiveRegularGame && gameNumber === currentGameNumber;
               const server = serverForGame(match.firstServer, gameNumber);
               return (
                 <View
@@ -825,7 +922,10 @@ export default function MatchScreen() {
                   testID={`matrix-game-${gameNumber}`}
                   style={[
                     styles.matrixRow,
-                    { borderTopColor: colors.border },
+                    {
+                      borderTopColor: colors.border,
+                      backgroundColor: isActiveGame ? colors.secondary : 'transparent',
+                    },
                   ]}
                 >
                   <View style={styles.matrixGameLabel}>
@@ -892,26 +992,7 @@ export default function MatchScreen() {
               );
               })}
 
-            <View style={[styles.tiebreakBlock, { borderTopColor: colors.border }]}>
-              <View style={styles.tiebreakLabel}>
-                <Text style={[styles.tiebreakTitle, { color: colors.foreground }]}>
-                  {match.setFormat === 'match_tiebreak'
-                    ? `MATCH TIE-BREAK TO ${match.tiebreakTarget}`
-                    : 'TIE-BREAK'}
-                </Text>
-                <Text style={[styles.tiebreakScore, { color: colors.mutedForeground }]}>
-                  {match.score.trackedTiebreakPoints} – {match.score.opponentTiebreakPoints}
-                </Text>
-              </View>
-              {Array.from({ length: maxTiebreakColumn }, (_, index) => (
-                <View key={`tb-${index + 1}`} style={styles.tiebreakColumn}>
-                  <Text style={[styles.tiebreakColumnHeader, { color: colors.mutedForeground }]}>
-                    {index + 1}
-                  </Text>
-                  <CodeCell point={tiebreakPoints[index]} colors={colors} />
-                </View>
-              ))}
-            </View>
+            {!tiebreakIsLive ? tiebreakMatrixRow : null}
           </View>
         </ScrollView>
 
@@ -1251,6 +1332,18 @@ const styles = StyleSheet.create({
   customTargetButton: { width: 110 },
   finishMatchButton: { minHeight: 38, borderWidth: 1, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   finishMatchText: { fontFamily: 'DMSans_600SemiBold', fontSize: 11 },
+  liveGameCard: { marginTop: 11, borderWidth: 1.5, borderRadius: 12, padding: 12, gap: 9 },
+  liveGameHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  liveGameCopy: { flex: 1, gap: 3 },
+  liveGameEyebrow: { fontFamily: 'DMSans_700Bold', fontSize: 8, letterSpacing: 1 },
+  liveGameTitle: { fontFamily: 'Manrope_700Bold', fontSize: 15 },
+  liveGameScoreBox: { alignItems: 'flex-end', gap: 2 },
+  liveGameScoreLabel: { fontFamily: 'DMSans_700Bold', fontSize: 7, letterSpacing: 0.8 },
+  liveGameScore: { fontFamily: 'DMSans_700Bold', fontSize: 17, fontVariant: ['tabular-nums'] },
+  livePointRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 5 },
+  liveNextPoint: { width: 42, height: 27, borderWidth: 1, borderStyle: 'dashed', borderRadius: 5, alignItems: 'center', justifyContent: 'center' },
+  liveNextPointText: { fontFamily: 'DMSans_700Bold', fontSize: 7, letterSpacing: 0.5 },
+  liveGameServer: { fontFamily: 'DMSans_500Medium', fontSize: 9 },
   scoringPanel: { marginTop: 12, borderRadius: 14, borderWidth: 1, padding: 14 },
   panelHeading: { marginBottom: 11, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 },
   panelTitle: { fontFamily: 'Manrope_700Bold', fontSize: 17, letterSpacing: -0.3 },
