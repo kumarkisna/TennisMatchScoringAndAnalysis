@@ -205,48 +205,52 @@ export default function HomeScreen() {
                 <Text style={[styles.activePlayerLabel, { color: colors.mutedForeground }]}>
                   MAIN TRACKED PLAYER
                 </Text>
-                <Text style={[styles.activePlayerName, { color: colors.foreground }]}>
+                <Text
+                  numberOfLines={1}
+                  style={[styles.activePlayerName, { color: colors.foreground }]}
+                >
                   {activePlayer?.name ?? (playersQuery.data?.length ? 'Choose a player' : 'Add a player')}
                 </Text>
               </View>
-              <Pressable
-                testID="button-switch-main-player"
-                accessibilityRole="button"
-                accessibilityLabel={activePlayer ? 'Switch main tracked player' : 'Choose main tracked player'}
-                onPress={() => router.push('/players')}
-                style={({ pressed }) => [
-                  styles.switchPlayerButton,
-                  { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
-                ]}
-              >
-                <Text style={[styles.switchPlayerText, { color: colors.primary }]}>
-                  {activePlayer ? 'Switch' : 'Choose'}
-                </Text>
-              </Pressable>
+              <View style={styles.playerActions}>
+                <Pressable
+                  testID="button-switch-main-player"
+                  accessibilityRole="button"
+                  accessibilityLabel={activePlayer ? 'Switch main tracked player' : 'Choose main tracked player'}
+                  onPress={() => router.push('/players')}
+                  style={({ pressed }) => [
+                    styles.switchPlayerButton,
+                    { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
+                  ]}
+                >
+                  <Text style={[styles.switchPlayerText, { color: colors.primary }]}>
+                    {activePlayer ? 'Switch' : 'Choose'}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  testID="button-open-saved-players"
+                  accessibilityRole="button"
+                  accessibilityLabel={`Saved players, ${playersQuery.data?.length ?? 0} saved`}
+                  accessibilityHint="Opens the saved player list"
+                  onPress={() => router.push('/players')}
+                  style={({ pressed }) => [
+                    styles.inlinePlayersButton,
+                    {
+                      borderColor: colors.border,
+                      opacity: pressed ? 0.7 : 1,
+                    },
+                  ]}
+                >
+                  <Ionicons name="people-outline" size={14} color={colors.primary} />
+                  <Text style={[styles.inlinePlayersText, { color: colors.primary }]}>
+                    Saved players
+                  </Text>
+                  <Text style={[styles.inlinePlayersCount, { color: colors.mutedForeground }]}>
+                    {playersQuery.data?.length ?? 0}
+                  </Text>
+                </Pressable>
+              </View>
             </View>
-
-            <Pressable
-              testID="button-open-saved-players"
-              accessibilityRole="button"
-              onPress={() => router.push('/players')}
-              style={({ pressed }) => [
-                styles.playersButton,
-                {
-                  borderColor: colors.border,
-                  backgroundColor: colors.card,
-                  opacity: pressed ? 0.78 : 1,
-                },
-              ]}
-            >
-              <Ionicons name="people-outline" size={17} color={colors.primary} />
-              <Text style={[styles.playersButtonText, { color: colors.foreground }]}>
-                Saved players
-              </Text>
-              <Text style={[styles.playersButtonCount, { color: colors.mutedForeground }]}>
-                {playersQuery.data?.length ?? 0}
-              </Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
-            </Pressable>
 
             <View style={styles.backupActions}>
               <Pressable
@@ -609,16 +613,17 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: { fontFamily: 'DMSans_700Bold', fontSize: 15 },
   buttonArrow: { marginLeft: 'auto' },
-  playersButton: { marginTop: 10, minHeight: 42, borderWidth: 1, borderRadius: 9, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  playersButtonText: { flex: 1, fontFamily: 'DMSans_600SemiBold', fontSize: 12 },
-  playersButtonCount: { fontFamily: 'DMSans_700Bold', fontSize: 11 },
   activePlayerCard: { marginTop: 11, minHeight: 58, paddingHorizontal: 11, borderWidth: 1, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 9 },
   activePlayerIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   activePlayerInfo: { flex: 1, gap: 3 },
   activePlayerLabel: { fontFamily: 'DMSans_700Bold', fontSize: 8, letterSpacing: 1 },
   activePlayerName: { fontFamily: 'DMSans_700Bold', fontSize: 13 },
+  playerActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   switchPlayerButton: { minHeight: 32, borderWidth: 1, borderRadius: 7, paddingHorizontal: 11, alignItems: 'center', justifyContent: 'center' },
   switchPlayerText: { fontFamily: 'DMSans_700Bold', fontSize: 10 },
+  inlinePlayersButton: { minHeight: 32, borderWidth: 1, borderRadius: 7, paddingHorizontal: 7, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
+  inlinePlayersText: { fontFamily: 'DMSans_600SemiBold', fontSize: 10 },
+  inlinePlayersCount: { fontFamily: 'DMSans_700Bold', fontSize: 9 },
   backupActions: { marginTop: 10, flexDirection: 'row', gap: 8 },
   backupButton: { flex: 1, minHeight: 40, borderWidth: 1, borderRadius: 8, paddingHorizontal: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   backupButtonText: { fontFamily: 'DMSans_600SemiBold', fontSize: 11 },

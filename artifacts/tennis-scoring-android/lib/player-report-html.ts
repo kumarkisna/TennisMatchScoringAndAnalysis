@@ -154,6 +154,15 @@ export function buildPlayerReportHtml(
         )
         .join('')
     : '<tr><td colspan="5">No shot or ending tags recorded.</td></tr>';
+  const codeLegendRows = (Object.entries(codeLabels) as [PointCode, string][])
+    .map(
+      ([code, label]) => `
+        <tr>
+          <td><strong>${escape(code)}</strong></td>
+          <td>${escape(label)}</td>
+        </tr>`,
+    )
+    .join('');
   const feedbackRows = summary.feedback
     .map((item) => `<li>${escape(item)}</li>`)
     .join('');
@@ -404,6 +413,8 @@ export function buildPlayerReportHtml(
       tr { break-inside: avoid; page-break-inside: avoid; }
       th { background: #245d4b; color: white; text-align: left; }
       th, td { border-bottom: 1px solid #dcded4; padding: 7px 5px; vertical-align: top; }
+      .code-key { font-size: 8px; }
+      .code-key td:first-child { width: 18%; }
       .metric-table { font-size: 8px; table-layout: fixed; }
       .metric-table th, .metric-table td { overflow-wrap: anywhere; padding: 6px 4px; }
       .serve-table th:first-child, .serve-table td:first-child { width: 31%; }
@@ -543,6 +554,13 @@ export function buildPlayerReportHtml(
         <tr><th>Tag</th><th>Point ending</th><th>Count</th><th>Tracked-player points won</th><th>Share of tags</th></tr>
       </thead>
       <tbody>${shotRows}</tbody>
+    </table>
+    <h3>Point code key</h3>
+    <table class="code-key">
+      <thead>
+        <tr><th>Code</th><th>Full meaning</th></tr>
+      </thead>
+      <tbody>${codeLegendRows}</tbody>
     </table>
     <h2>Tactical context</h2>
     <p class="context-coverage">
