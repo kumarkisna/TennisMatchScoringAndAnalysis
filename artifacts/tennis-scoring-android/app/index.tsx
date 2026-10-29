@@ -114,7 +114,7 @@ export default function HomeScreen() {
   function confirmDeleteMatch(match: LocalMatchSummary) {
     Alert.alert(
       'Delete this match?',
-      `${match.trackedPlayer} vs ${match.opponent} and all recorded points will be permanently removed from this device. This cannot be undone.`,
+      `Deleting ${match.trackedPlayer} vs ${match.opponent} removes the match, all sets, and point history from this device. This cannot be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
