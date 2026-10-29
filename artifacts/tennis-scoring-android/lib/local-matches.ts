@@ -164,6 +164,7 @@ export interface LocalInsights {
   returnPointsWon: number;
   servicePointsWon: number;
   serveStats: Record<PlayerSide, ServeSideStats>;
+  breakPoints: Record<PlayerSide, BreakPointStats>;
   serviceGames: Record<PlayerSide, ServiceGameStats>;
   shotDirections: LocalContextInsight<ShotDirection>[];
   rallyLengths: LocalContextInsight<RallyLength>[];
@@ -180,6 +181,13 @@ export interface ServeSideStats {
   secondServePointsWon: number;
   aces: number;
   doubleFaults: number;
+}
+
+export interface BreakPointStats {
+  opportunities: number;
+  converted: number;
+  faced: number;
+  saved: number;
 }
 
 export interface ServiceGameStats {
@@ -204,6 +212,7 @@ export interface LocalSetInsights {
   returnPointsWon: number;
   tiebreakPointCount: number;
   trackedTiebreakPointsWon: number;
+  breakPoints: Record<PlayerSide, BreakPointStats>;
 }
 
 export const LOCAL_MATCH_LIST_KEY = ['device-matches'] as const;
@@ -368,6 +377,62 @@ async function writeMatch(match: LocalMatch): Promise<void> {
 
 function opposite(side: PlayerSide): PlayerSide {
   return side === 'tracked' ? 'opponent' : 'tracked';
+}
+
+function emptyBreakPointStats(): Record<PlayerSide, BreakPointStats> {
+  return {
+    tracked: { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    opponent: { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+  };
+}
+
+export function calculateBreakPointStats(
+  points: Pick<LocalPoint, 'isTiebreak' | 'server' | 'winner'>[],
+  format: SetFormat,
+): Record<PlayerSide, BreakPointStats> {
+  const stats = emptyBreakPointStats();
+  if (format === 'match_tiebreak') return stats;
+
+  const gamePoints: Record<PlayerSide, number> = { tracked: 0, opponent: 0 };
+  for (const point of points) {
+    if (point.isTiebreak) continue;
+
+    const server = point.server;
+    const returner = opposite(server);
+    const isBreakPoint =
+      gamePoints[returner] >= 3 && gamePoints[returner] > gamePoints[server];
+    if (isBreakPoint) {
+      stats[returner].opportunities += 1;
+      stats[server].faced += 1;
+      if (point.winner === returner) stats[returner].converted += 1;
+      else stats[server].saved += 1;
+    }
+
+    gamePoints[point.winner] += 1;
+    if (
+      Math.max(gamePoints.tracked, gamePoints.opponent) >= 4 &&
+      Math.abs(gamePoints.tracked - gamePoints.opponent) >= 2
+    ) {
+      gamePoints.tracked = 0;
+      gamePoints.opponent = 0;
+    }
+  }
+  return stats;
+}
+
+function sumBreakPointStats(
+  sets: Pick<LocalSetInsights, 'breakPoints'>[],
+): Record<PlayerSide, BreakPointStats> {
+  const total = emptyBreakPointStats();
+  for (const set of sets) {
+    for (const side of ['tracked', 'opponent'] as const) {
+      total[side].opportunities += set.breakPoints[side].opportunities;
+      total[side].converted += set.breakPoints[side].converted;
+      total[side].faced += set.breakPoints[side].faced;
+      total[side].saved += set.breakPoints[side].saved;
+    }
+  }
+  return total;
 }
 
 function pointLabel(
@@ -1120,6 +1185,7 @@ export async function getLocalInsights(
       returnPointsWon: setReturnPointsWon,
       tiebreakPointCount,
       trackedTiebreakPointsWon,
+      breakPoints: calculateBreakPointStats(set.points, set.format),
     };
   });
 
@@ -1137,6 +1203,7 @@ export async function getLocalInsights(
     returnPointsWon,
     servicePointsWon,
     serveStats,
+    breakPoints: sumBreakPointStats(sets),
     serviceGames,
     shotDirections: [...shotDirectionCounts.entries()].map(([value, stats]) => ({
       value,

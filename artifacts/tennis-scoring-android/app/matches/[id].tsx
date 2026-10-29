@@ -141,6 +141,10 @@ function formatPercent(value: number | null) {
   return value === null ? '—' : `${value}%`;
 }
 
+function formatRate(value: number, total: number) {
+  return total === 0 ? '—' : `${value}/${total} (${Math.round((value / total) * 100)}%)`;
+}
+
 function formatSetResult(set: LocalSetResult) {
   if (set.format === 'match_tiebreak') {
     return `${set.score.trackedTiebreakPoints}–${set.score.opponentTiebreakPoints} TB`;
@@ -1444,6 +1448,62 @@ export default function MatchScreen() {
               />
             </View>
 
+            <View style={[styles.breakPointBlock, { borderTopColor: colors.border }]}>
+              <Text style={[styles.codeStatsTitle, { color: colors.foreground }]}>
+                BREAK-POINT PRESSURE
+              </Text>
+              <Text style={[styles.breakPointPlayer, { color: colors.foreground }]}>
+                {match.trackedPlayer}
+              </Text>
+              <View style={styles.breakPointRow}>
+                <Text style={[styles.breakPointLabel, { color: colors.mutedForeground }]}>
+                  Converted / created
+                </Text>
+                <Text style={[styles.breakPointValue, { color: colors.foreground }]}>
+                  {formatRate(
+                    insightsQuery.data.breakPoints.tracked.converted,
+                    insightsQuery.data.breakPoints.tracked.opportunities,
+                  )}
+                </Text>
+                <Text style={[styles.breakPointLabel, { color: colors.mutedForeground }]}>
+                  Saved / faced
+                </Text>
+                <Text style={[styles.breakPointValue, { color: colors.foreground }]}>
+                  {formatRate(
+                    insightsQuery.data.breakPoints.tracked.saved,
+                    insightsQuery.data.breakPoints.tracked.faced,
+                  )}
+                </Text>
+              </View>
+              <Text style={[styles.breakPointPlayer, { color: colors.foreground }]}>
+                {match.opponent}
+              </Text>
+              <View style={styles.breakPointRow}>
+                <Text style={[styles.breakPointLabel, { color: colors.mutedForeground }]}>
+                  Converted / created
+                </Text>
+                <Text style={[styles.breakPointValue, { color: colors.foreground }]}>
+                  {formatRate(
+                    insightsQuery.data.breakPoints.opponent.converted,
+                    insightsQuery.data.breakPoints.opponent.opportunities,
+                  )}
+                </Text>
+                <Text style={[styles.breakPointLabel, { color: colors.mutedForeground }]}>
+                  Saved / faced
+                </Text>
+                <Text style={[styles.breakPointValue, { color: colors.foreground }]}>
+                  {formatRate(
+                    insightsQuery.data.breakPoints.opponent.saved,
+                    insightsQuery.data.breakPoints.opponent.faced,
+                  )}
+                </Text>
+              </View>
+              <Text style={[styles.breakPointNote, { color: colors.mutedForeground }]}>
+                Sample: {insightsQuery.data.breakPoints.tracked.opportunities +
+                  insightsQuery.data.breakPoints.opponent.opportunities} chances in standard games. Tie-break points and match tie-break sets are excluded.
+              </Text>
+            </View>
+
             <View style={[styles.feedbackBlock, { backgroundColor: colors.secondary }]}>
               <Text style={[styles.codeStatsTitle, { color: colors.secondaryForeground }]}>
                 PLAYER FEEDBACK
@@ -2086,6 +2146,12 @@ const styles = StyleSheet.create({
   statValue: { fontFamily: 'DMSans_700Bold', fontSize: 21, fontVariant: ['tabular-nums'] },
   statLabel: { marginTop: 2, fontFamily: 'DMSans_700Bold', fontSize: 7, letterSpacing: 0.8 },
   statDetail: { marginTop: 3, fontFamily: 'DMSans_400Regular', fontSize: 8, lineHeight: 11 },
+  breakPointBlock: { marginTop: 12, paddingTop: 11, borderTopWidth: StyleSheet.hairlineWidth, gap: 5 },
+  breakPointPlayer: { marginTop: 3, fontFamily: 'DMSans_600SemiBold', fontSize: 10 },
+  breakPointRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  breakPointLabel: { fontFamily: 'DMSans_400Regular', fontSize: 8 },
+  breakPointValue: { flex: 1, fontFamily: 'DMSans_700Bold', fontSize: 9, fontVariant: ['tabular-nums'] },
+  breakPointNote: { marginTop: 4, fontFamily: 'DMSans_400Regular', fontSize: 8, lineHeight: 12 },
   feedbackBlock: { marginTop: 12, borderRadius: 8, padding: 10, gap: 7 },
   feedbackRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 7 },
   feedbackDot: { width: 5, height: 5, borderRadius: 3, marginTop: 5 },

@@ -8,6 +8,7 @@ import {
   type ServiceGameStats,
   type ServeSideStats,
   type ShotDirection,
+  BreakPointStats,
 } from '@/lib/local-matches';
 
 const shotCodes = ['A', 'F', 'B', 'V', 'O', 'P'] as const satisfies readonly PointCode[];
@@ -76,6 +77,7 @@ export interface PlayerReportInsights {
   trackedFirstServeFaults: number;
   codes: { code: string; count: number; trackedWon: number }[];
   serveStats: Record<'tracked' | 'opponent', ServeSideStats>;
+  breakPoints: Record<'tracked' | 'opponent', BreakPointStats>;
   serviceGames: Record<'tracked' | 'opponent', ServiceGameStats>;
   shotDirections: LocalContextInsight<ShotDirection>[];
   rallyLengths: LocalContextInsight<RallyLength>[];

@@ -261,6 +261,29 @@ export function buildPlayerReportHtml(
         )
         .join('')
     : '<tr><td colspan="3">No set data recorded.</td></tr>';
+  const breakPointRows = insights.sets.length
+    ? insights.sets
+        .map(
+          (set) => `
+            <tr>
+              <td>Set ${set.setNumber}<span class="sub">${set.format === 'match_tiebreak' ? 'Excluded · match tie-break' : `${set.isComplete ? 'Complete' : 'In progress'} · ${set.breakPoints.tracked.opportunities + set.breakPoints.opponent.opportunities} chances`}</span></td>
+              <td>${rate(set.breakPoints.tracked.converted, set.breakPoints.tracked.opportunities)}</td>
+              <td>${rate(set.breakPoints.tracked.saved, set.breakPoints.tracked.faced)}</td>
+              <td>${rate(set.breakPoints.opponent.converted, set.breakPoints.opponent.opportunities)}</td>
+              <td>${rate(set.breakPoints.opponent.saved, set.breakPoints.opponent.faced)}</td>
+            </tr>`,
+        )
+        .join('')
+    : '';
+  const matchBreakPoints = insights.breakPoints;
+  const breakPointMatchRow = `
+    <tr class="total-row">
+      <td>Match total<span class="sub">${matchBreakPoints.tracked.opportunities + matchBreakPoints.opponent.opportunities} chances · tie-break points excluded</span></td>
+      <td>${rate(matchBreakPoints.tracked.converted, matchBreakPoints.tracked.opportunities)}</td>
+      <td>${rate(matchBreakPoints.tracked.saved, matchBreakPoints.tracked.faced)}</td>
+      <td>${rate(matchBreakPoints.opponent.converted, matchBreakPoints.opponent.opportunities)}</td>
+      <td>${rate(matchBreakPoints.opponent.saved, matchBreakPoints.opponent.faced)}</td>
+    </tr>`;
   const taggedPercent = exactPercent(summary.taggedPointCount, insights.pointCount);
   const directionRows = contextRows(
     summary.shotDirections,
@@ -317,6 +340,8 @@ export function buildPlayerReportHtml(
       .return-table th:nth-child(2), .return-table td:nth-child(2),
       .return-table th:nth-child(3), .return-table td:nth-child(3) { width: 29%; }
       .sub { color: #718078; display: block; font-size: 8px; margin-top: 3px; }
+      .total-row { background: #f2f1e9; font-weight: 700; }
+      .trend-note { background: #f7f4eb; border-radius: 6px; color: #53685f; font-size: 10px; line-height: 1.5; margin: 9px 0 0; padding: 9px 11px; }
       .note { color: #718078; font-size: 8px; line-height: 1.5; margin-top: 20px; }
       .note a { color: #245d4b; }
       h3 { break-after: avoid; color: #183a30; font-size: 11px; margin: 14px 0 6px; }
@@ -401,6 +426,15 @@ export function buildPlayerReportHtml(
       <tbody>${setRows}</tbody>
     </table>
 
+    <h2>Break-point pressure</h2>
+    <table>
+      <thead>
+        <tr><th>Set</th><th>${escape(match.trackedPlayer)} converted / created</th><th>${escape(match.trackedPlayer)} saved / faced</th><th>${escape(match.opponent)} converted / created</th><th>${escape(match.opponent)} saved / faced</th></tr>
+      </thead>
+      <tbody>${breakPointRows}${breakPointMatchRow}</tbody>
+    </table>
+    <p class="note" style="margin-top: 7px">Each value shows count/available chances and percentage. Repeated advantages in one game count as separate chances; tie-break points and match tie-break sets are excluded.</p>
+
     <h2>Coaching notes from this sample</h2>
     <ul class="feedback">${feedbackRows}</ul>
 
@@ -429,7 +463,7 @@ export function buildPlayerReportHtml(
       <tbody>${rallyRows}</tbody>
     </table>
     <p class="note">
-      Generated on this device from the saved point log. Rates show count/denominator and percentage; tagged-ending analysis only covers tagged points. Small samples are directional, not conclusions. Break-point statistics are omitted because the logger does not record point-level game score. Category layout references:
+      Generated on this device from the saved point log. Rates show count/denominator and percentage; tagged-ending analysis only covers tagged points. Small samples are directional, not conclusions. Break-point totals are reconstructed from ordinary-game points; standard tie-break points and match tie-break sets are excluded. Rally-length statistics are omitted because the logger does not record them. Category layout references:
       <a href="https://www.atptour.com/en/scores/stats-centre/archive/2018/605/ms001">ATP Tour Stats Centre</a> and
       <a href="https://www.itftennis.com/en/match?matchId=faa89f46-3451-48b3-9fae-cba92da84cf6">ITF match statistics</a>.
       No online match data or tour-average benchmarks are used.
