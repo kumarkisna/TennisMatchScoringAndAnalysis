@@ -17,6 +17,8 @@ import {
   createLocalMatch,
   LOCAL_MATCH_LIST_KEY,
   localMatchKey,
+  validateLocalMatchDetails,
+  type LocalMatchDetails,
 } from '@/lib/local-matches';
 import {
   addLocalPlayer,
@@ -178,12 +180,19 @@ export default function NewMatchScreen() {
   function submit() {
     setFormError('');
     const parsedSet = Number(setNumber);
-    if (!trackedPlayer.trim() || !opponent.trim()) {
-      setFormError('Add both player names before starting the set.');
-      return;
-    }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(matchDate)) {
-      setFormError('Enter the date as YYYY-MM-DD.');
+    const details: LocalMatchDetails = {
+      matchDate,
+      trackedPlayer,
+      opponent,
+      event,
+      round,
+      chairCoach,
+      surface,
+      firstServer,
+    };
+    const detailsError = validateLocalMatchDetails(details);
+    if (detailsError) {
+      setFormError(detailsError);
       return;
     }
     if (!Number.isInteger(parsedSet) || parsedSet < 1) {
@@ -191,17 +200,7 @@ export default function NewMatchScreen() {
       return;
     }
 
-    createMatch.mutate({
-      matchDate,
-      trackedPlayer: trackedPlayer.trim(),
-      opponent: opponent.trim(),
-      event: event.trim() || null,
-      round: round.trim() || null,
-      setNumber: parsedSet,
-      chairCoach: chairCoach.trim() || null,
-      surface,
-      firstServer,
-    });
+    createMatch.mutate({ ...details, setNumber: parsedSet });
   }
 
   function saveCurrentPlayers() {

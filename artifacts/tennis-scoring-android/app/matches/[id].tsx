@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -18,6 +19,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { useColors } from '@/hooks/useColors';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -31,8 +33,12 @@ import {
   localInsightsKey,
   localMatchKey,
   recordLocalPoint,
+  updateLocalMatchDetails,
   undoLocalPoint,
+  validateLocalMatchDetails,
+  type CourtSurface,
   type LocalMatch,
+  type LocalMatchDetails,
   type LocalSetResult,
   type NewLocalPoint,
   type PlayerSide,
@@ -43,6 +49,52 @@ import { summarizePlayerPerformance } from '@/lib/player-insights';
 import { buildPlayerReportHtml } from '@/lib/player-report-html';
 
 type Side = PlayerSide;
+
+const courtSurfaces: CourtSurface[] = ['Hard', 'Clay', 'Grass', 'Carpet', 'Other'];
+
+function MatchDetailsField({
+  label,
+  value,
+  placeholder,
+  testID,
+  onChangeText,
+  maxLength,
+  keyboardType = 'default',
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  testID: string;
+  onChangeText: (value: string) => void;
+  maxLength?: number;
+  keyboardType?: 'default' | 'numeric';
+}) {
+  const colors = useColors();
+  return (
+    <View style={styles.editField}>
+      <Text style={[styles.editFieldLabel, { color: colors.foreground }]}>{label}</Text>
+      <TextInput
+        testID={testID}
+        accessibilityLabel={label}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={colors.mutedForeground}
+        maxLength={maxLength}
+        keyboardType={keyboardType}
+        autoCapitalize="words"
+        style={[
+          styles.editInput,
+          {
+            color: colors.foreground,
+            borderColor: colors.border,
+            backgroundColor: colors.card,
+          },
+        ]}
+      />
+    </View>
+  );
+}
 
 const winnerCodes: { code: PointCode; label: string }[] = [
   { code: 'A', label: 'Ace' },
@@ -151,6 +203,9 @@ export default function MatchScreen() {
   const [reportExportError, setReportExportError] = useState('');
   const [customTiebreakTarget, setCustomTiebreakTarget] = useState('');
   const [selectedReviewSetNumber, setSelectedReviewSetNumber] = useState<number | null>(null);
+  const [isEditingDetails, setIsEditingDetails] = useState(false);
+  const [editDraft, setEditDraft] = useState<LocalMatchDetails | null>(null);
+  const [editValidationError, setEditValidationError] = useState('');
 
   const matchQuery = useQuery({
     queryKey: localMatchKey(matchId),
@@ -196,6 +251,16 @@ export default function MatchScreen() {
     mutationFn: () => finishLocalMatch(matchId),
     onSuccess: onUpdated,
   });
+  const updateDetails = useMutation({
+    mutationFn: (details: LocalMatchDetails) =>
+      updateLocalMatchDetails(matchId, details),
+    onSuccess: (updatedMatch) => {
+      onUpdated(updatedMatch);
+      setIsEditingDetails(false);
+      setEditDraft(null);
+      setEditValidationError('');
+    },
+  });
   const match = matchQuery.data;
   const setHistory = match ? getLocalSetHistory(match) : [];
   const currentSet = setHistory.find((set) => set.isCurrent);
@@ -206,7 +271,8 @@ export default function MatchScreen() {
     recordPoint.isPending ||
     undoPoint.isPending ||
     addSet.isPending ||
-    finishMatch.isPending;
+    finishMatch.isPending ||
+    updateDetails.isPending;
   const customTarget = Number(customTiebreakTarget);
   const customTargetValid =
     /^\d{1,2}$/.test(customTiebreakTarget) &&
@@ -216,6 +282,50 @@ export default function MatchScreen() {
   const performance = insightsQuery.data
     ? summarizePlayerPerformance(insightsQuery.data)
     : null;
+
+  function openDetailsEditor() {
+    if (!match) return;
+    updateDetails.reset();
+    setEditValidationError('');
+    setEditDraft({
+      matchDate: match.matchDate,
+      trackedPlayer: match.trackedPlayer,
+      opponent: match.opponent,
+      event: match.event,
+      round: match.round,
+      chairCoach: match.chairCoach,
+      surface: match.surface,
+      firstServer: match.firstServer,
+    });
+    setIsEditingDetails(true);
+  }
+
+  function closeDetailsEditor() {
+    if (updateDetails.isPending) return;
+    setIsEditingDetails(false);
+    setEditDraft(null);
+    setEditValidationError('');
+    updateDetails.reset();
+  }
+
+  function changeEditDraft<Key extends keyof LocalMatchDetails>(
+    key: Key,
+    value: LocalMatchDetails[Key],
+  ) {
+    setEditDraft((current) => (current ? { ...current, [key]: value } : current));
+    setEditValidationError('');
+  }
+
+  function saveMatchDetails() {
+    if (!editDraft) return;
+    const error = validateLocalMatchDetails(editDraft);
+    if (error) {
+      setEditValidationError(error);
+      return;
+    }
+    setEditValidationError('');
+    updateDetails.mutate(editDraft);
+  }
 
   function addPoint(winner: Side) {
     if (!match || isReviewingHistoricalSet || match.score.isComplete || isBusy) return;
@@ -452,6 +562,18 @@ export default function MatchScreen() {
               {match.round ? ` · ${match.round}` : ''}
             </Text>
           </View>
+          <Pressable
+            testID="button-edit-match-details"
+            accessibilityRole="button"
+            accessibilityLabel="Edit saved match details"
+            onPress={openDetailsEditor}
+            style={({ pressed }) => [
+              styles.undoButton,
+              { borderColor: colors.border, opacity: pressed ? 0.65 : 1 },
+            ]}
+          >
+            <Ionicons name="create-outline" size={18} color={colors.foreground} />
+          </Pressable>
           <Pressable
             testID="button-undo-point"
             accessibilityRole="button"
@@ -1274,6 +1396,218 @@ export default function MatchScreen() {
           )}
         </View>
       </ScrollView>
+      <Modal
+        visible={isEditingDetails}
+        animationType="slide"
+        onRequestClose={closeDetailsEditor}
+      >
+        <SafeAreaView
+          style={[styles.editModalSafeArea, { backgroundColor: colors.background }]}
+        >
+          <View style={[styles.editModalHeader, { borderBottomColor: colors.border }]}>
+            <Pressable
+              testID="button-cancel-edit-match"
+              accessibilityRole="button"
+              accessibilityLabel="Cancel editing match details"
+              disabled={updateDetails.isPending}
+              onPress={closeDetailsEditor}
+              style={({ pressed }) => [
+                styles.editModalIconButton,
+                { opacity: updateDetails.isPending ? 0.35 : pressed ? 0.6 : 1 },
+              ]}
+            >
+              <Ionicons name="close" size={23} color={colors.foreground} />
+            </Pressable>
+            <View style={styles.editModalTitleGroup}>
+              <Text style={[styles.eyebrow, { color: colors.accent }]}>MATCH BOOK</Text>
+              <Text style={[styles.editModalTitle, { color: colors.foreground }]}>
+                Edit match details
+              </Text>
+            </View>
+            <Pressable
+              testID="button-save-edit-match"
+              accessibilityRole="button"
+              accessibilityLabel="Save match details"
+              disabled={!editDraft || updateDetails.isPending}
+              onPress={saveMatchDetails}
+              style={({ pressed }) => [
+                styles.editModalIconButton,
+                { opacity: !editDraft || updateDetails.isPending ? 0.35 : pressed ? 0.6 : 1 },
+              ]}
+            >
+              {updateDetails.isPending ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Ionicons name="checkmark" size={23} color={colors.primary} />
+              )}
+            </Pressable>
+          </View>
+          {editDraft ? (
+            <KeyboardAwareScrollViewCompat
+              contentContainerStyle={[
+                styles.editModalContent,
+                { paddingBottom: Math.max(insets.bottom, 20) + 26 },
+              ]}
+              keyboardDismissMode="on-drag"
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={[styles.editModalNote, { color: colors.mutedForeground }]}>
+                Update the match information. Saved sets, points, and performance stats stay as recorded.
+              </Text>
+              <MatchDetailsField
+                label="DATE"
+                value={editDraft.matchDate}
+                onChangeText={(value) => changeEditDraft('matchDate', value)}
+                placeholder="YYYY-MM-DD"
+                testID="edit-input-match-date"
+                maxLength={10}
+              />
+              <MatchDetailsField
+                label="TRACKED PLAYER"
+                value={editDraft.trackedPlayer}
+                onChangeText={(value) => changeEditDraft('trackedPlayer', value)}
+                placeholder="Player being recorded"
+                testID="edit-input-tracked-player"
+                maxLength={80}
+              />
+              <MatchDetailsField
+                label="OPPONENT"
+                value={editDraft.opponent}
+                onChangeText={(value) => changeEditDraft('opponent', value)}
+                placeholder="Opposing player or team"
+                testID="edit-input-opponent"
+                maxLength={80}
+              />
+              <View style={styles.editTwoFields}>
+                <View style={styles.editHalfField}>
+                  <MatchDetailsField
+                    label="TOURNAMENT / EVENT"
+                    value={editDraft.event ?? ''}
+                    onChangeText={(value) => changeEditDraft('event', value)}
+                    placeholder="Optional"
+                    testID="edit-input-event"
+                    maxLength={100}
+                  />
+                </View>
+                <View style={styles.editHalfField}>
+                  <MatchDetailsField
+                    label="ROUND"
+                    value={editDraft.round ?? ''}
+                    onChangeText={(value) => changeEditDraft('round', value)}
+                    placeholder="Optional"
+                    testID="edit-input-round"
+                    maxLength={60}
+                  />
+                </View>
+              </View>
+              <MatchDetailsField
+                label="CHAIR / COACH"
+                value={editDraft.chairCoach ?? ''}
+                onChangeText={(value) => changeEditDraft('chairCoach', value)}
+                placeholder="Optional"
+                testID="edit-input-chair-coach"
+                maxLength={80}
+              />
+
+              <View style={styles.editChoiceSection}>
+                <Text style={[styles.editFieldLabel, { color: colors.foreground }]}>
+                  COURT SURFACE
+                </Text>
+                <View style={styles.editChoiceWrap}>
+                  {courtSurfaces.map((surface) => {
+                    const selected = editDraft.surface === surface;
+                    return (
+                      <Pressable
+                        key={surface}
+                        testID={`edit-surface-${surface.toLowerCase()}`}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                        onPress={() => changeEditDraft('surface', surface)}
+                        style={[
+                          styles.editChoiceChip,
+                          {
+                            backgroundColor: selected ? colors.primary : colors.background,
+                            borderColor: selected ? colors.primary : colors.border,
+                            borderRadius: colors.radius,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.editChoiceText,
+                            { color: selected ? colors.primaryForeground : colors.foreground },
+                          ]}
+                        >
+                          {surface}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <View style={styles.editChoiceSection}>
+                <Text style={[styles.editFieldLabel, { color: colors.foreground }]}>
+                  FIRST SERVER
+                </Text>
+                {(['tracked', 'opponent'] as Side[]).map((side) => {
+                  const selected = editDraft.firstServer === side;
+                  const name =
+                    side === 'tracked' ? editDraft.trackedPlayer : editDraft.opponent;
+                  return (
+                    <Pressable
+                      key={side}
+                      testID={`edit-first-server-${side}`}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      onPress={() => changeEditDraft('firstServer', side)}
+                      style={[
+                        styles.editServerChoice,
+                        {
+                          backgroundColor: selected ? colors.secondary : colors.background,
+                          borderColor: selected ? colors.primary : colors.border,
+                          borderRadius: colors.radius,
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        name={selected ? 'radio-button-on' : 'radio-button-off'}
+                        size={17}
+                        color={selected ? colors.primary : colors.mutedForeground}
+                      />
+                      <Text style={[styles.editChoiceText, { color: colors.foreground }]}>
+                        {name.trim() || (side === 'tracked' ? 'Tracked player' : 'Opponent')}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              {editValidationError || updateDetails.error instanceof Error ? (
+                <View
+                  accessibilityRole="alert"
+                  style={[
+                    styles.editErrorBanner,
+                    { borderColor: colors.destructive, backgroundColor: colors.card },
+                  ]}
+                >
+                  <Ionicons
+                    name="alert-circle-outline"
+                    size={16}
+                    color={colors.destructive}
+                  />
+                  <Text style={[styles.editErrorText, { color: colors.destructive }]}>
+                    {editValidationError ||
+                      (updateDetails.error instanceof Error
+                        ? updateDetails.error.message
+                        : 'Could not save match details.')}
+                  </Text>
+                </View>
+              ) : null}
+            </KeyboardAwareScrollViewCompat>
+          ) : null}
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 
@@ -1364,6 +1698,25 @@ const styles = StyleSheet.create({
   eyebrow: { fontFamily: 'DMSans_700Bold', fontSize: 9, letterSpacing: 1.3 },
   headerDate: { marginTop: 3, fontFamily: 'DMSans_400Regular', fontSize: 11 },
   undoButton: { width: 38, height: 38, borderRadius: 11, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  editModalSafeArea: { flex: 1 },
+  editModalHeader: { minHeight: 64, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', gap: 11, borderBottomWidth: StyleSheet.hairlineWidth },
+  editModalIconButton: { minWidth: 36, minHeight: 40, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' },
+  editModalTitleGroup: { flex: 1, gap: 2 },
+  editModalTitle: { fontFamily: 'Manrope_700Bold', fontSize: 17 },
+  editModalContent: { paddingHorizontal: 18, paddingTop: 17, gap: 16 },
+  editModalNote: { fontFamily: 'DMSans_400Regular', fontSize: 12, lineHeight: 18, marginBottom: 1 },
+  editField: { gap: 7 },
+  editFieldLabel: { fontFamily: 'DMSans_700Bold', fontSize: 9, letterSpacing: 1.1 },
+  editInput: { minHeight: 48, borderWidth: 1, paddingHorizontal: 12, fontFamily: 'DMSans_400Regular', fontSize: 14 },
+  editTwoFields: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  editHalfField: { flex: 1 },
+  editChoiceSection: { gap: 9 },
+  editChoiceWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  editChoiceChip: { minHeight: 39, paddingHorizontal: 13, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  editChoiceText: { fontFamily: 'DMSans_600SemiBold', fontSize: 12 },
+  editServerChoice: { minHeight: 48, borderWidth: 1, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  editErrorBanner: { borderWidth: 1, borderRadius: 9, paddingHorizontal: 12, paddingVertical: 11, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  editErrorText: { flex: 1, fontFamily: 'DMSans_400Regular', fontSize: 12, lineHeight: 17 },
   scoreboard: { borderRadius: 15, padding: 16, overflow: 'hidden' },
   scoreboardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   scoreboardLabel: { fontFamily: 'DMSans_700Bold', fontSize: 9, letterSpacing: 1.4 },

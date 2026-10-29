@@ -66,16 +66,19 @@ export interface LocalMatch {
   updatedAt: string;
 }
 
-export interface NewLocalMatch {
+export interface LocalMatchDetails {
   matchDate: string;
   event: string | null;
   round: string | null;
-  setNumber: number;
   trackedPlayer: string;
   opponent: string;
   chairCoach: string | null;
   surface: CourtSurface;
   firstServer: PlayerSide;
+}
+
+export interface NewLocalMatch extends LocalMatchDetails {
+  setNumber: number;
 }
 
 export interface NewLocalPoint {
@@ -127,6 +130,59 @@ export interface LocalInsights {
 export const LOCAL_MATCH_LIST_KEY = ['device-matches'] as const;
 export const localMatchKey = (id: string) => ['device-match', id] as const;
 export const localInsightsKey = (id: string) => ['device-insights', id] as const;
+
+const localSurfaces: CourtSurface[] = ['Hard', 'Clay', 'Grass', 'Carpet', 'Other'];
+
+export function validateLocalMatchDetails(input: LocalMatchDetails): string | null {
+  if (!input.trackedPlayer.trim() || !input.opponent.trim()) {
+    return 'Add both player names before saving match details.';
+  }
+  if (input.trackedPlayer.trim().length > 80 || input.opponent.trim().length > 80) {
+    return 'Player names must be 80 characters or fewer.';
+  }
+  const matchDate = input.matchDate.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(matchDate)) {
+    return 'Enter the date as YYYY-MM-DD.';
+  }
+  const parsedDate = new Date(`${matchDate}T00:00:00.000Z`);
+  if (
+    Number.isNaN(parsedDate.getTime()) ||
+    parsedDate.toISOString().slice(0, 10) !== matchDate
+  ) {
+    return 'Enter a valid calendar date.';
+  }
+  if (input.event?.trim().length && input.event.trim().length > 100) {
+    return 'Tournament or event must be 100 characters or fewer.';
+  }
+  if (input.round?.trim().length && input.round.trim().length > 60) {
+    return 'Round must be 60 characters or fewer.';
+  }
+  if (input.chairCoach?.trim().length && input.chairCoach.trim().length > 80) {
+    return 'Chair or coach must be 80 characters or fewer.';
+  }
+  if (!localSurfaces.includes(input.surface)) {
+    return 'Choose a valid court surface.';
+  }
+  if (input.firstServer !== 'tracked' && input.firstServer !== 'opponent') {
+    return 'Choose who served first.';
+  }
+  return null;
+}
+
+function normalizeMatchDetails(input: LocalMatchDetails): LocalMatchDetails {
+  const validationError = validateLocalMatchDetails(input);
+  if (validationError) throw new Error(validationError);
+  return {
+    matchDate: input.matchDate.trim(),
+    trackedPlayer: input.trackedPlayer.trim(),
+    opponent: input.opponent.trim(),
+    event: input.event?.trim() || null,
+    round: input.round?.trim() || null,
+    chairCoach: input.chairCoach?.trim() || null,
+    surface: input.surface,
+    firstServer: input.firstServer,
+  };
+}
 
 const INDEX_KEY = '@tennis-scoring/matches/index-v1';
 const MATCH_PREFIX = '@tennis-scoring/matches/record-v1/';
@@ -408,11 +464,16 @@ export function getLocalMatch(id: string): Promise<LocalMatch | null> {
 
 export async function createLocalMatch(input: NewLocalMatch): Promise<LocalMatch> {
   return withWriteLock(async () => {
+    if (!Number.isInteger(input.setNumber) || input.setNumber < 1) {
+      throw new Error('Set number must be 1 or higher.');
+    }
+    const details = normalizeMatchDetails(input);
     const now = new Date().toISOString();
     const id = newId();
     const base = {
       id,
-      ...input,
+      ...details,
+      setNumber: input.setNumber,
       setFormat: 'standard' as const,
       tiebreakTarget: 10,
       completedSets: [] as LocalSetRecord[],
@@ -430,6 +491,27 @@ export async function createLocalMatch(input: NewLocalMatch): Promise<LocalMatch
 
     await writeMatch(match);
     return match;
+  });
+}
+
+export async function updateLocalMatchDetails(
+  id: string,
+  input: LocalMatchDetails,
+): Promise<LocalMatch> {
+  const details = normalizeMatchDetails(input);
+  return withWriteLock(async () => {
+    const match = await readMatch(id);
+    if (!match) throw new Error('This match is not saved on this device.');
+
+    const updatedDetails = { ...match, ...details };
+    const nextServer = calculateLocalScore(updatedDetails, match.points).nextServer;
+    const updated: LocalMatch = {
+      ...updatedDetails,
+      score: { ...match.score, nextServer },
+      updatedAt: new Date().toISOString(),
+    };
+    await writeMatch(updated);
+    return updated;
   });
 }
 

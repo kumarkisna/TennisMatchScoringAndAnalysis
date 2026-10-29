@@ -8,3 +8,9 @@ description: Product requirements for multi-set tennis records, tiebreak-only se
 **Why:** The user stated that matches may have many sets, sometimes including a tiebreak-only set with custom tournament targets, and asked to inspect any set without changing current scoring.
 
 **How to apply:** Preserve each set's points inside one match record; set review must not expose point-recording or set mutation controls. Calculate summaries and PDF output across all sets. Keep scoring data on-device as described in `android-scoring-storage.md`.
+
+**Rule:** Editing match details must not rewrite saved points, completed-set records, score totals, or analytics inputs. Correcting the first server may update the current set's server sequence, but must not alter server values already stored on individual points.
+
+**Why:** Match details can be corrected after play, but recorded scoring history must remain trustworthy.
+
+**How to apply:** Treat match-detail edits as metadata-only updates. Preserve historical set records and point arrays; recalculate only the current next-server indicator when the current first server changes.
