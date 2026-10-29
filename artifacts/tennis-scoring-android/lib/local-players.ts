@@ -189,22 +189,78 @@ export async function deleteLocalPlayer(id: string): Promise<boolean> {
   });
 }
 
+export function formatDateOfBirthInput(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+  const year = digits.slice(0, 4);
+  if (digits.length <= 4) return year;
+
+  const month = digits.slice(4, 6);
+  if (digits.length <= 6) return `${year}-${month}`;
+
+  return `${year}-${month}-${digits.slice(6, 8)}`;
+}
+
+export function getDateOfBirthValidationError(value: string): string | null {
+  const dateText = value.trim();
+  if (!dateText) return null;
+
+  const digits = dateText.replace(/\D/g, '');
+  if (digits.length > 8) return 'Enter date of birth as YYYY-MM-DD.';
+  if (!/^[\d-]*$/.test(dateText)) return 'Use digits only for the date of birth.';
+
+  if (digits.length >= 4) {
+    const year = Number(digits.slice(0, 4));
+    if (year === 0) return 'Enter a valid year.';
+    if (year > new Date().getFullYear()) {
+      return 'Date of birth cannot be in the future.';
+    }
+  }
+
+  if (digits.length >= 5 && !['0', '1'].includes(digits[4] ?? '')) {
+    return 'Month must be between 01 and 12.';
+  }
+
+  if (digits.length >= 6) {
+    const month = Number(digits.slice(4, 6));
+    if (month < 1 || month > 12) return 'Month must be between 01 and 12.';
+  }
+
+  if (digits.length >= 7 && Number(digits[6]) > 3) {
+    return 'Day must be between 01 and 31.';
+  }
+
+  if (digits.length < 8) {
+    return 'Enter all 8 digits, or clear this optional field.';
+  }
+
+  const [yearText, monthText, dayText] = [
+    digits.slice(0, 4),
+    digits.slice(4, 6),
+    digits.slice(6, 8),
+  ];
+  const formattedDate = `${yearText}-${monthText}-${dayText}`;
+  if (dateText !== formattedDate) return 'Enter date of birth as YYYY-MM-DD.';
+
+  const date = new Date(`${formattedDate}T00:00:00.000Z`);
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.toISOString().slice(0, 10) !== formattedDate
+  ) {
+    return 'Enter a valid calendar date.';
+  }
+
+  const today = new Date();
+  const todayText = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  if (formattedDate > todayText) return 'Date of birth cannot be in the future.';
+
+  return null;
+}
+
 function normalizeDateOfBirth(value: string | null): string | null {
   const dateText = value?.trim() ?? '';
   if (!dateText) return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateText)) {
-    throw new Error('Enter date of birth as YYYY-MM-DD.');
-  }
-  const date = new Date(`${dateText}T00:00:00.000Z`);
-  if (
-    Number.isNaN(date.getTime()) ||
-    date.toISOString().slice(0, 10) !== dateText
-  ) {
-    throw new Error('Enter a valid date of birth.');
-  }
-  if (date.getTime() > Date.now()) {
-    throw new Error('Date of birth cannot be in the future.');
-  }
+  const validationError = getDateOfBirthValidationError(dateText);
+  if (validationError) throw new Error(validationError);
   return dateText;
 }
 

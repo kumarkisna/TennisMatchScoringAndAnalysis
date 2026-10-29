@@ -8,6 +8,8 @@ import { useColors } from '@/hooks/useColors';
 import {
   addLocalPlayer,
   deleteLocalPlayer,
+  formatDateOfBirthInput,
+  getDateOfBirthValidationError,
   listLocalPlayers,
   LOCAL_PLAYERS_KEY,
   updateLocalPlayer,
@@ -48,6 +50,7 @@ export default function PlayersScreen() {
   const [heightCm, setHeightCm] = useState('');
   const [weightKg, setWeightKg] = useState('');
   const [profileUrls, setProfileUrls] = useState<string[]>([]);
+  const dateOfBirthError = getDateOfBirthValidationError(dateOfBirth);
   const playersQuery = useQuery({
     queryKey: LOCAL_PLAYERS_KEY,
     queryFn: listLocalPlayers,
@@ -91,6 +94,7 @@ export default function PlayersScreen() {
   }
 
   function submitPlayer() {
+    if (dateOfBirthError) return;
     savePlayer.mutate({
       id: editingPlayerId,
       name: playerName,
@@ -268,10 +272,10 @@ export default function PlayersScreen() {
               testID="input-saved-player-dob"
               accessibilityLabel="Date of birth, optional, year-month-day"
               value={dateOfBirth}
-              onChangeText={setDateOfBirth}
+              onChangeText={(value) => setDateOfBirth(formatDateOfBirthInput(value))}
               placeholder="YYYY-MM-DD"
               placeholderTextColor={colors.mutedForeground}
-              keyboardType="numbers-and-punctuation"
+              keyboardType="number-pad"
               maxLength={10}
               returnKeyType="done"
               onSubmitEditing={submitPlayer}
@@ -284,6 +288,15 @@ export default function PlayersScreen() {
                 },
               ]}
             />
+            <Text
+              accessibilityRole={dateOfBirthError ? 'alert' : undefined}
+              style={[
+                styles.errorText,
+                { color: dateOfBirthError ? colors.destructive : colors.mutedForeground },
+              ]}
+            >
+              {dateOfBirthError ?? 'Enter 8 digits; hyphens are added automatically.'}
+            </Text>
           </View>
           <Pressable
             testID="toggle-official-player-details"
@@ -517,13 +530,18 @@ export default function PlayersScreen() {
             <Pressable
               testID="button-add-saved-player"
               accessibilityRole="button"
-              disabled={!playerName.trim() || savePlayer.isPending}
+              disabled={!playerName.trim() || Boolean(dateOfBirthError) || savePlayer.isPending}
               onPress={submitPlayer}
               style={({ pressed }) => [
                 styles.addButton,
                 {
                   backgroundColor: colors.primary,
-                  opacity: !playerName.trim() || savePlayer.isPending ? 0.5 : pressed ? 0.82 : 1,
+                  opacity:
+                    !playerName.trim() || Boolean(dateOfBirthError) || savePlayer.isPending
+                      ? 0.5
+                      : pressed
+                        ? 0.82
+                        : 1,
                 },
               ]}
             >

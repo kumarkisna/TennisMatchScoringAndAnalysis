@@ -1,6 +1,30 @@
-import type { PointCode } from '@/lib/local-matches';
+import type {
+  LocalSetInsights,
+  PointCode,
+  ServeSideStats,
+} from '@/lib/local-matches';
 
-const shotCodes: PointCode[] = ['A', 'F', 'B', 'V', 'O', 'P'];
+const shotCodes = ['A', 'F', 'B', 'V', 'O', 'P'] as const satisfies readonly PointCode[];
+type ShotCode = (typeof shotCodes)[number];
+
+function isShotCode(code: PointCode): code is ShotCode {
+  return (shotCodes as readonly PointCode[]).includes(code);
+}
+
+function isShotInsight(
+  insight: PlayerCodeInsight,
+): insight is PlayerCodeInsight & { code: ShotCode } {
+  return isShotCode(insight.code);
+}
+
+const shotLabels: Record<ShotCode, string> = {
+  A: 'aces',
+  F: 'forehand winners',
+  B: 'backhand winners',
+  V: 'net volleys',
+  O: 'overheads',
+  P: 'drop shots',
+};
 
 export interface PlayerCodeInsight {
   code: PointCode;
@@ -15,6 +39,9 @@ export interface PlayerPerformanceSummary {
   serviceWinPercent: number | null;
   returnWinPercent: number | null;
   firstServeFaultPercent: number | null;
+  firstServeInPercent: number | null;
+  firstServePointsWonPercent: number | null;
+  secondServePointsWonPercent: number | null;
   shotTagCount: number;
   taggedPointCount: number;
   codeInsights: PlayerCodeInsight[];
@@ -30,6 +57,8 @@ export interface PlayerReportInsights {
   trackedReturnPoints: number;
   trackedFirstServeFaults: number;
   codes: { code: string; count: number; trackedWon: number }[];
+  serveStats: Record<'tracked' | 'opponent', ServeSideStats>;
+  sets: LocalSetInsights[];
 }
 
 const allPointCodes: PointCode[] = [...shotCodes, 'N', 'L', 'W', 'D', 'FE'];
@@ -62,6 +91,19 @@ export function summarizePlayerPerformance(
     insights.trackedFirstServeFaults,
     insights.trackedServicePoints,
   );
+  const trackedServeStats = insights.serveStats.tracked;
+  const firstServeInPercent = percent(
+    trackedServeStats.firstServePoints,
+    trackedServeStats.servicePoints,
+  );
+  const firstServePointsWonPercent = percent(
+    trackedServeStats.firstServePointsWon,
+    trackedServeStats.firstServePoints,
+  );
+  const secondServePointsWonPercent = percent(
+    trackedServeStats.secondServePointsWon,
+    trackedServeStats.secondServePoints,
+  );
 
   const validCodes = insights.codes
     .filter((item) => isPointCode(item.code))
@@ -71,7 +113,7 @@ export function summarizePlayerPerformance(
     0,
   );
   const shotTagCount = validCodes.reduce(
-    (total, item) => total + (shotCodes.includes(item.code) ? item.count : 0),
+    (total, item) => total + (isShotCode(item.code) ? item.count : 0),
     0,
   );
   const codeInsights = validCodes
@@ -146,9 +188,19 @@ export function summarizePlayerPerformance(
     );
   }
 
-  const shotInsights = codeInsights.filter((item) =>
-    shotCodes.includes(item.code),
-  );
+  if (
+    trackedServeStats.firstServePoints >= 5 &&
+    trackedServeStats.secondServePoints >= 5 &&
+    firstServePointsWonPercent !== null &&
+    secondServePointsWonPercent !== null &&
+    firstServePointsWonPercent - secondServePointsWonPercent >= 15
+  ) {
+    feedback.push(
+      `The tracked player won ${firstServePointsWonPercent}% of first-serve points and ${secondServePointsWonPercent}% of second-serve points; the second-serve gap is worth reviewing in practice.`,
+    );
+  }
+
+  const shotInsights = codeInsights.filter(isShotInsight);
   const reliableShotSamples = shotInsights.filter((item) => item.count >= 3);
   if (reliableShotSamples.length > 0) {
     const strongest = [...reliableShotSamples].sort(
@@ -156,7 +208,7 @@ export function summarizePlayerPerformance(
         b.trackedWinPercent - a.trackedWinPercent || b.count - a.count,
     )[0];
     shotFeedback.push(
-      `Among shot tags with at least 3 records, ${strongest.code} has the highest tracked-player win rate at ${strongest.trackedWinPercent}%.`,
+      `Among winning-shot tags with at least 3 records, ${shotLabels[strongest.code]} had the highest tracked-player point-win rate at ${strongest.trackedWinPercent}% (${strongest.trackedWon}/${strongest.count}).`,
     );
   } else if (shotTagCount > 0) {
     shotFeedback.push(
@@ -173,6 +225,9 @@ export function summarizePlayerPerformance(
     serviceWinPercent,
     returnWinPercent,
     firstServeFaultPercent,
+    firstServeInPercent,
+    firstServePointsWonPercent,
+    secondServePointsWonPercent,
     shotTagCount,
     taggedPointCount,
     codeInsights,

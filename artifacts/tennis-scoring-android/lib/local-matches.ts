@@ -136,6 +136,39 @@ export interface LocalInsights {
   codes: { code: PointCode; count: number; trackedWon: number; opponentWon: number }[];
   returnPointsWon: number;
   servicePointsWon: number;
+  serveStats: Record<PlayerSide, ServeSideStats>;
+  sets: LocalSetInsights[];
+}
+
+export interface ServeSideStats {
+  servicePoints: number;
+  servicePointsWon: number;
+  firstServeFaults: number;
+  firstServePoints: number;
+  firstServePointsWon: number;
+  secondServePoints: number;
+  secondServePointsWon: number;
+  aces: number;
+  doubleFaults: number;
+}
+
+export interface LocalSetInsights {
+  setNumber: number;
+  format: SetFormat;
+  tiebreakTarget: number;
+  isComplete: boolean;
+  trackedGames: number;
+  opponentGames: number;
+  trackedTiebreakPoints: number;
+  opponentTiebreakPoints: number;
+  pointCount: number;
+  trackedPointsWon: number;
+  trackedServicePoints: number;
+  servicePointsWon: number;
+  trackedReturnPoints: number;
+  returnPointsWon: number;
+  tiebreakPointCount: number;
+  trackedTiebreakPointsWon: number;
 }
 
 export const LOCAL_MATCH_LIST_KEY = ['device-matches'] as const;
@@ -846,10 +879,35 @@ export async function getLocalInsights(
   const match = await readMatch(id);
   if (!match) return null;
 
+  const setHistory = getLocalSetHistory(match);
   const codeCounts = new Map<
     PointCode,
     { count: number; trackedWon: number; opponentWon: number }
   >();
+  const serveStats: Record<PlayerSide, ServeSideStats> = {
+    tracked: {
+      servicePoints: 0,
+      servicePointsWon: 0,
+      firstServeFaults: 0,
+      firstServePoints: 0,
+      firstServePointsWon: 0,
+      secondServePoints: 0,
+      secondServePointsWon: 0,
+      aces: 0,
+      doubleFaults: 0,
+    },
+    opponent: {
+      servicePoints: 0,
+      servicePointsWon: 0,
+      firstServeFaults: 0,
+      firstServePoints: 0,
+      firstServePointsWon: 0,
+      secondServePoints: 0,
+      secondServePointsWon: 0,
+      aces: 0,
+      doubleFaults: 0,
+    },
+  };
   let trackedPointsWon = 0;
   let opponentPointsWon = 0;
   let firstServeFaults = 0;
@@ -859,14 +917,28 @@ export async function getLocalInsights(
   let servicePointsWon = 0;
   let returnPointsWon = 0;
 
-  const allPoints = getLocalSetHistory(match).flatMap((set) => set.points);
+  const allPoints = setHistory.flatMap((set) => set.points);
   for (const point of allPoints) {
     if (point.winner === 'tracked') trackedPointsWon += 1;
     else opponentPointsWon += 1;
-    if (point.firstServeFault) firstServeFaults += 1;
+    const secondServePoint = point.firstServeFault || point.endingCode === 'D';
+    if (secondServePoint) firstServeFaults += 1;
+    const servingPlayer = serveStats[point.server];
+    servingPlayer.servicePoints += 1;
+    if (point.winner === point.server) servingPlayer.servicePointsWon += 1;
+    if (point.endingCode === 'A') servingPlayer.aces += 1;
+    if (point.endingCode === 'D') servingPlayer.doubleFaults += 1;
+    if (secondServePoint) {
+      servingPlayer.firstServeFaults += 1;
+      servingPlayer.secondServePoints += 1;
+      if (point.winner === point.server) servingPlayer.secondServePointsWon += 1;
+    } else {
+      servingPlayer.firstServePoints += 1;
+      if (point.winner === point.server) servingPlayer.firstServePointsWon += 1;
+    }
     if (point.server === 'tracked') {
       trackedServicePoints += 1;
-      if (point.firstServeFault) trackedFirstServeFaults += 1;
+      if (secondServePoint) trackedFirstServeFaults += 1;
       if (point.winner === 'tracked') servicePointsWon += 1;
     } else {
       trackedReturnPoints += 1;
@@ -886,6 +958,50 @@ export async function getLocalInsights(
     }
   }
 
+  const sets: LocalSetInsights[] = setHistory.map((set) => {
+    let setTrackedPointsWon = 0;
+    let setServicePoints = 0;
+    let setServicePointsWon = 0;
+    let setReturnPoints = 0;
+    let setReturnPointsWon = 0;
+    let tiebreakPointCount = 0;
+    let trackedTiebreakPointsWon = 0;
+
+    for (const point of set.points) {
+      if (point.winner === 'tracked') setTrackedPointsWon += 1;
+      if (point.server === 'tracked') {
+        setServicePoints += 1;
+        if (point.winner === 'tracked') setServicePointsWon += 1;
+      } else {
+        setReturnPoints += 1;
+        if (point.winner === 'tracked') setReturnPointsWon += 1;
+      }
+      if (point.isTiebreak) {
+        tiebreakPointCount += 1;
+        if (point.winner === 'tracked') trackedTiebreakPointsWon += 1;
+      }
+    }
+
+    return {
+      setNumber: set.setNumber,
+      format: set.format,
+      tiebreakTarget: set.tiebreakTarget,
+      isComplete: set.score.isComplete,
+      trackedGames: set.score.trackedGames,
+      opponentGames: set.score.opponentGames,
+      trackedTiebreakPoints: set.score.trackedTiebreakPoints,
+      opponentTiebreakPoints: set.score.opponentTiebreakPoints,
+      pointCount: set.points.length,
+      trackedPointsWon: setTrackedPointsWon,
+      trackedServicePoints: setServicePoints,
+      servicePointsWon: setServicePointsWon,
+      trackedReturnPoints: setReturnPoints,
+      returnPointsWon: setReturnPointsWon,
+      tiebreakPointCount,
+      trackedTiebreakPointsWon,
+    };
+  });
+
   return {
     pointCount: allPoints.length,
     trackedPointsWon,
@@ -899,5 +1015,7 @@ export async function getLocalInsights(
       .map(([code, stats]) => ({ code, ...stats })),
     returnPointsWon,
     servicePointsWon,
+    serveStats,
+    sets,
   };
 }
