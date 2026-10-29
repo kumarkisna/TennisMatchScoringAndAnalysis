@@ -24,6 +24,7 @@ function RootLayoutNav() {
   return (
     <Stack screenOptions={{ headerShown: false, headerBackTitle: 'Back' }}>
       <Stack.Screen name="index" />
+      <Stack.Screen name="head-to-head" />
       <Stack.Screen name="matches/new" />
       <Stack.Screen name="matches/[id]" />
       <Stack.Screen name="players" />

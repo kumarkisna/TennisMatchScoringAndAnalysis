@@ -47,8 +47,22 @@ export interface PlayerPerformanceSummary {
   returnWinPercent: number | null;
   firstServeFaultPercent: number | null;
   firstServeInPercent: number | null;
+  secondServeInPercent: number | null;
+  secondServeInCount: number;
+  secondServeAttemptCount: number;
   firstServePointsWonPercent: number | null;
   secondServePointsWonPercent: number | null;
+  rallyWinnerCount: number;
+  rallyWinnerPercent: number | null;
+  opponentRallyWinnerCount: number;
+  opponentRallyWinnerPercent: number | null;
+  trackedUnforcedErrors: number;
+  opponentUnforcedErrors: number;
+  acesPerServiceGame: number | null;
+  acesPerSet: number | null;
+  acesPerMatch: number | null;
+  setsWithRecordedPoints: number;
+  matchesInSample: number;
   shotTagCount: number;
   taggedPointCount: number;
   codeInsights: PlayerCodeInsight[];
@@ -75,7 +89,12 @@ export interface PlayerReportInsights {
   returnPointsWon: number;
   trackedReturnPoints: number;
   trackedFirstServeFaults: number;
-  codes: { code: string; count: number; trackedWon: number }[];
+  codes: {
+    code: string;
+    count: number;
+    trackedWon: number;
+    opponentWon: number;
+  }[];
   serveStats: Record<'tracked' | 'opponent', ServeSideStats>;
   breakPoints: Record<'tracked' | 'opponent', BreakPointStats>;
   serviceGames: Record<'tracked' | 'opponent', ServiceGameStats>;
@@ -115,6 +134,7 @@ function summarizeContext<T extends string>(
 
 export function summarizePlayerPerformance(
   insights: PlayerReportInsights,
+  matchesInSample = 1,
 ): PlayerPerformanceSummary {
   const overallWinPercent = percent(
     insights.trackedPointsWon,
@@ -136,6 +156,14 @@ export function summarizePlayerPerformance(
   const firstServeInPercent = percent(
     trackedServeStats.firstServePoints,
     trackedServeStats.servicePoints,
+  );
+  const secondServeInCount = Math.max(
+    0,
+    trackedServeStats.secondServePoints - trackedServeStats.doubleFaults,
+  );
+  const secondServeInPercent = percent(
+    secondServeInCount,
+    trackedServeStats.secondServePoints,
   );
   const firstServePointsWonPercent = percent(
     trackedServeStats.firstServePointsWon,
@@ -169,6 +197,40 @@ export function summarizePlayerPerformance(
       (a, b) =>
         b.count - a.count || a.code.localeCompare(b.code),
     );
+  const rallyWinnerCodes: readonly PointCode[] = ['F', 'B', 'V', 'O', 'P'];
+  const rallyWinnerCount = validCodes.reduce(
+    (total, item) =>
+      total + (rallyWinnerCodes.includes(item.code) ? item.trackedWon : 0),
+    0,
+  );
+  const opponentRallyWinnerCount = validCodes.reduce(
+    (total, item) =>
+      total + (rallyWinnerCodes.includes(item.code) ? item.opponentWon : 0),
+    0,
+  );
+  const unforcedErrorCodes: readonly PointCode[] = ['N', 'L', 'W'];
+  const trackedUnforcedErrors = validCodes.reduce(
+    (total, item) =>
+      total + (unforcedErrorCodes.includes(item.code) ? item.opponentWon : 0),
+    0,
+  );
+  const opponentUnforcedErrors = validCodes.reduce(
+    (total, item) =>
+      total + (unforcedErrorCodes.includes(item.code) ? item.trackedWon : 0),
+    0,
+  );
+  const setsWithRecordedPoints = insights.sets.filter(
+    (set) => set.pointCount > 0,
+  ).length;
+  const aces = trackedServeStats.aces;
+  const acesPerServiceGame =
+    insights.serviceGames.tracked.gamesPlayed > 0
+      ? aces / insights.serviceGames.tracked.gamesPlayed
+      : null;
+  const acesPerSet =
+    setsWithRecordedPoints > 0 ? aces / setsWithRecordedPoints : null;
+  const acesPerMatch =
+    matchesInSample > 0 ? aces / matchesInSample : null;
 
   const shotDirections = summarizeContext(
     SHOT_DIRECTION_OPTIONS,
@@ -284,8 +346,25 @@ export function summarizePlayerPerformance(
     returnWinPercent,
     firstServeFaultPercent,
     firstServeInPercent,
+    secondServeInPercent,
+    secondServeInCount,
+    secondServeAttemptCount: trackedServeStats.secondServePoints,
     firstServePointsWonPercent,
     secondServePointsWonPercent,
+    rallyWinnerCount,
+    rallyWinnerPercent: percent(rallyWinnerCount, insights.pointCount),
+    opponentRallyWinnerCount,
+    opponentRallyWinnerPercent: percent(
+      opponentRallyWinnerCount,
+      insights.pointCount,
+    ),
+    trackedUnforcedErrors,
+    opponentUnforcedErrors,
+    acesPerServiceGame,
+    acesPerSet,
+    acesPerMatch,
+    setsWithRecordedPoints,
+    matchesInSample,
     shotTagCount,
     taggedPointCount,
     codeInsights,

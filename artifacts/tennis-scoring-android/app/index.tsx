@@ -252,10 +252,19 @@ export default function HomeScreen() {
               </View>
             </View>
 
-            <View style={styles.backupActions}>
+            <View
+              style={[
+                styles.backupActions,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
               <Pressable
                 testID="button-save-local-backup"
                 accessibilityRole="button"
+                accessibilityLabel="Save backup to device"
                 disabled={saveBackup.isPending || shareBackup.isPending || loadBackup.isPending}
                 onPress={() => saveBackup.mutate()}
                 style={({ pressed }) => [
@@ -269,12 +278,13 @@ export default function HomeScreen() {
               >
                 <Ionicons name="download-outline" size={16} color={colors.primary} />
                 <Text style={[styles.backupButtonText, { color: colors.foreground }]}>
-                  {saveBackup.isPending ? 'Preparing…' : 'Save backup'}
+                  {saveBackup.isPending ? 'Preparing…' : 'Save'}
                 </Text>
               </Pressable>
               <Pressable
                 testID="button-share-local-backup"
                 accessibilityRole="button"
+                accessibilityLabel="Share device backup"
                 disabled={saveBackup.isPending || shareBackup.isPending || loadBackup.isPending}
                 onPress={() => shareBackup.mutate()}
                 style={({ pressed }) => [
@@ -288,29 +298,30 @@ export default function HomeScreen() {
               >
                 <Ionicons name="share-outline" size={16} color={colors.primary} />
                 <Text style={[styles.backupButtonText, { color: colors.foreground }]}>
-                  {shareBackup.isPending ? 'Preparing…' : 'Share backup'}
+                  {shareBackup.isPending ? 'Preparing…' : 'Share'}
+                </Text>
+              </Pressable>
+              <Pressable
+                testID="button-load-local-backup"
+                accessibilityRole="button"
+                accessibilityLabel="Load backup from device"
+                disabled={saveBackup.isPending || shareBackup.isPending || loadBackup.isPending}
+                onPress={() => loadBackup.mutate()}
+                style={({ pressed }) => [
+                  styles.backupButton,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                    opacity: saveBackup.isPending || shareBackup.isPending || loadBackup.isPending ? 0.5 : pressed ? 0.7 : 1,
+                  },
+                ]}
+              >
+                <Ionicons name="folder-open-outline" size={16} color={colors.primary} />
+                <Text style={[styles.backupButtonText, { color: colors.foreground }]}>
+                  {loadBackup.isPending ? 'Loading…' : 'Load'}
                 </Text>
               </Pressable>
             </View>
-            <Pressable
-              testID="button-load-local-backup"
-              accessibilityRole="button"
-              disabled={saveBackup.isPending || shareBackup.isPending || loadBackup.isPending}
-              onPress={() => loadBackup.mutate()}
-              style={({ pressed }) => [
-                styles.loadBackupButton,
-                {
-                  borderColor: colors.border,
-                  backgroundColor: colors.card,
-                  opacity: saveBackup.isPending || shareBackup.isPending || loadBackup.isPending ? 0.5 : pressed ? 0.7 : 1,
-                },
-              ]}
-            >
-              <Ionicons name="folder-open-outline" size={16} color={colors.primary} />
-              <Text style={[styles.backupButtonText, { color: colors.foreground }]}>
-                {loadBackup.isPending ? 'Loading…' : 'Load backup'}
-              </Text>
-            </Pressable>
             <Text style={[styles.backupNote, { color: colors.mutedForeground }]}>
               Backups include players and full point history. Loading adds missing records and never overwrites existing ones.
             </Text>
@@ -353,6 +364,34 @@ export default function HomeScreen() {
                 </View>
               </View>
             </View>
+            <Pressable
+              testID="button-open-head-to-head"
+              accessibilityRole="button"
+              accessibilityLabel="Open head-to-head report"
+              accessibilityHint="Compare saved match history against an opponent"
+              onPress={() => router.push('/head-to-head')}
+              style={({ pressed }) => [
+                styles.headToHeadAction,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                  opacity: pressed ? 0.75 : 1,
+                },
+              ]}
+            >
+              <View style={[styles.headToHeadIcon, { backgroundColor: colors.secondary }]}>
+                <Ionicons name="git-compare-outline" size={16} color={colors.primary} />
+              </View>
+              <View style={styles.headToHeadCopy}>
+                <Text style={[styles.headToHeadTitle, { color: colors.foreground }]}>
+                  Head-to-head report
+                </Text>
+                <Text style={[styles.headToHeadHint, { color: colors.mutedForeground }]}>
+                  Compare recorded meetings with an opponent
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
+            </Pressable>
           </View>
         }
         renderItem={({ item }) => {
@@ -624,10 +663,9 @@ const styles = StyleSheet.create({
   inlinePlayersButton: { minHeight: 32, borderWidth: 1, borderRadius: 7, paddingHorizontal: 7, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
   inlinePlayersText: { fontFamily: 'DMSans_600SemiBold', fontSize: 10 },
   inlinePlayersCount: { fontFamily: 'DMSans_700Bold', fontSize: 9 },
-  backupActions: { marginTop: 10, flexDirection: 'row', gap: 8 },
-  backupButton: { flex: 1, minHeight: 40, borderWidth: 1, borderRadius: 8, paddingHorizontal: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  backupButtonText: { fontFamily: 'DMSans_600SemiBold', fontSize: 11 },
-  loadBackupButton: { marginTop: 7, minHeight: 40, borderWidth: 1, borderRadius: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  backupActions: { marginTop: 10, padding: 4, flexDirection: 'row', gap: 5, borderWidth: 1, borderRadius: 10 },
+  backupButton: { flex: 1, minWidth: 0, minHeight: 38, borderWidth: 1, borderRadius: 7, paddingHorizontal: 4, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
+  backupButtonText: { fontFamily: 'DMSans_600SemiBold', fontSize: 10 },
   backupNote: { marginTop: 5, fontFamily: 'DMSans_400Regular', fontSize: 10 },
   sectionHeader: {
     marginTop: 37,
@@ -648,6 +686,20 @@ const styles = StyleSheet.create({
   },
   countText: { fontFamily: 'DMSans_700Bold', fontSize: 12 },
   matchControls: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  headToHeadAction: {
+    minHeight: 56,
+    marginBottom: 12,
+    paddingHorizontal: 11,
+    borderWidth: 1,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  headToHeadIcon: { width: 31, height: 31, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  headToHeadCopy: { flex: 1, gap: 3 },
+  headToHeadTitle: { fontFamily: 'DMSans_700Bold', fontSize: 11 },
+  headToHeadHint: { fontFamily: 'DMSans_400Regular', fontSize: 9 },
   completedToggle: {
     minHeight: 30,
     paddingHorizontal: 8,

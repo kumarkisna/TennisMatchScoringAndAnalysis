@@ -1,4 +1,5 @@
 - [Android standalone storage](android-scoring-storage.md) — matches, profiles, and report analytics stay on-device; auth, sync, and sharing are out of scope.
 - [Match set structure and reporting](tennis-match-structure.md) — one local match can contain unlimited sets; historical sets are read-only and reports cover all sets.
 - [Unbranded private reports](private-reports.md) — keep report outputs free of Replit URLs and third-party company marks or links.
+- [Saved player links](player-profile-links.md) — preserve profile URLs with local player records and make them directly openable.
 - [pnpm security policy](pnpm-security-policy.md) — inspect workspace settings after dependency commands; pnpm can rewrite the release-age protection.

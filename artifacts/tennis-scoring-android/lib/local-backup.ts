@@ -125,6 +125,9 @@ function isBackupPlayer(value: unknown): value is LocalPlayer {
       value.playingHand === 'ambidextrous') &&
     isNullableNumber(value.heightCm) &&
     isNullableNumber(value.weightKg) &&
+    (value.phoneNumbers === undefined ||
+      (Array.isArray(value.phoneNumbers) &&
+        value.phoneNumbers.every((phone) => typeof phone === 'string'))) &&
     Array.isArray(value.profileUrls) &&
     value.profileUrls.every((url) => typeof url === 'string') &&
     isTimestamp(value.createdAt);
@@ -140,6 +143,7 @@ function isBackupPlayer(value: unknown): value is LocalPlayer {
     playingHand: value.playingHand as LocalPlayerDetailsInput['playingHand'],
     heightCm: value.heightCm as number | null,
     weightKg: value.weightKg as number | null,
+    phoneNumbers: (value.phoneNumbers ?? []) as string[],
     profileUrls: value.profileUrls as string[],
   };
   return validateLocalPlayerDetails(details) === null;
@@ -274,7 +278,11 @@ function parseLocalBackup(contents: string): LocalBackup {
   if (!parsed.matches.every(isBackupMatch)) {
     throw new Error('The backup contains invalid match or point history. No data was imported.');
   }
-  const playerIds = parsed.players.map((player) => player.id);
+  const players = (parsed.players as LocalPlayer[]).map((player) => ({
+    ...player,
+    phoneNumbers: player.phoneNumbers ?? [],
+  }));
+  const playerIds = players.map((player) => player.id);
   const matchIds = parsed.matches.map((match) => match.id);
   if (
     new Set(playerIds).size !== playerIds.length ||
@@ -283,7 +291,7 @@ function parseLocalBackup(contents: string): LocalBackup {
   ) {
     throw new Error('The backup has duplicate or invalid record references.');
   }
-  return parsed as unknown as LocalBackup;
+  return { ...parsed, players } as unknown as LocalBackup;
 }
 
 export async function createLocalBackupJson(): Promise<string> {
@@ -339,8 +347,11 @@ export async function loadLocalBackupFromDevice(): Promise<
   const backup = parseLocalBackup(contents);
   const activePlayerBeforeLoad = await getActiveLocalPlayerId();
   const existingPlayers = await listLocalPlayers();
-  const knownNames = new Set(
-    existingPlayers.map((player) => player.name.trim().toLocaleLowerCase()),
+  const existingByName = new Map(
+    existingPlayers.map((player) => [
+      player.name.trim().replace(/\s+/g, ' ').toLocaleLowerCase(),
+      player,
+    ]),
   );
   const playerIdMap = new Map<string, string>();
   let playersAdded = 0;
@@ -348,7 +359,12 @@ export async function loadLocalBackupFromDevice(): Promise<
 
   for (const player of backup.players) {
     const normalizedName = player.name.trim().replace(/\s+/g, ' ').toLocaleLowerCase();
-    const alreadySaved = knownNames.has(normalizedName);
+    const existing = existingByName.get(normalizedName);
+    if (existing) {
+      playerIdMap.set(player.id, existing.id);
+      playersSkipped += 1;
+      continue;
+    }
     const saved = await addLocalPlayer(player.name, {
       dateOfBirth: player.dateOfBirth,
       atpPlayerId: player.atpPlayerId,
@@ -359,15 +375,12 @@ export async function loadLocalBackupFromDevice(): Promise<
       playingHand: player.playingHand,
       heightCm: player.heightCm,
       weightKg: player.weightKg,
+      phoneNumbers: player.phoneNumbers,
       profileUrls: player.profileUrls,
     });
     playerIdMap.set(player.id, saved.id);
-    if (alreadySaved) {
-      playersSkipped += 1;
-    } else {
-      playersAdded += 1;
-      knownNames.add(normalizedName);
-    }
+    playersAdded += 1;
+    existingByName.set(normalizedName, saved);
   }
 
   if (activePlayerBeforeLoad === null && backup.activePlayerId) {

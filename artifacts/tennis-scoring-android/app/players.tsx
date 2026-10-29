@@ -52,6 +52,7 @@ export default function PlayersScreen() {
   const [playingHand, setPlayingHand] = useState<PlayerHand | null>(null);
   const [heightCm, setHeightCm] = useState('');
   const [weightKg, setWeightKg] = useState('');
+  const [phoneNumbers, setPhoneNumbers] = useState<string[]>([]);
   const [profileUrls, setProfileUrls] = useState<string[]>([]);
   const dateOfBirthError = getDateOfBirthValidationError(dateOfBirth);
   const playersQuery = useQuery({
@@ -130,6 +131,7 @@ export default function PlayersScreen() {
         playingHand,
         heightCm,
         weightKg,
+        phoneNumbers,
         profileUrls,
       },
     });
@@ -148,6 +150,7 @@ export default function PlayersScreen() {
     setPlayingHand(null);
     setHeightCm('');
     setWeightKg('');
+    setPhoneNumbers([]);
     setProfileUrls([]);
   }
 
@@ -164,6 +167,7 @@ export default function PlayersScreen() {
     setPlayingHand(player.playingHand);
     setHeightCm(player.heightCm?.toString() ?? '');
     setWeightKg(player.weightKg?.toString() ?? '');
+    setPhoneNumbers(player.phoneNumbers ?? []);
     setProfileUrls(player.profileUrls ?? []);
     savePlayer.reset();
   }
@@ -178,6 +182,18 @@ export default function PlayersScreen() {
       await Linking.openURL(url);
     } catch {
       Alert.alert('Couldn’t open profile', 'Check that your device has a browser available and try again.');
+    }
+  }
+
+  async function openPhoneDialer(phone: string) {
+    const dialableNumber = phone.replace(/[^\d+]/g, '');
+    try {
+      await Linking.openURL(`tel:${dialableNumber}`);
+    } catch {
+      Alert.alert(
+        'Couldn’t open the dialer',
+        'Check that your device has a phone app available and try again.',
+      );
     }
   }
 
@@ -251,6 +267,9 @@ export default function PlayersScreen() {
               <Text style={[styles.addLinkText, { color: colors.primary }]}>Add link</Text>
             </Pressable>
           </View>
+          <Text style={[styles.profileLinksHint, { color: colors.mutedForeground }]}>
+            Saved with this player on your device. Tap a saved link below their name to open it.
+          </Text>
           {profileUrls.map((url, index) => (
             <View key={`profile-url-${index}`} style={styles.profileLinkInputRow}>
               <TextInput
@@ -283,6 +302,77 @@ export default function PlayersScreen() {
                 style={({ pressed }) => [styles.removeLinkButton, { opacity: pressed ? 0.6 : 1 }]}
               >
                 <Ionicons name="close-circle-outline" size={20} color={colors.mutedForeground} />
+              </Pressable>
+            </View>
+          ))}
+          <View style={styles.profileLinksHeader}>
+            <Text style={[styles.dateLabel, { color: colors.mutedForeground }]}>
+              PHONE NUMBERS · OPTIONAL
+            </Text>
+            <Pressable
+              testID="button-add-player-phone-number"
+              accessibilityRole="button"
+              accessibilityLabel="Add phone number"
+              onPress={() => setPhoneNumbers((numbers) => [...numbers, ''])}
+              style={({ pressed }) => [
+                styles.addLinkButton,
+                { opacity: pressed ? 0.65 : 1 },
+              ]}
+            >
+              <Ionicons name="add-circle-outline" size={17} color={colors.primary} />
+              <Text style={[styles.addLinkText, { color: colors.primary }]}>Add number</Text>
+            </Pressable>
+          </View>
+          <Text style={[styles.profileLinksHint, { color: colors.mutedForeground }]}>
+            Saved on this device. Use 7–15 digits; +, spaces, hyphens and brackets are allowed.
+          </Text>
+          {phoneNumbers.map((phone, index) => (
+            <View key={`player-phone-${index}`} style={styles.profileLinkInputRow}>
+              <TextInput
+                testID={`input-player-phone-number-${index}`}
+                accessibilityLabel={`Player phone number ${index + 1}`}
+                value={phone}
+                onChangeText={(value) =>
+                  setPhoneNumbers((numbers) =>
+                    numbers.map((item, itemIndex) =>
+                      itemIndex === index ? value : item,
+                    ),
+                  )
+                }
+                placeholder="+91 98765 43210"
+                placeholderTextColor={colors.mutedForeground}
+                keyboardType="phone-pad"
+                autoCapitalize="none"
+                autoCorrect={false}
+                maxLength={40}
+                style={[
+                  styles.profileLinkInput,
+                  {
+                    color: colors.foreground,
+                    borderColor: colors.border,
+                    backgroundColor: colors.background,
+                  },
+                ]}
+              />
+              <Pressable
+                testID={`button-remove-player-phone-number-${index}`}
+                accessibilityRole="button"
+                accessibilityLabel={`Remove phone number ${index + 1}`}
+                onPress={() =>
+                  setPhoneNumbers((numbers) =>
+                    numbers.filter((_, itemIndex) => itemIndex !== index),
+                  )
+                }
+                style={({ pressed }) => [
+                  styles.removeLinkButton,
+                  { opacity: pressed ? 0.6 : 1 },
+                ]}
+              >
+                <Ionicons
+                  name="close-circle-outline"
+                  size={20}
+                  color={colors.mutedForeground}
+                />
               </Pressable>
             </View>
           ))}
@@ -653,6 +743,39 @@ export default function PlayersScreen() {
                         {profileSummary}
                       </Text>
                     ) : null}
+                    {player.phoneNumbers?.map((phone, phoneIndex) => (
+                      <View
+                        key={`phone-${player.id}-${phoneIndex}`}
+                        style={styles.savedPhone}
+                      >
+                        <Text
+                          numberOfLines={1}
+                          style={[styles.savedPhoneText, { color: colors.mutedForeground }]}
+                        >
+                          {phone}
+                        </Text>
+                        <Pressable
+                          testID={`button-call-player-${player.id}-${phoneIndex}`}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Call now: ${player.name}, ${phone}`}
+                          accessibilityHint="Opens the phone dialer with this number. Confirm the call there."
+                          onPress={() => void openPhoneDialer(phone)}
+                          style={({ pressed }) => [
+                            styles.callButton,
+                            {
+                              backgroundColor: colors.secondary,
+                              borderColor: colors.border,
+                              opacity: pressed ? 0.7 : 1,
+                            },
+                          ]}
+                        >
+                          <Ionicons name="call-outline" size={12} color={colors.primary} />
+                          <Text style={[styles.callButtonText, { color: colors.primary }]}>
+                            Call now
+                          </Text>
+                        </Pressable>
+                      </View>
+                    ))}
                     {player.profileUrls?.map((url, linkIndex) => {
                       const host = new URL(url).hostname;
                       return (
@@ -661,6 +784,7 @@ export default function PlayersScreen() {
                           testID={`button-open-player-profile-${player.id}-${linkIndex}`}
                           accessibilityRole="link"
                           accessibilityLabel={`Open ${player.name} profile ${linkIndex + 1} at ${host}`}
+                          accessibilityHint="Opens this profile in your device browser"
                           onPress={() => void openProfileLink(url)}
                           style={({ pressed }) => [styles.profileLink, { opacity: pressed ? 0.65 : 1 }]}
                         >
@@ -745,7 +869,7 @@ export default function PlayersScreen() {
         <View style={styles.localNote}>
           <Ionicons name="phone-portrait-outline" size={14} color={colors.mutedForeground} />
           <Text style={[styles.localNoteText, { color: colors.mutedForeground }]}>
-            Player names, details, and profile links stay on this phone. Existing match sheets are not affected when you remove a name.
+            Player names, phone numbers, details, and profile links stay on this phone. Existing match sheets are not affected when you remove a name.
           </Text>
         </View>
       </ScrollView>
@@ -770,6 +894,11 @@ const styles = StyleSheet.create({
   dateField: { gap: 5 },
   dateLabel: { fontFamily: 'DMSans_700Bold', fontSize: 8, letterSpacing: 0.8 },
   profileLinksHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  profileLinksHint: { marginTop: -4, marginBottom: 2, fontFamily: 'DMSans_400Regular', fontSize: 9, lineHeight: 14 },
+  savedPhone: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  savedPhoneText: { flex: 1, fontFamily: 'DMSans_400Regular', fontSize: 10 },
+  callButton: { minHeight: 27, borderWidth: 1, borderRadius: 6, paddingHorizontal: 7, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
+  callButtonText: { fontFamily: 'DMSans_700Bold', fontSize: 8 },
   addLinkButton: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 4 },
   addLinkText: { fontFamily: 'DMSans_600SemiBold', fontSize: 11 },
   profileLinkInputRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },

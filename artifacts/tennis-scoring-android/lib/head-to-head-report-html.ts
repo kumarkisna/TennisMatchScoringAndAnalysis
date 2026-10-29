@@ -1,0 +1,465 @@
+import {
+  getSetWinner,
+  type HeadToHeadReport,
+} from '@/lib/head-to-head';
+import { POINT_CODE_LABELS } from '@/lib/player-report-html';
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => {
+    const replacements: Record<string, string> = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    };
+    return replacements[character] ?? character;
+  });
+}
+
+function formatDate(value: string): string {
+  const [year, month, day] = value.slice(0, 10).split('-').map(Number);
+  if (!year || !month || !day) return value;
+  const monthName = new Date(Date.UTC(year, month - 1, day)).toLocaleString(
+    undefined,
+    { month: 'long', timeZone: 'UTC' },
+  );
+  return `${monthName} ${day}, ${year}`;
+}
+
+function rate(wins: number, attempts: number): string {
+  if (attempts <= 0) return '—';
+  return `${wins}/${attempts} · ${((wins / attempts) * 100).toFixed(1)}%`;
+}
+
+function averageAces(aces: number, denominator: number, unit: string): string {
+  if (denominator <= 0) return '—';
+  return `${(aces / denominator).toFixed(2)} (${aces} aces / ${denominator} ${unit})`;
+}
+
+function setScore(set: HeadToHeadReport['meetings'][number]['summary']['setScores'][number]): string {
+  if (set.format === 'match_tiebreak') {
+    return `Set ${set.setNumber}: match tie-break ${set.trackedTiebreakPoints}–${set.opponentTiebreakPoints} (target ${set.tiebreakTarget}, win by 2)`;
+  }
+  const games = `${set.trackedGames}–${set.opponentGames}`;
+  const tiebreak =
+    set.trackedTiebreakPoints > 0 || set.opponentTiebreakPoints > 0
+      ? ` (tie-break ${set.trackedTiebreakPoints}–${set.opponentTiebreakPoints})`
+      : '';
+  return `Set ${set.setNumber}: ${games}${tiebreak}`;
+}
+
+function setResult(
+  set: HeadToHeadReport['meetings'][number]['summary']['setScores'][number],
+  trackedPlayer: string,
+  opponent: string,
+): string {
+  if (!set.isComplete) return 'In progress';
+  const winner = getSetWinner(set);
+  if (!winner) return 'Not determined';
+  return winner === 'tracked' ? trackedPlayer : opponent;
+}
+
+function matchResult(report: HeadToHeadReport, winner: 'tracked' | 'opponent' | null, status: 'in_progress' | 'complete'): string {
+  if (status !== 'complete') return 'In progress';
+  if (!winner) return 'Result not determined';
+  return winner === 'tracked' ? report.trackedPlayer : report.opponent;
+}
+
+function tableRows(rows: readonly (readonly string[])[]): string {
+  return rows
+    .map(
+      ([label, tracked, opponent]) => `
+        <tr>
+          <td>${escapeHtml(label ?? '')}</td>
+          <td>${escapeHtml(tracked ?? '—')}</td>
+          <td>${escapeHtml(opponent ?? '—')}</td>
+        </tr>`,
+    )
+    .join('');
+}
+
+export function buildHeadToHeadReportHtml(report: HeadToHeadReport): string {
+  const { insights, trackedPlayer, opponent } = report;
+  const trackedServe = insights.serveStats.tracked;
+  const opponentServe = insights.serveStats.opponent;
+  const recordedSetCount = insights.sets.filter((set) => set.pointCount > 0).length;
+  const trackedSecondServeIn = Math.max(
+    0,
+    trackedServe.secondServePoints - trackedServe.doubleFaults,
+  );
+  const opponentSecondServeIn = Math.max(
+    0,
+    opponentServe.secondServePoints - opponentServe.doubleFaults,
+  );
+  const trackedReturnWon = insights.returnPointsWon;
+  const opponentReturnWon =
+    trackedServe.servicePoints - trackedServe.servicePointsWon;
+  const trackedFirstServeReturnWon =
+    opponentServe.firstServePoints - opponentServe.firstServePointsWon;
+  const opponentFirstServeReturnWon =
+    trackedServe.firstServePoints - trackedServe.firstServePointsWon;
+  const trackedSecondServeReturnWon =
+    opponentServe.secondServePoints - opponentServe.secondServePointsWon;
+  const opponentSecondServeReturnWon =
+    trackedServe.secondServePoints - trackedServe.secondServePointsWon;
+  const trackedReturnGamesPlayed = insights.serviceGames.opponent.gamesPlayed;
+  const trackedReturnGamesWon =
+    trackedReturnGamesPlayed - insights.serviceGames.opponent.gamesWon;
+  const opponentReturnGamesPlayed = insights.serviceGames.tracked.gamesPlayed;
+  const opponentReturnGamesWon =
+    opponentReturnGamesPlayed - insights.serviceGames.tracked.gamesWon;
+
+  const serveRows = tableRows([
+    [
+      'First serve in',
+      rate(trackedServe.firstServePoints, trackedServe.servicePoints),
+      rate(opponentServe.firstServePoints, opponentServe.servicePoints),
+    ],
+    [
+      'Second serve in',
+      rate(trackedSecondServeIn, trackedServe.secondServePoints),
+      rate(opponentSecondServeIn, opponentServe.secondServePoints),
+    ],
+    [
+      'First-serve points won',
+      rate(trackedServe.firstServePointsWon, trackedServe.firstServePoints),
+      rate(opponentServe.firstServePointsWon, opponentServe.firstServePoints),
+    ],
+    [
+      'Second-serve points won',
+      rate(trackedServe.secondServePointsWon, trackedServe.secondServePoints),
+      rate(opponentServe.secondServePointsWon, opponentServe.secondServePoints),
+    ],
+    [
+      'Service points won',
+      rate(trackedServe.servicePointsWon, trackedServe.servicePoints),
+      rate(opponentServe.servicePointsWon, opponentServe.servicePoints),
+    ],
+    [
+      'Service games won',
+      rate(insights.serviceGames.tracked.gamesWon, insights.serviceGames.tracked.gamesPlayed),
+      rate(insights.serviceGames.opponent.gamesWon, insights.serviceGames.opponent.gamesPlayed),
+    ],
+    [
+      'Aces tagged',
+      `${trackedServe.aces} · ${trackedServe.servicePoints} service points`,
+      `${opponentServe.aces} · ${opponentServe.servicePoints} service points`,
+    ],
+    [
+      'Double faults tagged',
+      `${trackedServe.doubleFaults} · ${trackedServe.servicePoints} service points`,
+      `${opponentServe.doubleFaults} · ${opponentServe.servicePoints} service points`,
+    ],
+    [
+      'Aces per service game',
+      averageAces(
+        trackedServe.aces,
+        insights.serviceGames.tracked.gamesPlayed,
+        'service games',
+      ),
+      averageAces(
+        opponentServe.aces,
+        insights.serviceGames.opponent.gamesPlayed,
+        'service games',
+      ),
+    ],
+    [
+      'Aces per set',
+      averageAces(trackedServe.aces, recordedSetCount, 'sets with points'),
+      averageAces(opponentServe.aces, recordedSetCount, 'sets with points'),
+    ],
+    [
+      'Aces per match',
+      averageAces(trackedServe.aces, report.matchesRecorded, 'matches'),
+      averageAces(opponentServe.aces, report.matchesRecorded, 'matches'),
+    ],
+  ]);
+
+  const returnRows = tableRows([
+    [
+      'Return points won',
+      rate(trackedReturnWon, insights.trackedReturnPoints),
+      rate(opponentReturnWon, trackedServe.servicePoints),
+    ],
+    [
+      'First-serve return points won',
+      rate(trackedFirstServeReturnWon, opponentServe.firstServePoints),
+      rate(opponentFirstServeReturnWon, trackedServe.firstServePoints),
+    ],
+    [
+      'Second-serve return points won',
+      rate(trackedSecondServeReturnWon, opponentServe.secondServePoints),
+      rate(opponentSecondServeReturnWon, trackedServe.secondServePoints),
+    ],
+    [
+      'Return games won',
+      rate(trackedReturnGamesWon, trackedReturnGamesPlayed),
+      rate(opponentReturnGamesWon, opponentReturnGamesPlayed),
+    ],
+    [
+      'Total points won',
+      rate(insights.trackedPointsWon, insights.pointCount),
+      rate(insights.opponentPointsWon, insights.pointCount),
+    ],
+    [
+      'Rally-shot winner points',
+      rate(report.performance.rallyWinnerCount, insights.pointCount),
+      rate(report.performance.opponentRallyWinnerCount, insights.pointCount),
+    ],
+    [
+      'Unforced errors',
+      `${report.performance.trackedUnforcedErrors} · ${insights.pointCount} recorded points`,
+      `${report.performance.opponentUnforcedErrors} · ${insights.pointCount} recorded points`,
+    ],
+  ]);
+
+  const breakPointRows = tableRows([
+    [
+      'Break points converted',
+      rate(
+        insights.breakPoints.tracked.converted,
+        insights.breakPoints.tracked.opportunities,
+      ),
+      rate(
+        insights.breakPoints.opponent.converted,
+        insights.breakPoints.opponent.opportunities,
+      ),
+    ],
+    [
+      'Break points missed',
+      rate(
+        insights.breakPoints.tracked.opportunities -
+          insights.breakPoints.tracked.converted,
+        insights.breakPoints.tracked.opportunities,
+      ),
+      rate(
+        insights.breakPoints.opponent.opportunities -
+          insights.breakPoints.opponent.converted,
+        insights.breakPoints.opponent.opportunities,
+      ),
+    ],
+    [
+      'Break points saved',
+      rate(insights.breakPoints.tracked.saved, insights.breakPoints.tracked.faced),
+      rate(insights.breakPoints.opponent.saved, insights.breakPoints.opponent.faced),
+    ],
+    [
+      'Break points lost while serving',
+      rate(
+        insights.breakPoints.tracked.faced - insights.breakPoints.tracked.saved,
+        insights.breakPoints.tracked.faced,
+      ),
+      rate(
+        insights.breakPoints.opponent.faced - insights.breakPoints.opponent.saved,
+        insights.breakPoints.opponent.faced,
+      ),
+    ],
+  ]);
+  const personalBreakPoints = report.personalAverageInsights.breakPoints.tracked;
+  const personalBreakPointRows = [
+    [
+      'Break points converted',
+      rate(personalBreakPoints.converted, personalBreakPoints.opportunities),
+    ],
+    [
+      'Break points missed',
+      rate(
+        personalBreakPoints.opportunities - personalBreakPoints.converted,
+        personalBreakPoints.opportunities,
+      ),
+    ],
+    [
+      'Break points saved',
+      rate(personalBreakPoints.saved, personalBreakPoints.faced),
+    ],
+    [
+      'Break points lost while serving',
+      rate(
+        personalBreakPoints.faced - personalBreakPoints.saved,
+        personalBreakPoints.faced,
+      ),
+    ],
+  ]
+    .map(
+      ([label, average]) => `
+        <tr>
+          <td>${escapeHtml(label)}</td>
+          <td>${escapeHtml(average)}</td>
+        </tr>`,
+    )
+    .join('');
+
+  const matchRows = report.meetings
+    .map((meeting) => {
+      const summary = meeting.summary;
+      const scores = summary.setScores.length
+        ? summary.setScores
+            .map(
+              (set) =>
+                `${escapeHtml(setScore(set))} — ${escapeHtml(
+                  setResult(set, report.trackedPlayer, report.opponent),
+                )}`,
+            )
+            .join('<br />')
+        : 'No set score recorded';
+      return `
+        <tr>
+          <td>${escapeHtml(formatDate(summary.matchDate))}</td>
+          <td>${escapeHtml(matchResult(report, summary.winner, summary.status))}</td>
+          <td>${scores}</td>
+          <td>${meeting.insights.pointCount}</td>
+        </tr>`;
+    })
+    .join('');
+
+  const tagRows = report.performance.codeInsights.length
+    ? report.performance.codeInsights
+        .map(
+          (item) => `
+            <tr>
+              <td>${escapeHtml(POINT_CODE_LABELS[item.code])}</td>
+              <td>${item.count}</td>
+              <td>${rate(item.trackedWon, item.count)}</td>
+            </tr>`,
+        )
+        .join('')
+    : '<tr><td colspan="3">No point-ending tags recorded.</td></tr>';
+
+  const directionRows = report.performance.shotDirections
+    .filter((item) => item.count > 0)
+    .map(
+      (item) => `
+        <tr>
+          <td>${escapeHtml(item.label)}</td>
+          <td>${item.count}</td>
+          <td>${item.trackedWinPercent === null ? 'Need 3 tags' : rate(item.trackedWon, item.count)}</td>
+        </tr>`,
+    )
+    .join('');
+  const rallyRows = report.performance.rallyLengths
+    .filter((item) => item.count > 0)
+    .map(
+      (item) => `
+        <tr>
+          <td>${escapeHtml(item.label)}</td>
+          <td>${item.count}</td>
+          <td>${item.trackedWinPercent === null ? 'Need 3 tags' : rate(item.trackedWon, item.count)}</td>
+        </tr>`,
+    )
+    .join('');
+  const feedbackRows = report.performance.feedback
+    .map((item) => `<li>${escapeHtml(item)}</li>`)
+    .join('');
+  const winsAndLosses =
+    `${report.matchesWon}–${report.matchesLost}` +
+    (report.completedMatchesWithoutWinner > 0
+      ? ` · ${report.completedMatchesWithoutWinner} complete without a clear winner`
+      : '');
+  const setRecord =
+    `${report.setsWon}–${report.setsLost}` +
+    (report.completedSetsWithoutWinner > 0
+      ? ` · ${report.completedSetsWithoutWinner} complete without a clear winner`
+      : '');
+  const contextTables = directionRows || rallyRows
+    ? `
+      <h2>Point context tags</h2>
+      ${
+        directionRows
+          ? `<h3>Shot direction</h3><table><thead><tr><th>Direction</th><th>Tagged points</th><th>Tracked-player point wins</th></tr></thead><tbody>${directionRows}</tbody></table>`
+          : '<p>No shot directions were recorded.</p>'
+      }
+      ${
+        rallyRows
+          ? `<h3>Rally length</h3><table><thead><tr><th>Length</th><th>Tagged points</th><th>Tracked-player point wins</th></tr></thead><tbody>${rallyRows}</tbody></table>`
+          : '<p>No rally-length tags were recorded.</p>'
+      }`
+    : '<p class="note">No shot-direction or rally-length tags were recorded.</p>';
+
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Head-to-Head Report — ${escapeHtml(trackedPlayer)} vs ${escapeHtml(opponent)}</title>
+    <style>
+      @page { size: A4; margin: 0; }
+      * { box-sizing: border-box; }
+      body { color: #183a30; font-family: Arial, Helvetica, sans-serif; margin: 0; }
+      main { padding: 14mm; }
+      .eyebrow { color: #a45c45; font-size: 9px; font-weight: 700; letter-spacing: 1.8px; }
+      h1 { font-size: 23px; margin: 7px 0 14px; }
+      h2 { break-after: avoid; font-size: 14px; margin: 22px 0 9px; }
+      h3 { font-size: 11px; margin: 13px 0 6px; }
+      .pairing { background: #f2f1e9; border-radius: 8px; display: grid; gap: 12px; grid-template-columns: 1fr auto 1fr; padding: 12px; }
+      .player-label { color: #60746c; font-size: 8px; font-weight: 700; letter-spacing: 1px; }
+      .player-name { font-size: 14px; font-weight: 700; margin-top: 5px; overflow-wrap: anywhere; }
+      .versus { align-self: center; color: #718078; font-size: 10px; font-weight: 700; }
+      .cards { display: grid; gap: 8px; grid-template-columns: repeat(4, 1fr); margin: 13px 0; }
+      .card { background: #f2f1e9; border-radius: 8px; padding: 10px; }
+      .label { color: #60746c; font-size: 8px; font-weight: 700; letter-spacing: .7px; }
+      .value { color: #245d4b; font-size: 16px; font-weight: 700; margin-top: 5px; }
+      .sample { color: #60746c; font-size: 8px; line-height: 1.4; margin-top: 3px; }
+      .note { color: #60746c; font-size: 9px; line-height: 1.5; }
+      .feedback { background: #f2f1e9; border-left: 3px solid #a45c45; padding: 8px 12px; }
+      .feedback li { font-size: 9px; line-height: 1.5; margin: 4px 0; }
+      table { border-collapse: collapse; break-inside: auto; font-size: 8.5px; width: 100%; }
+      thead { display: table-header-group; }
+      tr { break-inside: avoid; page-break-inside: avoid; }
+      th { background: #245d4b; color: #fff; text-align: left; }
+      th, td { border-bottom: 1px solid #dcded4; padding: 6px 5px; vertical-align: top; }
+      th:first-child, td:first-child { width: 40%; }
+      .matches-table th:first-child, .matches-table td:first-child { width: 18%; }
+      .matches-table th:nth-child(2), .matches-table td:nth-child(2) { width: 21%; }
+      .matches-table th:nth-child(3), .matches-table td:nth-child(3) { width: 46%; }
+      .matches-table th:nth-child(4), .matches-table td:nth-child(4) { width: 15%; }
+      @media print { html, body { margin: 0; } main { padding: 14mm; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="eyebrow">TENNISSCORING · LOCAL MATCH ANALYSIS</div>
+      <h1>Head-to-Head Report</h1>
+      <div class="pairing">
+        <div><div class="player-label">TRACKED PLAYER</div><div class="player-name">${escapeHtml(trackedPlayer)}</div></div>
+        <div class="versus">VS</div>
+        <div><div class="player-label">OPPONENT</div><div class="player-name">${escapeHtml(opponent)}</div></div>
+      </div>
+      <div class="cards">
+        <div class="card"><div class="label">MATCH RECORD</div><div class="value">${winsAndLosses}</div><div class="sample">${report.matchesRecorded} recorded · ${report.completedMatches} complete</div></div>
+        <div class="card"><div class="label">SET RECORD</div><div class="value">${setRecord}</div><div class="sample">${report.setsRecorded} recorded · ${report.completedSets} complete</div></div>
+        <div class="card"><div class="label">POINTS WON</div><div class="value">${rate(insights.trackedPointsWon, insights.pointCount)}</div><div class="sample">${insights.pointCount} recorded points</div></div>
+        <div class="card"><div class="label">IN PROGRESS</div><div class="value">${report.matchesInProgress}</div><div class="sample">not included in match W–L</div></div>
+      </div>
+      <p class="note"><strong>Report basis:</strong> Only matches recorded with ${escapeHtml(trackedPlayer)} as the tracked player are included. Reverse-oriented records are excluded. Rates show wins and attempts; optional tags describe only what was entered and their absence does not mean an event did not occur. Coaching notes are based on this local sample, not outside player data.</p>
+
+      <h2>Meetings and set scores</h2>
+      <table class="matches-table">
+        <thead><tr><th>Match date</th><th>Result</th><th>Set scores · tracked player first</th><th>Points logged</th></tr></thead>
+        <tbody>${matchRows || '<tr><td colspan="4">No matches recorded.</td></tr>'}</tbody>
+      </table>
+
+      <h2>Serve</h2>
+      <table><thead><tr><th>Statistic</th><th>${escapeHtml(trackedPlayer)}</th><th>${escapeHtml(opponent)}</th></tr></thead><tbody>${serveRows}</tbody></table>
+      <h2>Return and points</h2>
+      <table><thead><tr><th>Statistic</th><th>${escapeHtml(trackedPlayer)}</th><th>${escapeHtml(opponent)}</th></tr></thead><tbody>${returnRows}</tbody></table>
+      <p class="note">Rally-shot winner points use recorded forehand, backhand, volley, overhead, and drop-shot tags; aces are excluded. Unforced errors count tagged net, long, or wide errors that awarded the point to the opponent; forced errors and double faults are separate.</p>
+      <h2>Break points</h2>
+      <p class="note">“Missed” means a break-point opportunity was not converted. “Lost while serving” means a faced break point was not saved. Only recorded chances are included; tie-break points are excluded.</p>
+      <table><thead><tr><th>Statistic</th><th>${escapeHtml(trackedPlayer)}</th><th>${escapeHtml(opponent)}</th></tr></thead><tbody>${breakPointRows}</tbody></table>
+      <h3>${escapeHtml(trackedPlayer)} · personal average</h3>
+      <p class="note">Pooled break-point chances across ${report.personalAverageMatches} saved ${report.personalAverageMatches === 1 ? 'match' : 'matches'} where this player was recorded as the tracked player, including this pairing when present.</p>
+      <table><thead><tr><th>Statistic</th><th>Personal average</th></tr></thead><tbody>${personalBreakPointRows}</tbody></table>
+
+      <h2>Recorded point-ending tags</h2>
+      <p class="note">${report.performance.taggedPointCount} of ${insights.pointCount} points had a tag. Each row shows the tracked player's wins among points with that tag.</p>
+      <table><thead><tr><th>Tag</th><th>Occurrences</th><th>Tracked-player wins</th></tr></thead><tbody>${tagRows}</tbody></table>
+      ${contextTables}
+
+      <h2>Coaching observations</h2>
+      <ul class="feedback">${feedbackRows || '<li>More recorded points and tags are needed for an evidence-based observation.</li>'}</ul>
+      <p class="note">All figures were calculated on this device from the saved match records shown above.</p>
+    </main>
+  </body>
+</html>`;
+}

@@ -1498,6 +1498,48 @@ export default function MatchScreen() {
                 detail={`${insightsQuery.data.trackedFirstServeFaults} marked across ${insightsQuery.data.trackedServicePoints} service points`}
                 colors={colors}
               />
+              <Stat
+                label="FIRST SERVE IN"
+                value={formatPercent(performance.firstServeInPercent)}
+                detail={`${insightsQuery.data.serveStats.tracked.firstServePoints} of ${insightsQuery.data.serveStats.tracked.servicePoints} first serves`}
+                colors={colors}
+              />
+              <Stat
+                label="SECOND SERVE IN"
+                value={formatPercent(performance.secondServeInPercent)}
+                detail={`${performance.secondServeInCount} of ${performance.secondServeAttemptCount} second serves`}
+                colors={colors}
+              />
+              <Stat
+                label="RALLY SHOT WINNERS"
+                value={formatPercent(performance.rallyWinnerPercent)}
+                detail={`${performance.rallyWinnerCount} tracked-player winner tags / ${insightsQuery.data.pointCount} points · aces excluded`}
+                colors={colors}
+              />
+              <Stat
+                label="UNFORCED ERRORS"
+                value={String(performance.trackedUnforcedErrors)}
+                detail="Net, long, and wide tags; double faults separate"
+                colors={colors}
+              />
+              <Stat
+                label="ACES / SERVICE GAME"
+                value={performance.acesPerServiceGame?.toFixed(2) ?? '—'}
+                detail={`${insightsQuery.data.serveStats.tracked.aces} aces / ${insightsQuery.data.serviceGames.tracked.gamesPlayed} service games`}
+                colors={colors}
+              />
+              <Stat
+                label="ACES / SET"
+                value={performance.acesPerSet?.toFixed(2) ?? '—'}
+                detail={`${insightsQuery.data.serveStats.tracked.aces} aces / ${performance.setsWithRecordedPoints} sets with points`}
+                colors={colors}
+              />
+              <Stat
+                label="ACES / MATCH"
+                value={performance.acesPerMatch?.toFixed(2) ?? '—'}
+                detail={`${insightsQuery.data.serveStats.tracked.aces} aces in ${performance.matchesInSample} match`}
+                colors={colors}
+              />
             </View>
 
             <View style={[styles.breakPointBlock, { borderTopColor: colors.border }]}>
@@ -1518,11 +1560,33 @@ export default function MatchScreen() {
                   )}
                 </Text>
                 <Text style={[styles.breakPointLabel, { color: colors.mutedForeground }]}>
+                  Missed / created
+                </Text>
+                <Text style={[styles.breakPointValue, { color: colors.foreground }]}>
+                  {formatRate(
+                    insightsQuery.data.breakPoints.tracked.opportunities -
+                      insightsQuery.data.breakPoints.tracked.converted,
+                    insightsQuery.data.breakPoints.tracked.opportunities,
+                  )}
+                </Text>
+              </View>
+              <View style={styles.breakPointRow}>
+                <Text style={[styles.breakPointLabel, { color: colors.mutedForeground }]}>
                   Saved / faced
                 </Text>
                 <Text style={[styles.breakPointValue, { color: colors.foreground }]}>
                   {formatRate(
                     insightsQuery.data.breakPoints.tracked.saved,
+                    insightsQuery.data.breakPoints.tracked.faced,
+                  )}
+                </Text>
+                <Text style={[styles.breakPointLabel, { color: colors.mutedForeground }]}>
+                  Lost / faced
+                </Text>
+                <Text style={[styles.breakPointValue, { color: colors.foreground }]}>
+                  {formatRate(
+                    insightsQuery.data.breakPoints.tracked.faced -
+                      insightsQuery.data.breakPoints.tracked.saved,
                     insightsQuery.data.breakPoints.tracked.faced,
                   )}
                 </Text>
@@ -1541,11 +1605,33 @@ export default function MatchScreen() {
                   )}
                 </Text>
                 <Text style={[styles.breakPointLabel, { color: colors.mutedForeground }]}>
+                  Missed / created
+                </Text>
+                <Text style={[styles.breakPointValue, { color: colors.foreground }]}>
+                  {formatRate(
+                    insightsQuery.data.breakPoints.opponent.opportunities -
+                      insightsQuery.data.breakPoints.opponent.converted,
+                    insightsQuery.data.breakPoints.opponent.opportunities,
+                  )}
+                </Text>
+              </View>
+              <View style={styles.breakPointRow}>
+                <Text style={[styles.breakPointLabel, { color: colors.mutedForeground }]}>
                   Saved / faced
                 </Text>
                 <Text style={[styles.breakPointValue, { color: colors.foreground }]}>
                   {formatRate(
                     insightsQuery.data.breakPoints.opponent.saved,
+                    insightsQuery.data.breakPoints.opponent.faced,
+                  )}
+                </Text>
+                <Text style={[styles.breakPointLabel, { color: colors.mutedForeground }]}>
+                  Lost / faced
+                </Text>
+                <Text style={[styles.breakPointValue, { color: colors.foreground }]}>
+                  {formatRate(
+                    insightsQuery.data.breakPoints.opponent.faced -
+                      insightsQuery.data.breakPoints.opponent.saved,
                     insightsQuery.data.breakPoints.opponent.faced,
                   )}
                 </Text>

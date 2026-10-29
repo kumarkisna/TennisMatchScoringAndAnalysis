@@ -16,7 +16,7 @@ interface ReportMatch {
   matchStatus: 'in_progress' | 'complete';
 }
 
-const codeLabels: Record<PointCode, string> = {
+export const POINT_CODE_LABELS: Record<PointCode, string> = {
   A: 'Ace',
   F: 'Forehand winner',
   B: 'Backhand winner',
@@ -61,6 +61,12 @@ function rate(numerator: number, denominator: number): string {
   return denominator === 0
     ? '—'
     : `${numerator}/${denominator} (${exactPercent(numerator, denominator)})`;
+}
+
+function averageAces(aces: number, denominator: number, unit: string): string {
+  return denominator === 0
+    ? '—'
+    : `${(aces / denominator).toFixed(2)} (${aces} aces / ${denominator} ${unit})`;
 }
 
 function contextRows<T extends string>(
@@ -146,7 +152,7 @@ export function buildPlayerReportHtml(
           (item) => `
             <tr>
               <td><strong>${escape(item.code)}</strong></td>
-              <td>${escape(codeLabels[item.code])}</td>
+              <td>${escape(POINT_CODE_LABELS[item.code])}</td>
               <td>${item.count}</td>
               <td>${rate(item.trackedWon, item.count)}</td>
               <td>${exactPercent(item.count, summary.taggedPointCount)}</td>
@@ -154,7 +160,7 @@ export function buildPlayerReportHtml(
         )
         .join('')
     : '<tr><td colspan="5">No shot or ending tags recorded.</td></tr>';
-  const codeLegendRows = (Object.entries(codeLabels) as [PointCode, string][])
+  const codeLegendRows = (Object.entries(POINT_CODE_LABELS) as [PointCode, string][])
     .map(
       ([code, label]) => `
         <tr>
@@ -168,6 +174,15 @@ export function buildPlayerReportHtml(
     .join('');
   const trackedServe = insights.serveStats.tracked;
   const opponentServe = insights.serveStats.opponent;
+  const recordedSetCount = insights.sets.filter((set) => set.pointCount > 0).length;
+  const trackedSecondServeIn = Math.max(
+    0,
+    trackedServe.secondServePoints - trackedServe.doubleFaults,
+  );
+  const opponentSecondServeIn = Math.max(
+    0,
+    opponentServe.secondServePoints - opponentServe.doubleFaults,
+  );
   const trackedReturnWon = insights.returnPointsWon;
   const opponentReturnWon =
     trackedServe.servicePoints - trackedServe.servicePointsWon;
@@ -198,6 +213,13 @@ export function buildPlayerReportHtml(
       'First serve in',
       rate(trackedServe.firstServePoints, trackedServe.servicePoints),
       rate(opponentServe.firstServePoints, opponentServe.servicePoints),
+      '—',
+      '—',
+    ],
+    [
+      'Second serve in',
+      rate(trackedSecondServeIn, trackedServe.secondServePoints),
+      rate(opponentSecondServeIn, opponentServe.secondServePoints),
       '—',
       '—',
     ],
@@ -234,6 +256,35 @@ export function buildPlayerReportHtml(
       ),
       '86.8%',
       '94.3%',
+    ],
+    [
+      'Aces per service game',
+      averageAces(
+        trackedServe.aces,
+        insights.serviceGames.tracked.gamesPlayed,
+        'service games',
+      ),
+      averageAces(
+        opponentServe.aces,
+        insights.serviceGames.opponent.gamesPlayed,
+        'service games',
+      ),
+      '—',
+      '—',
+    ],
+    [
+      'Aces per set',
+      averageAces(trackedServe.aces, recordedSetCount, 'sets with points'),
+      averageAces(opponentServe.aces, recordedSetCount, 'sets with points'),
+      '—',
+      '—',
+    ],
+    [
+      'Aces per match',
+      averageAces(trackedServe.aces, 1, 'match'),
+      averageAces(opponentServe.aces, 1, 'match'),
+      '—',
+      '—',
     ],
     [
       'Total service points won',
@@ -307,30 +358,53 @@ export function buildPlayerReportHtml(
         )
         .join('')
     : '<tr><td colspan="3">No set data recorded.</td></tr>';
-  const breakPointRows = insights.sets.length
+  const breakPointConversionRows = insights.sets.length
     ? insights.sets
         .map(
           (set) => `
             <tr>
               <td>Set ${set.setNumber}<span class="sub">${set.format === 'match_tiebreak' ? 'Excluded · match tie-break' : `${set.isComplete ? 'Complete' : 'In progress'} · ${set.breakPoints.tracked.opportunities + set.breakPoints.opponent.opportunities} chances`}</span></td>
               <td>${rate(set.breakPoints.tracked.converted, set.breakPoints.tracked.opportunities)}</td>
-              <td>${rate(set.breakPoints.tracked.saved, set.breakPoints.tracked.faced)}</td>
+              <td>${rate(set.breakPoints.tracked.opportunities - set.breakPoints.tracked.converted, set.breakPoints.tracked.opportunities)}</td>
               <td>${rate(set.breakPoints.opponent.converted, set.breakPoints.opponent.opportunities)}</td>
+              <td>${rate(set.breakPoints.opponent.opportunities - set.breakPoints.opponent.converted, set.breakPoints.opponent.opportunities)}</td>
+            </tr>`,
+        )
+        .join('')
+    : '';
+  const breakPointDefenseRows = insights.sets.length
+    ? insights.sets
+        .map(
+          (set) => `
+            <tr>
+              <td>Set ${set.setNumber}<span class="sub">${set.format === 'match_tiebreak' ? 'Excluded · match tie-break' : `${set.isComplete ? 'Complete' : 'In progress'} · ${set.breakPoints.tracked.faced + set.breakPoints.opponent.faced} faced`}</span></td>
+              <td>${rate(set.breakPoints.tracked.saved, set.breakPoints.tracked.faced)}</td>
+              <td>${rate(set.breakPoints.tracked.faced - set.breakPoints.tracked.saved, set.breakPoints.tracked.faced)}</td>
               <td>${rate(set.breakPoints.opponent.saved, set.breakPoints.opponent.faced)}</td>
+              <td>${rate(set.breakPoints.opponent.faced - set.breakPoints.opponent.saved, set.breakPoints.opponent.faced)}</td>
             </tr>`,
         )
         .join('')
     : '';
   const matchBreakPoints = insights.breakPoints;
-  const breakPointMatchRow = `
+  const breakPointConversionMatchRow = `
     <tr class="total-row">
       <td>Match total<span class="sub">${matchBreakPoints.tracked.opportunities + matchBreakPoints.opponent.opportunities} chances · tie-break points excluded</span></td>
       <td>${rate(matchBreakPoints.tracked.converted, matchBreakPoints.tracked.opportunities)}</td>
-      <td>${rate(matchBreakPoints.tracked.saved, matchBreakPoints.tracked.faced)}</td>
+      <td>${rate(matchBreakPoints.tracked.opportunities - matchBreakPoints.tracked.converted, matchBreakPoints.tracked.opportunities)}</td>
       <td>${rate(matchBreakPoints.opponent.converted, matchBreakPoints.opponent.opportunities)}</td>
+      <td>${rate(matchBreakPoints.opponent.opportunities - matchBreakPoints.opponent.converted, matchBreakPoints.opponent.opportunities)}</td>
+    </tr>`;
+  const breakPointDefenseMatchRow = `
+    <tr class="total-row">
+      <td>Match total<span class="sub">${matchBreakPoints.tracked.faced + matchBreakPoints.opponent.faced} break points faced · tie-break points excluded</span></td>
+      <td>${rate(matchBreakPoints.tracked.saved, matchBreakPoints.tracked.faced)}</td>
+      <td>${rate(matchBreakPoints.tracked.faced - matchBreakPoints.tracked.saved, matchBreakPoints.tracked.faced)}</td>
       <td>${rate(matchBreakPoints.opponent.saved, matchBreakPoints.opponent.faced)}</td>
+      <td>${rate(matchBreakPoints.opponent.faced - matchBreakPoints.opponent.saved, matchBreakPoints.opponent.faced)}</td>
     </tr>`;
   const taggedPercent = exactPercent(summary.taggedPointCount, insights.pointCount);
+  const rallyWinnerRate = rate(summary.rallyWinnerCount, insights.pointCount);
   const directionRows = contextRows(
     summary.shotDirections,
     'No tracked-player shot directions recorded.',
@@ -495,6 +569,16 @@ export function buildPlayerReportHtml(
         <div class="tile-value">${taggedPercent}</div>
         <div class="tile-detail">${summary.taggedPointCount} of ${insights.pointCount} points tagged</div>
       </div>
+      <div class="tile">
+        <div class="tile-label">RALLY SHOT WINNERS</div>
+        <div class="tile-value">${rallyWinnerRate}</div>
+        <div class="tile-detail">${summary.rallyWinnerCount} tracked-player winner tags / ${insights.pointCount} points · aces excluded</div>
+      </div>
+      <div class="tile">
+        <div class="tile-label">UNFORCED ERRORS</div>
+        <div class="tile-value">${summary.trackedUnforcedErrors}</div>
+        <div class="tile-detail">Net, long, and wide tags; double faults separate</div>
+      </div>
     </div>
 
     <div class="summary" style="margin-top: 12px">
@@ -537,13 +621,21 @@ export function buildPlayerReportHtml(
     </table>
 
     <h2>Break-point pressure</h2>
+    <h3>Returning · opportunities created</h3>
     <table>
       <thead>
-        <tr><th>Set</th><th>${escape(match.trackedPlayer)} converted / created</th><th>${escape(match.trackedPlayer)} saved / faced</th><th>${escape(match.opponent)} converted / created</th><th>${escape(match.opponent)} saved / faced</th></tr>
+        <tr><th>Set</th><th>${escape(match.trackedPlayer)} converted</th><th>${escape(match.trackedPlayer)} missed</th><th>${escape(match.opponent)} converted</th><th>${escape(match.opponent)} missed</th></tr>
       </thead>
-      <tbody>${breakPointRows}${breakPointMatchRow}</tbody>
+      <tbody>${breakPointConversionRows}${breakPointConversionMatchRow}</tbody>
     </table>
-    <p class="note" style="margin-top: 7px">Each value shows count/available chances and percentage. Repeated advantages in one game count as separate chances; tie-break points and match tie-break sets are excluded.</p>
+    <h3>Serving · break points faced</h3>
+    <table>
+      <thead>
+        <tr><th>Set</th><th>${escape(match.trackedPlayer)} saved</th><th>${escape(match.trackedPlayer)} lost</th><th>${escape(match.opponent)} saved</th><th>${escape(match.opponent)} lost</th></tr>
+      </thead>
+      <tbody>${breakPointDefenseRows}${breakPointDefenseMatchRow}</tbody>
+    </table>
+    <p class="note" style="margin-top: 7px">Each value shows count/available chances and percentage. Missed = created opportunities not converted; lost = faced break points not saved. Repeated advantages in one game count separately. Tie-break points and match tie-break sets are excluded.</p>
 
     <h2>Coaching notes from this sample</h2>
     <ul class="feedback">${feedbackRows}</ul>

@@ -12,6 +12,7 @@ export interface LocalPlayer {
   playingHand: PlayerHand | null;
   heightCm: number | null;
   weightKg: number | null;
+  phoneNumbers: string[];
   profileUrls: string[];
   createdAt: string;
 }
@@ -28,6 +29,7 @@ export interface LocalPlayerDetailsInput {
   playingHand?: PlayerHand | null;
   heightCm?: string | number | null;
   weightKg?: string | number | null;
+  phoneNumbers?: string[] | null;
   profileUrls?: string[] | null;
 }
 
@@ -85,6 +87,9 @@ async function readPlayers(): Promise<LocalPlayer[]> {
         (player.profileUrls !== undefined &&
           (!Array.isArray(player.profileUrls) ||
             player.profileUrls.some((url: unknown) => typeof url !== 'string'))) ||
+        (player.phoneNumbers !== undefined &&
+          (!Array.isArray(player.phoneNumbers) ||
+            player.phoneNumbers.some((phone: unknown) => typeof phone !== 'string'))) ||
         typeof player.createdAt !== 'string',
     )
   ) {
@@ -108,6 +113,7 @@ async function readPlayers(): Promise<LocalPlayer[]> {
         : null,
     heightCm: typeof player.heightCm === 'number' ? player.heightCm : null,
     weightKg: typeof player.weightKg === 'number' ? player.weightKg : null,
+    phoneNumbers: normalizePhoneNumbers(player.phoneNumbers ?? []),
     profileUrls: normalizeProfileUrls(player.profileUrls ?? []),
   })) as LocalPlayer[];
 }
@@ -161,10 +167,9 @@ export async function addLocalPlayer(
       (player) => player.name.toLocaleLowerCase() === normalizedName.toLocaleLowerCase(),
     );
     if (existing) {
-      if (!(await AsyncStorage.getItem(ACTIVE_PLAYER_STORAGE_KEY))) {
-        await AsyncStorage.setItem(ACTIVE_PLAYER_STORAGE_KEY, existing.id);
-      }
-      return existing;
+      throw new Error(
+        'A player with that name is already saved. Edit the existing player to add or change profile links.',
+      );
     }
 
     const player: LocalPlayer = {
@@ -347,6 +352,37 @@ function normalizeProfileUrls(values: string[] | null | undefined): string[] {
   return urls;
 }
 
+function normalizePhoneNumbers(values: string[] | null | undefined): string[] {
+  const phoneNumbers: string[] = [];
+  const seen = new Set<string>();
+
+  for (const value of values ?? []) {
+    const text = value.trim();
+    if (!text) continue;
+    const digits = text.replace(/\D/g, '');
+    const plusCount = (text.match(/\+/g) ?? []).length;
+    if (
+      text.length > 40 ||
+      !/^[+\d().\s-]+$/.test(text) ||
+      (plusCount > 0 && (!text.trimStart().startsWith('+') || plusCount > 1)) ||
+      digits.length < 7 ||
+      digits.length > 15
+    ) {
+      throw new Error(
+        'Enter a valid phone number using 7–15 digits and standard phone punctuation.',
+      );
+    }
+
+    if (seen.has(digits)) {
+      throw new Error('Each phone number must be unique.');
+    }
+    seen.add(digits);
+    phoneNumbers.push(text);
+  }
+
+  return phoneNumbers;
+}
+
 function normalizeProfileDetails(details: LocalPlayerDetailsInput): Omit<LocalPlayer, 'id' | 'name' | 'createdAt'> {
   const normalizeText = (value: string | null | undefined, label: string, maxLength = 80) => {
     const text = value?.trim() ?? '';
@@ -389,6 +425,7 @@ function normalizeProfileDetails(details: LocalPlayerDetailsInput): Omit<LocalPl
     playingHand,
     heightCm: normalizeInteger(details.heightCm, 'Height in centimeters', 50, 250),
     weightKg: normalizeInteger(details.weightKg, 'Weight in kilograms', 10, 300),
+    phoneNumbers: normalizePhoneNumbers(details.phoneNumbers),
     profileUrls: normalizeProfileUrls(details.profileUrls),
   };
 }
