@@ -125,74 +125,127 @@ export function buildPlayerReportHtml(
   const trackedReturnWon = insights.returnPointsWon;
   const opponentReturnWon =
     trackedServe.servicePoints - trackedServe.servicePointsWon;
-  const serveRowsData: [string, number, number, number, number][] = [
+  const trackedFirstServeReturnWon =
+    opponentServe.firstServePoints - opponentServe.firstServePointsWon;
+  const opponentFirstServeReturnWon =
+    trackedServe.firstServePoints - trackedServe.firstServePointsWon;
+  const trackedSecondServeReturnWon =
+    opponentServe.secondServePoints - opponentServe.secondServePointsWon;
+  const opponentSecondServeReturnWon =
+    trackedServe.secondServePoints - trackedServe.secondServePointsWon;
+  const trackedReturnGamesPlayed = insights.serviceGames.opponent.gamesPlayed;
+  const trackedReturnGamesWon =
+    trackedReturnGamesPlayed - insights.serviceGames.opponent.gamesWon;
+  const opponentReturnGamesPlayed = insights.serviceGames.tracked.gamesPlayed;
+  const opponentReturnGamesWon =
+    opponentReturnGamesPlayed - insights.serviceGames.tracked.gamesWon;
+  const serveRows = [
+    ['Aces', String(trackedServe.aces), String(opponentServe.aces), '—', '—'],
+    [
+      'Double faults',
+      String(trackedServe.doubleFaults),
+      String(opponentServe.doubleFaults),
+      '—',
+      '—',
+    ],
     [
       'First serve in',
-      trackedServe.firstServePoints,
-      trackedServe.servicePoints,
-      opponentServe.firstServePoints,
-      opponentServe.servicePoints,
+      rate(trackedServe.firstServePoints, trackedServe.servicePoints),
+      rate(opponentServe.firstServePoints, opponentServe.servicePoints),
+      '—',
+      '—',
     ],
     [
       'First-serve points won',
-      trackedServe.firstServePointsWon,
-      trackedServe.firstServePoints,
-      opponentServe.firstServePointsWon,
-      opponentServe.firstServePoints,
+      rate(trackedServe.firstServePointsWon, trackedServe.firstServePoints),
+      rate(opponentServe.firstServePointsWon, opponentServe.firstServePoints),
+      '75.1%',
+      '79.2%',
     ],
     [
       'Second-serve points won',
-      trackedServe.secondServePointsWon,
-      trackedServe.secondServePoints,
-      opponentServe.secondServePointsWon,
-      opponentServe.secondServePoints,
+      rate(trackedServe.secondServePointsWon, trackedServe.secondServePoints),
+      rate(opponentServe.secondServePointsWon, opponentServe.secondServePoints),
+      '56.4%',
+      '61.7%',
     ],
     [
-      'All service points won',
-      trackedServe.servicePointsWon,
-      trackedServe.servicePoints,
-      opponentServe.servicePointsWon,
-      opponentServe.servicePoints,
+      'Service games played',
+      String(insights.serviceGames.tracked.gamesPlayed),
+      String(insights.serviceGames.opponent.gamesPlayed),
+      '—',
+      '—',
     ],
     [
-      'Return points won',
-      trackedReturnWon,
-      insights.trackedReturnPoints,
-      opponentReturnWon,
-      trackedServe.servicePoints,
+      'Service games won',
+      rate(
+        insights.serviceGames.tracked.gamesWon,
+        insights.serviceGames.tracked.gamesPlayed,
+      ),
+      rate(
+        insights.serviceGames.opponent.gamesWon,
+        insights.serviceGames.opponent.gamesPlayed,
+      ),
+      '86.8%',
+      '94.3%',
     ],
     [
-      'First-serve faults',
-      trackedServe.firstServeFaults,
-      trackedServe.servicePoints,
-      opponentServe.firstServeFaults,
-      opponentServe.servicePoints,
+      'Total service points won',
+      rate(trackedServe.servicePointsWon, trackedServe.servicePoints),
+      rate(opponentServe.servicePointsWon, opponentServe.servicePoints),
+      '—',
+      '—',
     ],
-  ];
-  const serveCountRows = [
-    { label: 'Aces', tracked: trackedServe.aces, opponent: opponentServe.aces },
-    {
-      label: 'Double faults',
-      tracked: trackedServe.doubleFaults,
-      opponent: opponentServe.doubleFaults,
-    },
   ]
     .map(
-      (item) => `
+      ([label, tracked, opponent, season, event]) => `
         <tr>
-          <td>${item.label}</td>
-          <td>${item.tracked}</td>
-          <td>${item.opponent}</td>
+          <td>${escape(label ?? '')}</td>
+          <td>${escape(tracked ?? '—')}</td>
+          <td>${escape(opponent ?? '—')}</td>
+          <td>${escape(season ?? '—')}</td>
+          <td>${escape(event ?? '—')}</td>
         </tr>`,
     )
     .join('');
-  const serveRows = serveRowsData
+  const returnRows = [
+    [
+      'First-serve return points won',
+      rate(trackedFirstServeReturnWon, opponentServe.firstServePoints),
+      rate(opponentFirstServeReturnWon, trackedServe.firstServePoints),
+    ],
+    [
+      'Second-serve return points won',
+      rate(trackedSecondServeReturnWon, opponentServe.secondServePoints),
+      rate(opponentSecondServeReturnWon, trackedServe.secondServePoints),
+    ],
+    [
+      'Return games played',
+      String(trackedReturnGamesPlayed),
+      String(opponentReturnGamesPlayed),
+    ],
+    [
+      'Return games won',
+      rate(trackedReturnGamesWon, trackedReturnGamesPlayed),
+      rate(opponentReturnGamesWon, opponentReturnGamesPlayed),
+    ],
+    [
+      'Return points won',
+      rate(trackedReturnWon, insights.trackedReturnPoints),
+      rate(opponentReturnWon, trackedServe.servicePoints),
+    ],
+    [
+      'Total points won',
+      rate(insights.trackedPointsWon, insights.pointCount),
+      rate(insights.pointCount - insights.trackedPointsWon, insights.pointCount),
+    ],
+  ]
     .map(
-      ([label, trackedWon, trackedTotal, opponentWon, opponentTotal]) => `
+      ([label, tracked, opponent]) => `
         <tr>
-          <td>${label}</td>
-          <td>${rate(trackedWon, trackedTotal)}</td>
-          <td>${rate(opponentWon, opponentTotal)}</td>
+          <td>${escape(label ?? '')}</td>
+          <td>${escape(tracked ?? '—')}</td>
+          <td>${escape(opponent ?? '—')}</td>
         </tr>`,
     )
     .join('');
@@ -253,6 +306,16 @@ export function buildPlayerReportHtml(
       tr { break-inside: avoid; page-break-inside: avoid; }
       th { background: #245d4b; color: white; text-align: left; }
       th, td { border-bottom: 1px solid #dcded4; padding: 7px 5px; vertical-align: top; }
+      .metric-table { font-size: 8px; table-layout: fixed; }
+      .metric-table th, .metric-table td { overflow-wrap: anywhere; padding: 6px 4px; }
+      .serve-table th:first-child, .serve-table td:first-child { width: 31%; }
+      .serve-table th:nth-child(2), .serve-table td:nth-child(2),
+      .serve-table th:nth-child(3), .serve-table td:nth-child(3) { width: 21%; }
+      .serve-table th:nth-child(4), .serve-table td:nth-child(4) { width: 10%; }
+      .serve-table th:nth-child(5), .serve-table td:nth-child(5) { width: 17%; }
+      .return-table th:first-child, .return-table td:first-child { width: 42%; }
+      .return-table th:nth-child(2), .return-table td:nth-child(2),
+      .return-table th:nth-child(3), .return-table td:nth-child(3) { width: 29%; }
       .sub { color: #718078; display: block; font-size: 8px; margin-top: 3px; }
       .note { color: #718078; font-size: 8px; line-height: 1.5; margin-top: 20px; }
       .note a { color: #245d4b; }
@@ -306,12 +369,29 @@ export function buildPlayerReportHtml(
         : `${escape(match.trackedPlayer)} won ${rate(insights.trackedPointsWon, insights.pointCount)} of logged points. The serve rate was ${rate(insights.servicePointsWon, insights.trackedServicePoints)} and the return rate was ${rate(insights.returnPointsWon, insights.trackedReturnPoints)}.`}
     </div>
 
-    <h2>Serve and return comparison</h2>
-    <table>
+    <h2>Serve</h2>
+    <table class="metric-table serve-table">
       <thead>
-        <tr><th>Metric</th><th>${escape(match.trackedPlayer)}</th><th>${escape(match.opponent)}</th></tr>
+        <tr>
+          <th>Stat</th>
+          <th>${escape(match.trackedPlayer)} · match</th>
+          <th>${escape(match.opponent)} · match</th>
+          <th>2026</th>
+          <th>2026 Cincinnati</th>
+        </tr>
       </thead>
-      <tbody>${serveCountRows}${serveRows}</tbody>
+      <tbody>${serveRows}</tbody>
+    </table>
+    <p class="context-coverage">
+      The 2026 comparison values were supplied by you. Service-game percentages use completed regular games; tie-breaks are excluded.
+    </p>
+
+    <h2>Return</h2>
+    <table class="metric-table return-table">
+      <thead>
+        <tr><th>Stat</th><th>${escape(match.trackedPlayer)} · match</th><th>${escape(match.opponent)} · match</th></tr>
+      </thead>
+      <tbody>${returnRows}</tbody>
     </table>
     <h2>Set scores and winners</h2>
     <table>

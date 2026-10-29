@@ -164,6 +164,7 @@ export interface LocalInsights {
   returnPointsWon: number;
   servicePointsWon: number;
   serveStats: Record<PlayerSide, ServeSideStats>;
+  serviceGames: Record<PlayerSide, ServiceGameStats>;
   shotDirections: LocalContextInsight<ShotDirection>[];
   rallyLengths: LocalContextInsight<RallyLength>[];
   sets: LocalSetInsights[];
@@ -179,6 +180,11 @@ export interface ServeSideStats {
   secondServePointsWon: number;
   aces: number;
   doubleFaults: number;
+}
+
+export interface ServiceGameStats {
+  gamesPlayed: number;
+  gamesWon: number;
 }
 
 export interface LocalSetInsights {
@@ -957,6 +963,10 @@ export async function getLocalInsights(
       doubleFaults: 0,
     },
   };
+  const serviceGames: Record<PlayerSide, ServiceGameStats> = {
+    tracked: { gamesPlayed: 0, gamesWon: 0 },
+    opponent: { gamesPlayed: 0, gamesWon: 0 },
+  };
   let trackedPointsWon = 0;
   let opponentPointsWon = 0;
   let firstServeFaults = 0;
@@ -1021,6 +1031,54 @@ export async function getLocalInsights(
     }
   }
 
+  for (const set of setHistory) {
+    const games = new Map<
+      number,
+      { server: PlayerSide; trackedPoints: number; opponentPoints: number }
+    >();
+    for (const point of set.points) {
+      if (point.isTiebreak) continue;
+      const game = games.get(point.gameNumber) ?? {
+        server: point.server,
+        trackedPoints: 0,
+        opponentPoints: 0,
+      };
+      if (point.winner === 'tracked') game.trackedPoints += 1;
+      else game.opponentPoints += 1;
+      games.set(point.gameNumber, game);
+    }
+
+    const gameNumbers = [...games.keys()].sort((a, b) => a - b);
+    for (let index = 0; index < gameNumbers.length; index += 1) {
+      const gameNumber = gameNumbers[index];
+      if (gameNumber === undefined) continue;
+      const game = games.get(gameNumber);
+      if (!game) continue;
+      const isLastGame = index === gameNumbers.length - 1;
+      const currentGameHasNotStarted =
+        set.score.trackedPoints === '0' && set.score.opponentPoints === '0';
+      const isComplete =
+        !isLastGame ||
+        set.score.isComplete ||
+        set.score.isTiebreak ||
+        currentGameHasNotStarted;
+      if (!isComplete) continue;
+
+      const pointDifference = game.trackedPoints - game.opponentPoints;
+      if (
+        Math.max(game.trackedPoints, game.opponentPoints) < 4 ||
+        Math.abs(pointDifference) < 2
+      ) {
+        continue;
+      }
+      const gameWinner: PlayerSide =
+        pointDifference > 0 ? 'tracked' : 'opponent';
+      const serverStats = serviceGames[game.server];
+      serverStats.gamesPlayed += 1;
+      if (gameWinner === game.server) serverStats.gamesWon += 1;
+    }
+  }
+
   const sets: LocalSetInsights[] = setHistory.map((set) => {
     let setTrackedPointsWon = 0;
     let setServicePoints = 0;
@@ -1079,6 +1137,7 @@ export async function getLocalInsights(
     returnPointsWon,
     servicePointsWon,
     serveStats,
+    serviceGames,
     shotDirections: [...shotDirectionCounts.entries()].map(([value, stats]) => ({
       value,
       ...stats,

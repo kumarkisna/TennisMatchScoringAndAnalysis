@@ -5,6 +5,7 @@ import {
   type LocalSetInsights,
   type PointCode,
   type RallyLength,
+  type ServiceGameStats,
   type ServeSideStats,
   type ShotDirection,
 } from '@/lib/local-matches';
@@ -75,6 +76,7 @@ export interface PlayerReportInsights {
   trackedFirstServeFaults: number;
   codes: { code: string; count: number; trackedWon: number }[];
   serveStats: Record<'tracked' | 'opponent', ServeSideStats>;
+  serviceGames: Record<'tracked' | 'opponent', ServiceGameStats>;
   shotDirections: LocalContextInsight<ShotDirection>[];
   rallyLengths: LocalContextInsight<RallyLength>[];
   sets: LocalSetInsights[];
