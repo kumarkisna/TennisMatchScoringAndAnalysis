@@ -210,7 +210,8 @@ export default function MatchScreen() {
   const [isPointContextExpanded, setIsPointContextExpanded] = useState(false);
   const [shotDirection, setShotDirection] = useState<ShotDirection | null>(null);
   const [rallyLength, setRallyLength] = useState<RallyLength | null>(null);
-  const [isExportingReport, setIsExportingReport] = useState(false);
+  const [reportAction, setReportAction] = useState<'preview' | 'share' | null>(null);
+  const [reviewedReportVersion, setReviewedReportVersion] = useState<string | null>(null);
   const [reportExportError, setReportExportError] = useState('');
   const [customTiebreakTarget, setCustomTiebreakTarget] = useState('');
   const [selectedReviewSetNumber, setSelectedReviewSetNumber] = useState<number | null>(null);
@@ -279,6 +280,13 @@ export default function MatchScreen() {
     },
   });
   const match = matchQuery.data;
+  const reportVersion =
+    match && insightsQuery.data
+      ? `${match.id}:${match.updatedAt}:${insightsQuery.dataUpdatedAt}`
+      : null;
+  const hasReviewedReport =
+    reportVersion !== null && reviewedReportVersion === reportVersion;
+  const isReportBusy = reportAction !== null;
   const setHistory = match ? getLocalSetHistory(match) : [];
   const currentSet = setHistory.find((set) => set.isCurrent);
   const displayedSet =
@@ -381,35 +389,55 @@ export default function MatchScreen() {
     );
   }
 
-  async function exportPlayerReport() {
-    if (!match || !insightsQuery.data || isExportingReport) return;
+  function buildCurrentReportHtml() {
+    if (!match || !insightsQuery.data) return null;
+    return buildPlayerReportHtml(
+      match,
+      insightsQuery.data,
+      summarizePlayerPerformance(insightsQuery.data),
+    );
+  }
 
-    setIsExportingReport(true);
+  async function previewPlayerReport() {
+    const html = buildCurrentReportHtml();
+    if (!html || !reportVersion || insightsQuery.isFetching || isReportBusy) return;
+
+    setReportAction('preview');
     setReportExportError('');
-    const summary = summarizePlayerPerformance(insightsQuery.data);
-    const html = buildPlayerReportHtml(match, insightsQuery.data, summary);
-
     try {
-      if (Platform.OS === 'web') {
-        await Print.printAsync({ html });
-      } else {
-        const file = await Print.printToFileAsync({ html });
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(file.uri, {
-            mimeType: 'application/pdf',
-            dialogTitle: 'Save or share player report',
-            UTI: 'com.adobe.pdf',
-          });
-        } else {
-          await Print.printAsync({ html });
-        }
+      await Print.printAsync({ html });
+      setReviewedReportVersion(reportVersion);
+    } catch (error) {
+      setReportExportError(
+        error instanceof Error ? error.message : 'Could not open the report preview.',
+      );
+    } finally {
+      setReportAction(null);
+    }
+  }
+
+  async function sharePlayerReport() {
+    const html = buildCurrentReportHtml();
+    if (!html || !hasReviewedReport || insightsQuery.isFetching || isReportBusy) return;
+
+    setReportAction('share');
+    setReportExportError('');
+    try {
+      if (!(await Sharing.isAvailableAsync())) {
+        throw new Error('Sharing is not available on this device.');
       }
+      const file = await Print.printToFileAsync({ html });
+      await Sharing.shareAsync(file.uri, {
+        mimeType: 'application/pdf',
+        dialogTitle: 'Share player report',
+        UTI: 'com.adobe.pdf',
+      });
     } catch (error) {
       setReportExportError(
         error instanceof Error ? error.message : 'Could not prepare the PDF report.',
       );
     } finally {
-      setIsExportingReport(false);
+      setReportAction(null);
     }
   }
 
@@ -1366,35 +1394,59 @@ export default function MatchScreen() {
         </ScrollView>
 
         <View style={styles.sectionHeader}>
-          <View>
+          <View style={styles.reportHeading}>
             <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Player report</Text>
             <Text style={[styles.sectionCaption, { color: colors.mutedForeground }]}>
               {insightsQuery.data?.pointCount ?? match.points.length} points across {setHistory.length} sets · calculated on this device
             </Text>
           </View>
-          <Pressable
-            testID="button-export-player-report"
-            accessibilityRole="button"
-            accessibilityLabel="Print or save player report as PDF"
-            disabled={isExportingReport || !insightsQuery.data}
-            onPress={() => void exportPlayerReport()}
-            style={[
-              styles.exportButton,
-              {
-                backgroundColor: colors.secondary,
-                opacity: isExportingReport || !insightsQuery.data ? 0.55 : 1,
-              },
-            ]}
-          >
-            {isExportingReport ? (
-              <ActivityIndicator size="small" color={colors.secondaryForeground} />
-            ) : (
-              <Ionicons name="print-outline" size={15} color={colors.secondaryForeground} />
-            )}
-            <Text style={[styles.exportButtonText, { color: colors.secondaryForeground }]}>
-              {isExportingReport ? 'Preparing…' : 'PDF report'}
-            </Text>
-          </Pressable>
+          <View style={styles.reportActions}>
+            <Pressable
+              testID="button-export-player-report"
+              accessibilityRole="button"
+              accessibilityLabel="Review report and open PDF save options"
+              disabled={isReportBusy || !insightsQuery.data || insightsQuery.isFetching}
+              onPress={() => void previewPlayerReport()}
+              style={[
+                styles.exportButton,
+                {
+                  backgroundColor: colors.secondary,
+                  opacity:
+                    isReportBusy || !insightsQuery.data || insightsQuery.isFetching
+                      ? 0.55
+                      : 1,
+                },
+              ]}
+            >
+              {reportAction === 'preview' ? (
+                <ActivityIndicator size="small" color={colors.secondaryForeground} />
+              ) : (
+                <Ionicons name="print-outline" size={15} color={colors.secondaryForeground} />
+              )}
+              <Text style={[styles.exportButtonText, { color: colors.secondaryForeground }]}>
+                {reportAction === 'preview' ? 'Opening…' : 'Review / save'}
+              </Text>
+            </Pressable>
+            {hasReviewedReport && Platform.OS !== 'web' ? (
+              <Pressable
+                testID="button-share-player-report"
+                accessibilityRole="button"
+                accessibilityLabel="Share reviewed player report as PDF"
+                disabled={isReportBusy}
+                onPress={() => void sharePlayerReport()}
+                style={[
+                  styles.shareReportIcon,
+                  { opacity: isReportBusy ? 0.55 : 1 },
+                ]}
+              >
+                {reportAction === 'share' ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Ionicons name="share-outline" size={18} color={colors.primary} />
+                )}
+              </Pressable>
+            ) : null}
+          </View>
         </View>
 
         {reportExportError ? (
@@ -2108,10 +2160,13 @@ const styles = StyleSheet.create({
   mutationError: { marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 7 },
   mutationErrorText: { flex: 1, fontFamily: 'DMSans_500Medium', fontSize: 11 },
   sectionHeader: { marginTop: 25, marginBottom: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  reportHeading: { flex: 1, minWidth: 0 },
+  reportActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   sectionTitle: { fontFamily: 'Manrope_700Bold', fontSize: 18, letterSpacing: -0.4 },
   sectionCaption: { marginTop: 3, fontFamily: 'DMSans_400Regular', fontSize: 10 },
   exportButton: { minHeight: 36, borderRadius: 8, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 6 },
   exportButtonText: { fontFamily: 'DMSans_700Bold', fontSize: 11 },
+  shareReportIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
   exportError: { marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 7 },
   matrixLegend: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   legendDot: { width: 7, height: 7, borderRadius: 4, marginLeft: 3 },

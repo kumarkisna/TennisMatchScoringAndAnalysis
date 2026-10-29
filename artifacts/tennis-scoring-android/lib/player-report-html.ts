@@ -14,7 +14,6 @@ interface ReportMatch {
   opponent: string;
   surface: string;
   matchStatus: 'in_progress' | 'complete';
-  score?: { winner: 'tracked' | 'opponent' | null };
 }
 
 const codeLabels: Record<PointCode, string> = {
@@ -94,18 +93,45 @@ function setScore(set: PlayerReportInsights['sets'][number]): string {
     : games;
 }
 
+function setWinnerSide(
+  set: PlayerReportInsights['sets'][number],
+): 'tracked' | 'opponent' | null {
+  if (!set.isComplete) return null;
+  const trackedScore =
+    set.format === 'match_tiebreak' ? set.trackedTiebreakPoints : set.trackedGames;
+  const opponentScore =
+    set.format === 'match_tiebreak' ? set.opponentTiebreakPoints : set.opponentGames;
+  if (trackedScore === opponentScore) return null;
+  return trackedScore > opponentScore ? 'tracked' : 'opponent';
+}
+
 function setWinnerLabel(
   set: PlayerReportInsights['sets'][number],
   trackedPlayer: string,
   opponent: string,
 ): string {
   if (!set.isComplete) return 'In progress';
-  if (set.format === 'match_tiebreak') {
-    return set.trackedTiebreakPoints > set.opponentTiebreakPoints
-      ? trackedPlayer
-      : opponent;
+  const winner = setWinnerSide(set);
+  if (!winner) return 'Not determined';
+  return winner === 'tracked' ? trackedPlayer : opponent;
+}
+
+function matchWinnerLabel(
+  match: ReportMatch,
+  sets: PlayerReportInsights['sets'],
+): string {
+  if (match.matchStatus !== 'complete') return 'In progress';
+  const setWins = { tracked: 0, opponent: 0 };
+  for (const set of sets) {
+    const winner = setWinnerSide(set);
+    if (winner) setWins[winner] += 1;
   }
-  return set.trackedGames > set.opponentGames ? trackedPlayer : opponent;
+  if (setWins.tracked === setWins.opponent) {
+    return 'Complete · no set majority';
+  }
+  return setWins.tracked > setWins.opponent
+    ? match.trackedPlayer
+    : match.opponent;
 }
 
 export function buildPlayerReportHtml(
@@ -304,6 +330,31 @@ export function buildPlayerReportHtml(
     summary.rallyLengths,
     'No rally-length tags recorded.',
   );
+  const contextSections =
+    summary.shotDirectionTaggedCount === 0 &&
+    summary.rallyLengthTaggedCount === 0
+      ? '<p class="context-coverage">No shot-direction or rally-length tags were recorded. Add these optional tags during scoring to see their breakdowns.</p>'
+      : `
+        <h3>Tracked-player shot direction</h3>
+        ${
+          summary.shotDirectionTaggedCount === 0
+            ? '<p class="context-coverage">No shot directions recorded.</p>'
+            : `<p class="context-coverage">${summary.shotDirectionTaggedCount} of ${insights.pointCount} points tagged with direction</p>
+               <table>
+                 <thead><tr><th>Direction</th><th>Tagged points</th><th>Tracked-player point win rate</th></tr></thead>
+                 <tbody>${directionRows}</tbody>
+               </table>`
+        }
+        <h3>Rally length</h3>
+        ${
+          summary.rallyLengthTaggedCount === 0
+            ? '<p class="context-coverage">No rally lengths recorded.</p>'
+            : `<p class="context-coverage">${summary.rallyLengthTaggedCount} of ${insights.pointCount} points tagged with rally length</p>
+               <table>
+                 <thead><tr><th>Length (shots)</th><th>Tagged points</th><th>Tracked-player point win rate</th></tr></thead>
+                 <tbody>${rallyRows}</tbody>
+               </table>`
+        }`;
   const pointsWonTile = rate(insights.trackedPointsWon, insights.pointCount);
   const serviceWonTile = rate(insights.servicePointsWon, insights.trackedServicePoints);
   const returnWonTile = rate(insights.returnPointsWon, insights.trackedReturnPoints);
@@ -311,14 +362,7 @@ export function buildPlayerReportHtml(
   const round = match.round?.trim() || 'Not specified';
   const coach = match.chairCoach?.trim() || 'Not specified';
   const reportDate = formatReportDate(match.matchDate);
-  const matchWinner =
-    match.score?.winner === 'tracked'
-      ? match.trackedPlayer
-      : match.score?.winner === 'opponent'
-        ? match.opponent
-        : match.matchStatus === 'complete'
-          ? 'Not recorded'
-          : 'In progress';
+  const matchWinner = matchWinnerLabel(match, insights.sets);
 
   return `<!doctype html>
 <html>
@@ -329,7 +373,8 @@ export function buildPlayerReportHtml(
     <style>
       @page { size: A4; margin: 0; }
       * { box-sizing: border-box; }
-      body { color: #183a30; font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 14mm; }
+      body { color: #183a30; font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 0; }
+      .report-page { padding: 14mm; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
       .eyebrow { color: #a45c45; font-size: 10px; font-weight: 700; letter-spacing: 2px; }
       .report-title { color: #183a30; font-size: 23px; letter-spacing: -0.3px; margin: 5px 0 14px; }
       .match-heading { align-items: stretch; border-bottom: 1px solid #dcded4; display: grid; gap: 12px; grid-template-columns: 1fr auto 1fr; padding: 0 0 15px; }
@@ -352,6 +397,8 @@ export function buildPlayerReportHtml(
       .summary { background: #f2f1e9; border-left: 3px solid #245d4b; font-size: 11px; line-height: 1.5; padding: 10px 13px; }
       .feedback { background: #f2f1e9; border-left: 3px solid #a45c45; margin-top: 8px; padding: 8px 13px; }
       .feedback li { font-size: 10px; line-height: 1.5; margin: 4px 0; }
+      .match-heading, .date-result, .meta, .stats, .summary, .feedback { break-inside: avoid; page-break-inside: avoid; }
+      p, li { orphans: 2; widows: 2; }
       table { border-collapse: collapse; break-inside: auto; font-size: 9px; width: 100%; }
       thead { display: table-header-group; }
       tr { break-inside: avoid; page-break-inside: avoid; }
@@ -370,14 +417,15 @@ export function buildPlayerReportHtml(
       .sub { color: #718078; display: block; font-size: 8px; margin-top: 3px; }
       .total-row { background: #f2f1e9; font-weight: 700; }
       .trend-note { background: #f7f4eb; border-radius: 6px; color: #53685f; font-size: 10px; line-height: 1.5; margin: 9px 0 0; padding: 9px 11px; }
-      .note { color: #718078; font-size: 8px; line-height: 1.5; margin-top: 20px; }
+      .note { break-inside: avoid; color: #718078; font-size: 8px; line-height: 1.5; margin-top: 8px; page-break-inside: avoid; }
       .note a { color: #245d4b; }
       h3 { break-after: avoid; color: #183a30; font-size: 11px; margin: 14px 0 6px; }
       .context-coverage { color: #60746c; font-size: 9px; margin: 3px 0 7px; }
-      @media print { html, body { margin: 0; } body { padding: 14mm; } }
+      @media print { html, body { margin: 0; } .report-page { padding: 14mm; -webkit-box-decoration-break: clone; box-decoration-break: clone; } }
     </style>
   </head>
   <body>
+    <main class="report-page">
     <div class="eyebrow">PLAYER DEVELOPMENT · LOCAL REPORT</div>
     <h1 class="report-title">Tennis Match Report</h1>
     <div class="match-heading">
@@ -397,7 +445,7 @@ export function buildPlayerReportHtml(
         <span class="date-result-value">${escape(reportDate)}</span>
       </div>
       <div class="date-result-item">
-        <span class="date-result-label">MATCH WINNER</span>
+        <span class="date-result-label">MATCH RESULT</span>
         <span class="date-result-value">${escape(matchWinner)}</span>
       </div>
     </div>
@@ -410,6 +458,9 @@ export function buildPlayerReportHtml(
       <div><strong>Status:</strong> ${match.matchStatus === 'complete' ? 'Complete' : 'In progress'}</div>
       <div><strong>Points logged:</strong> ${insights.pointCount}</div>
     </div>
+    <p class="note">
+      <strong>Report basis:</strong> Generated offline from match points saved on this device. Rates include denominators; small samples are directional, not conclusions. Break-point counts are reconstructed from regular games; standard tie-break points and match tie-break sets are excluded. The 2026 and 2026 Cincinnati comparison figures are user-provided; no online data is used.
+    </p>
 
     <h2>Match performance at a glance</h2>
     <div class="stats">
@@ -498,24 +549,8 @@ export function buildPlayerReportHtml(
       Direction records the tracked player's last shot on a point. Rally length counts shots including the serve.
       A category's win rate is shown only after at least 3 tagged points.
     </p>
-    <h3>Tracked-player shot direction</h3>
-    <p class="context-coverage">${summary.shotDirectionTaggedCount} of ${insights.pointCount} points tagged with direction</p>
-    <table>
-      <thead><tr><th>Direction</th><th>Tagged points</th><th>Tracked-player point win rate</th></tr></thead>
-      <tbody>${directionRows}</tbody>
-    </table>
-    <h3>Rally length</h3>
-    <p class="context-coverage">${summary.rallyLengthTaggedCount} of ${insights.pointCount} points tagged with rally length</p>
-    <table>
-      <thead><tr><th>Length (shots)</th><th>Tagged points</th><th>Tracked-player point win rate</th></tr></thead>
-      <tbody>${rallyRows}</tbody>
-    </table>
-    <p class="note">
-      Generated on this device from the saved point log. Rates show count/denominator and percentage; tagged-ending analysis only covers tagged points. Small samples are directional, not conclusions. Break-point totals are reconstructed from ordinary-game points; standard tie-break points and match tie-break sets are excluded. Category layout references:
-      <a href="https://www.atptour.com/en/scores/stats-centre/archive/2018/605/ms001">ATP Tour Stats Centre</a> and
-      <a href="https://www.itftennis.com/en/match?matchId=faa89f46-3451-48b3-9fae-cba92da84cf6">ITF match statistics</a>.
-      The 2026 and 2026 Cincinnati reference figures are user-provided; no statistics are fetched online.
-    </p>
+    ${contextSections}
+    </main>
   </body>
 </html>`;
 }
