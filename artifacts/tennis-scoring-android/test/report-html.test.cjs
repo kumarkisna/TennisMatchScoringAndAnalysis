@@ -310,3 +310,127 @@ test('clearing all sections keeps match details without analysis sections', () =
   assert.match(headToHeadHtml, /Jordan/);
   assert.doesNotMatch(headToHeadHtml, /<h2>/);
 });
+
+test('long match reports keep all set, feedback, observation, and shot details printable', () => {
+  const longSets = Array.from({ length: 18 }, (_, index) => {
+    const setNumber = index + 1;
+    const isMatchTiebreak = setNumber % 3 === 0;
+    return {
+      setNumber,
+      format: isMatchTiebreak ? 'match_tiebreak' : 'standard',
+      isComplete: true,
+      trackedGames: isMatchTiebreak ? 0 : 6,
+      opponentGames: isMatchTiebreak ? 0 : 4,
+      trackedTiebreakPoints: isMatchTiebreak ? 10 : setNumber % 2 ? 7 : 0,
+      opponentTiebreakPoints: isMatchTiebreak ? 8 : setNumber % 2 ? 5 : 0,
+      tiebreakTarget: isMatchTiebreak ? 10 : 7,
+      pointCount: 36,
+      breakPoints: {
+        tracked: { ...emptyBreakPoints },
+        opponent: { ...emptyBreakPoints },
+      },
+      gameNotes: Array.from({ length: 8 }, (_, noteIndex) => ({
+        gameNumber: noteIndex + 1,
+        note: `Set ${setNumber} observation ${noteIndex + 1}: the player adjusted court position and targeted the opponent's backhand during a long rally.`,
+      })),
+      review: {
+        strokeRatings: { first_serve: 4 },
+        strokeNotes: { first_serve: `Set ${setNumber} serve placement note.` },
+        footworkNote: `Set ${setNumber}: recovery steps and court coverage were recorded in detail.`,
+        tacticalNote: `Set ${setNumber}: varied pace and attacked short balls.`,
+        mentalNote: `Set ${setNumber}: reset routine stayed consistent after lost points.`,
+      },
+    };
+  });
+  const html = buildPlayerReportHtml(
+    {
+      matchDate: '2026-10-30',
+      event: 'Long Match Sample',
+      round: 'Final',
+      trackedPlayer: 'Player A',
+      opponent: 'Player B',
+      surface: 'Hard',
+      matchStatus: 'complete',
+    },
+    {
+      ...emptyInsight,
+      pointCount: 648,
+      sets: longSets,
+      strokeTallies: [
+        {
+          player: 'tracked',
+          strokeType: 'first_serve',
+          inPlay: 122,
+          errors: 31,
+          winners: 52,
+          sampleCount: 205,
+        },
+      ],
+      strokeNotes: Array.from({ length: 144 }, (_, index) => ({
+        setNumber: (index % 18) + 1,
+        gameNumber: (index % 10) + 1,
+        sequenceNumber: index + 1,
+        player: index % 2 ? 'tracked' : 'opponent',
+        strokeType: 'first_serve',
+        result: index % 4 ? 'in_play' : 'winner',
+        note: `Point ${index + 1}: controlled depth, recovered to the center, and followed the tactical plan.`,
+      })),
+    },
+    {
+      ...emptyPerformance,
+      taggedPointCount: 280,
+      codeInsights: [
+        { code: 'A', count: 48, trackedWon: 48 },
+        { code: 'F', count: 64, trackedWon: 51 },
+        { code: 'B', count: 39, trackedWon: 28 },
+        { code: 'V', count: 22, trackedWon: 18 },
+        { code: 'O', count: 8, trackedWon: 7 },
+        { code: 'P', count: 14, trackedWon: 10 },
+        { code: 'N', count: 33, trackedWon: 7 },
+        { code: 'L', count: 26, trackedWon: 8 },
+        { code: 'W', count: 12, trackedWon: 4 },
+        { code: 'D', count: 7, trackedWon: 0 },
+        { code: 'FE', count: 7, trackedWon: 0 },
+      ],
+      shotDirections: [
+        { label: 'Cross-court', count: 80, trackedWon: 51, trackedWinPercent: 63.75 },
+        { label: 'Down the line', count: 50, trackedWon: 32, trackedWinPercent: 64 },
+      ],
+      rallyLengths: [
+        { label: '1–4 shots', count: 84, trackedWon: 54, trackedWinPercent: 64 },
+        { label: '5–8 shots', count: 102, trackedWon: 61, trackedWinPercent: 59.8 },
+      ],
+      shotDirectionTaggedCount: 130,
+      rallyLengthTaggedCount: 186,
+      feedback: Array.from(
+        { length: 24 },
+        (_, index) =>
+          `Feedback ${index + 1}: continue using the first serve to create space, then recover with compact steps and choose a high-margin target under pressure.`,
+      ),
+    },
+  );
+
+  assertCleanReport(html);
+  assert.equal(
+    (html.match(/<td>Set \d+<span class="sub">Complete<\/span><\/td>/g) ?? []).length,
+    18,
+  );
+  assert.match(html, /Match tie-break 10–8 \(target 10, win by 2\)/);
+  assert.match(html, /Set 18 observations/);
+  assert.match(html, /class="observation-group"/);
+  assert.match(html, /Game 8: Set 18 observation 8/);
+  assert.match(html, /Cross-court/);
+  assert.match(html, /5–8 shots/);
+  assert.match(html, /Forehand winner/);
+  assert.match(html, /Feedback 24:/);
+  assert.match(html, /Point 144:/);
+  assert.match(html, /thead\s*\{\s*display:\s*table-header-group;/);
+  assert.match(html, /tr\s*\{[^}]*page-break-inside:\s*avoid/);
+  assert.match(html, /h2\s*\{[^}]*page-break-after:\s*avoid/);
+  assert.match(html, /h3\s*\{[^}]*page-break-after:\s*avoid/);
+  assert.match(html, /th, td\s*\{[^}]*overflow-wrap:\s*anywhere/);
+  assert.match(html, /\.feedback\s*\{[^}]*page-break-inside:\s*auto/);
+  assert.match(html, /\.feedback li\s*\{[^}]*page-break-inside:\s*avoid/);
+  assert.match(html, /\.observation-group\s*\{[^}]*page-break-inside:\s*avoid/);
+  assert.match(html, /\.observation-list li\s*\{[^}]*page-break-inside:\s*avoid/);
+});

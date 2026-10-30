@@ -222,7 +222,7 @@ export function buildPlayerReportHtml(
           : []),
       ];
       if (!notes.length) return '';
-      return `<h3>Set ${set.setNumber} observations</h3><ul>${notes.map((note) => `<li>${escape(note)}</li>`).join('')}</ul>`;
+      return `<section class="observation-group"><h3>Set ${set.setNumber} observations</h3><ul class="observation-list">${notes.map((note) => `<li>${escape(note)}</li>`).join('')}</ul></section>`;
     })
     .filter(Boolean)
     .join('');
@@ -527,22 +527,22 @@ export function buildPlayerReportHtml(
       .date-result-value { color: #183a30; font-size: 12px; font-weight: 700; }
       .meta { border-bottom: 1px solid #dcded4; color: #53685f; display: grid; font-size: 11px; gap: 8px 18px; grid-template-columns: 1fr 1fr; margin: 18px 0; padding-bottom: 16px; }
       .meta strong { color: #183a30; }
-      h2 { break-after: avoid; font-size: 15px; margin: 22px 0 10px; }
+      h2 { break-after: avoid; page-break-after: avoid; font-size: 15px; margin: 22px 0 10px; }
       .stats { display: grid; gap: 8px; grid-template-columns: 1fr 1fr; }
       .tile { background: #f2f1e9; border-radius: 8px; break-inside: avoid; padding: 11px; }
       .tile-label { color: #60746c; font-size: 9px; font-weight: 700; letter-spacing: 1px; }
       .tile-value { color: #245d4b; font-size: 18px; font-weight: 700; margin: 5px 0 2px; }
       .tile-detail { color: #60746c; font-size: 9px; }
       .summary { background: #f2f1e9; border-left: 3px solid #245d4b; font-size: 11px; line-height: 1.5; padding: 10px 13px; }
-      .feedback { background: #f2f1e9; border-left: 3px solid #a45c45; margin-top: 8px; padding: 8px 13px; }
-      .feedback li { font-size: 10px; line-height: 1.5; margin: 4px 0; }
-      .match-heading, .date-result, .meta, .stats, .summary, .feedback { break-inside: avoid; page-break-inside: avoid; }
+      .feedback { background: #f2f1e9; border-left: 3px solid #a45c45; break-inside: auto; margin-top: 8px; padding: 8px 13px; page-break-inside: auto; }
+      .feedback li { break-inside: avoid; font-size: 10px; line-height: 1.5; margin: 4px 0; page-break-inside: avoid; }
+      .match-heading, .date-result, .meta, .stats, .summary { break-inside: avoid; page-break-inside: avoid; }
       p, li { orphans: 2; widows: 2; }
       table { border-collapse: collapse; break-inside: auto; font-size: 9px; width: 100%; }
       thead { display: table-header-group; }
       tr { break-inside: avoid; page-break-inside: avoid; }
       th { background: #245d4b; color: white; text-align: left; }
-      th, td { border-bottom: 1px solid #dcded4; padding: 7px 5px; vertical-align: top; }
+      th, td { border-bottom: 1px solid #dcded4; overflow-wrap: anywhere; padding: 7px 5px; vertical-align: top; }
       .code-key { font-size: 8px; }
       .code-key td:first-child { width: 18%; }
       .metric-table { font-size: 8px; table-layout: fixed; }
@@ -559,9 +559,11 @@ export function buildPlayerReportHtml(
       .total-row { background: #f2f1e9; font-weight: 700; }
       .trend-note { background: #f7f4eb; border-radius: 6px; color: #53685f; font-size: 10px; line-height: 1.5; margin: 9px 0 0; padding: 9px 11px; }
       .note { break-inside: avoid; color: #718078; font-size: 8px; line-height: 1.5; margin-top: 8px; page-break-inside: avoid; }
-      h3 { break-after: avoid; color: #183a30; font-size: 11px; margin: 14px 0 6px; }
+      h3 { break-after: avoid; page-break-after: avoid; color: #183a30; font-size: 11px; margin: 14px 0 6px; }
       .context-coverage { color: #60746c; font-size: 9px; margin: 3px 0 7px; }
-      .observation-list { font-size: 9px; line-height: 1.5; margin: 5px 0 8px; padding-left: 18px; }
+      .observation-group { break-inside: avoid; page-break-inside: avoid; }
+      .observation-list { break-inside: auto; font-size: 9px; line-height: 1.5; margin: 5px 0 8px; page-break-inside: auto; padding-left: 18px; }
+      .observation-list li { break-inside: avoid; page-break-inside: avoid; }
       @media print { html, body { margin: 0; } .report-page { padding: 14mm; -webkit-box-decoration-break: clone; box-decoration-break: clone; } }
     </style>
   </head>
