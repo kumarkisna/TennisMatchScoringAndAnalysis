@@ -405,6 +405,11 @@ test('backup save, share, and restore preserve all players and sets without netw
     await activeModules.localBenchmarks.getLocalReportBenchmarkSettings(),
     benchmarkSettings,
   );
+  loadLocalModules();
+  assert.deepEqual(
+    await activeModules.localBenchmarks.getLocalReportBenchmarkSettings(),
+    benchmarkSettings,
+  );
   assert.equal(restoredPlayer.dateOfBirth, '2005-07-09');
   assert.equal(restoredPlayer.itfPlayerId, 'ITF-54321');
   assert.equal(restoredPlayer.atpRanking, 285);
