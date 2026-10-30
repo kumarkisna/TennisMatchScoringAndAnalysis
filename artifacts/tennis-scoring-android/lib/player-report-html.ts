@@ -8,6 +8,7 @@ import type {
   ContextPerformanceInsight,
   PlayerPerformanceSummary,
   PlayerReportInsights,
+  SetPerformanceMetric,
 } from '@/lib/player-insights';
 import type { LocalReportBenchmarkPreset } from '@/lib/local-benchmarks';
 import {
@@ -447,6 +448,40 @@ export function buildPlayerReportHtml(
   const reportSets = match.matchOutcome
     ? insights.sets.filter((set) => set.isComplete || set.pointCount > 0)
     : insights.sets;
+  const percentageSampleCell = (
+    metric: SetPerformanceMetric,
+    sampleLabel: string,
+  ) =>
+    metric.count === null || metric.percent === null
+      ? `<span>—</span><span class="sub">No ${escape(sampleLabel)} recorded</span>`
+      : `<span>${metric.percent}%</span><span class="sub">${metric.count} of ${metric.total} ${escape(sampleLabel)}</span>`;
+  const setPerformanceRows = performance.setBreakdown
+    .filter((set) => reportSets.some((reportSet) => reportSet.setNumber === set.setNumber))
+    .map((set) => {
+      const rallyWinnerCell =
+        set.rallyWinners.count === null || set.rallyWinners.percent === null
+          ? `<span>—</span><span class="sub">No rally-winner tags · ${set.pointCount} points logged</span>`
+          : `<span>${set.rallyWinners.count} (${set.rallyWinners.percent}%)</span><span class="sub">${set.rallyWinners.count} of ${set.rallyWinners.total} tagged rally winners · ${set.pointCount} points</span>`;
+      const aceCell =
+        set.aces === null
+          ? '<span>—</span><span class="sub">No tracked service points recorded</span>'
+          : `<span>${set.aces}</span><span class="sub">${set.aces} aces / ${set.trackedServicePoints} tracked service points</span>`;
+      const unforcedErrorCell =
+        set.unforcedErrors.count === null
+          ? `<span>—</span><span class="sub">No unforced-error tags · ${set.pointCount} points logged</span>`
+          : `<span>${set.unforcedErrors.count}</span><span class="sub">${set.unforcedErrors.count} of ${set.unforcedErrors.total} tagged error points · ${set.pointCount} points</span>`;
+      return `
+        <tr>
+          <td>Set ${set.setNumber}<span class="sub">${set.isComplete ? 'Complete' : 'In progress'} · ${set.pointCount} points</span></td>
+          <td>${percentageSampleCell(set.firstServeIn, 'first serves')}</td>
+          <td>${percentageSampleCell(set.secondServeIn, 'second serves')}</td>
+          <td>${rallyWinnerCell}</td>
+          <td>${aceCell}</td>
+          <td>${unforcedErrorCell}</td>
+        </tr>`;
+    })
+    .join('') ||
+    '<tr><td colspan="6">No sets with recorded points are available for per-set analysis.</td></tr>';
   const setRows = reportSets.length
     ? reportSets
         .map(
@@ -607,6 +642,12 @@ export function buildPlayerReportHtml(
       .code-key td:first-child { width: 18%; }
       .metric-table { font-size: 8px; table-layout: fixed; }
       .metric-table th, .metric-table td { overflow-wrap: anywhere; padding: 6px 4px; }
+      .set-performance-table th:first-child, .set-performance-table td:first-child { width: 8%; }
+      .set-performance-table th:nth-child(2), .set-performance-table td:nth-child(2),
+      .set-performance-table th:nth-child(3), .set-performance-table td:nth-child(3) { width: 15%; }
+      .set-performance-table th:nth-child(4), .set-performance-table td:nth-child(4) { width: 22%; }
+      .set-performance-table th:nth-child(5), .set-performance-table td:nth-child(5) { width: 12%; }
+      .set-performance-table th:nth-child(6), .set-performance-table td:nth-child(6) { width: 28%; }
       .serve-table th:first-child, .serve-table td:first-child { width: 31%; }
       .serve-table th:nth-child(2), .serve-table td:nth-child(2),
       .serve-table th:nth-child(3), .serve-table td:nth-child(3) { width: 21%; }
@@ -737,6 +778,23 @@ export function buildPlayerReportHtml(
         <tr><th>Set</th><th>Score / format</th><th>Set winner</th></tr>
       </thead>
       <tbody>${setRows}</tbody>
+    </table>
+    <h3>Set-by-set player performance · ${escape(trackedPlayerLabel)}</h3>
+    <p class="context-coverage">
+      Serve percentages show successful serves / attempts. Tagged winners are the tracked player's share of recorded rally-winner tags; unforced errors are counts from recorded net, long, and wide tags. — means no usable sample was recorded.
+    </p>
+    <table class="metric-table set-performance-table">
+      <thead>
+        <tr>
+          <th>Set</th>
+          <th>1st serve in</th>
+          <th>2nd serve in</th>
+          <th>Tagged rally winners</th>
+          <th>Aces</th>
+          <th>Unforced errors</th>
+        </tr>
+      </thead>
+      <tbody>${setPerformanceRows}</tbody>
     </table>` : ''}
 
     ${includes('break-points') ? `

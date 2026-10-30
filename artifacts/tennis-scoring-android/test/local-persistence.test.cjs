@@ -705,6 +705,116 @@ test('undoing and replacing a converted break point recomputes saved match stats
   assertBreakPointRates(replacementInsights, 0, 100);
 });
 
+test('editing a point winner rebuilds later scores and serving order without losing its notes', async () => {
+  storageValues.clear();
+  const { localMatches } = loadStorageModulesAfterRestart();
+  const match = await localMatches.createLocalMatch({
+    matchDate: '2026-10-30',
+    trackedPlayer: 'Sana Iyer',
+    opponent: 'Maya Rao',
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+
+  let current = match;
+  for (let index = 0; index < 8; index += 1) {
+    current = await localMatches.recordLocalPoint(match.id, {
+      winner: 'tracked',
+      ...(index === 0
+        ? {
+            strokes: [
+              {
+                player: 'tracked',
+                strokeType: 'first_serve',
+                result: 'in_play',
+                note: 'Serve stayed in play',
+              },
+            ],
+          }
+        : {}),
+      ...(index === 1 ? { endingCode: 'A' } : {}),
+    });
+  }
+  const originalPoint = current.points[0];
+  const edited = await localMatches.editLocalPointWinner(
+    match.id,
+    1,
+    originalPoint.id,
+    'opponent',
+  );
+
+  assert.equal(edited.points.length, 8);
+  assert.equal(edited.points[0].id, originalPoint.id);
+  assert.equal(edited.points[0].winner, 'opponent');
+  assert.deepEqual(edited.points[0].strokes, originalPoint.strokes);
+  assert.equal(edited.points[1].endingCode, 'A');
+  assert.equal(edited.points[4].gameNumber, 1);
+  assert.equal(edited.points[4].server, 'tracked');
+  assert.equal(edited.points[5].gameNumber, 2);
+  assert.equal(edited.points[5].server, 'opponent');
+  assert.equal(edited.score.trackedGames, 1);
+  assert.equal(edited.score.opponentGames, 0);
+  assert.equal(edited.score.trackedPoints, '40');
+
+  const saved = await localMatches.getLocalMatch(match.id);
+  assert.ok(saved);
+  const insights = localMatches.calculateLocalInsights(saved);
+  assert.equal(insights.sets[0].serveStats.tracked.servicePoints, 5);
+  assert.equal(insights.sets[0].serveStats.tracked.aces, 1);
+  assert.deepEqual(insights.sets[0].codes.find((item) => item.code === 'A'), {
+    code: 'A',
+    count: 1,
+    trackedWon: 1,
+    opponentWon: 0,
+  });
+});
+
+test('editing a point cannot leave recorded points after a newly completed set', async () => {
+  storageValues.clear();
+  const { localMatches } = loadStorageModulesAfterRestart();
+  const match = await localMatches.createLocalMatch({
+    matchDate: '2026-10-30',
+    trackedPlayer: 'Sana Iyer',
+    opponent: 'Maya Rao',
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+
+  let current = match;
+  for (let index = 0; index < 24; index += 1) {
+    current = await localMatches.recordLocalPoint(match.id, { winner: 'tracked' });
+  }
+  for (let index = 0; index < 20; index += 1) {
+    current = await localMatches.recordLocalPoint(match.id, { winner: 'opponent' });
+  }
+  for (const winner of ['tracked', 'tracked', 'opponent', 'tracked', 'tracked']) {
+    current = await localMatches.recordLocalPoint(match.id, { winner });
+  }
+  assert.equal(current.score.trackedGames, 7);
+  assert.equal(current.score.opponentGames, 5);
+  const originalWinners = current.points.map((point) => point.winner);
+  const pointToEdit = current.points[46];
+  assert.equal(pointToEdit.winner, 'opponent');
+
+  await assert.rejects(
+    localMatches.editLocalPointWinner(
+      match.id,
+      1,
+      pointToEdit.id,
+      'tracked',
+    ),
+    /finish the set before later recorded points/,
+  );
+  const unchanged = await localMatches.getLocalMatch(match.id);
+  assert.ok(unchanged);
+  assert.deepEqual(
+    unchanged.points.map((point) => point.winner),
+    originalWinners,
+  );
+});
+
 test('point history filter keeps all points and lists saved or converted chances newest first', () => {
   const { localMatches } = loadStorageModulesAfterRestart();
   const winners = [

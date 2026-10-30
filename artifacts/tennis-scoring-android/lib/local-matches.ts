@@ -368,6 +368,13 @@ export interface LocalSetInsights {
   servicePointsWon: number;
   trackedReturnPoints: number;
   returnPointsWon: number;
+  serveStats: Record<PlayerSide, ServeSideStats>;
+  codes: {
+    code: PointCode;
+    count: number;
+    trackedWon: number;
+    opponentWon: number;
+  }[];
   tiebreakPointCount: number;
   trackedTiebreakPointsWon: number;
   breakPoints: Record<PlayerSide, BreakPointStats>;
@@ -886,6 +893,57 @@ export function calculateLocalScore(
   };
 }
 
+function rebuildLocalSetPoints(
+  set: Pick<
+    LocalSetRecord,
+    'setNumber' | 'firstServer' | 'format' | 'tiebreakTarget'
+  >,
+  originalPoints: readonly LocalPoint[],
+): { points: LocalPoint[]; score: ScoreState } {
+  const scoringSet = {
+    firstServer: set.firstServer,
+    setFormat: set.format,
+    tiebreakTarget: set.tiebreakTarget,
+  };
+  const points: LocalPoint[] = [];
+  for (const [index, point] of originalPoints.entries()) {
+    const scoreBefore = calculateLocalScore(scoringSet, points);
+    if (scoreBefore.isComplete) {
+      throw new Error(
+        'This correction would finish the set before later recorded points. Undo those later points before changing this winner.',
+      );
+    }
+
+    const gameNumber =
+      set.format === 'match_tiebreak'
+        ? 1
+        : scoreBefore.trackedGames + scoreBefore.opponentGames + 1;
+    const isTiebreak =
+      set.format === 'match_tiebreak' ||
+      (scoreBefore.trackedGames === 6 && scoreBefore.opponentGames === 6);
+    const tiebreakPointCount = points.filter(
+      (recordedPoint) => recordedPoint.isTiebreak,
+    ).length;
+    const server = isTiebreak
+      ? tiebreakServer(set.firstServer, tiebreakPointCount)
+      : gameServer(set.firstServer, gameNumber);
+
+    points.push({
+      ...point,
+      sequenceNumber: index + 1,
+      setNumber: set.setNumber,
+      gameNumber,
+      isTiebreak,
+      server,
+    });
+  }
+
+  return {
+    points,
+    score: calculateLocalScore(scoringSet, points),
+  };
+}
+
 function summarize(match: LocalMatch): LocalMatchSummary {
   const setHistory = getLocalSetHistory(match);
   const trackedSetsWon = setHistory.filter((set) => set.score.winner === 'tracked').length;
@@ -1210,6 +1268,86 @@ export async function undoLocalPoint(id: string): Promise<LocalMatch> {
       score,
       status: score.isComplete ? 'complete' : 'in_progress',
       matchStatus: 'in_progress',
+      pendingPointDeletes: [],
+      syncStatus: 'local_only',
+      syncError: null,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await writeMatch(updated);
+    return updated;
+  });
+}
+
+export async function editLocalPointWinner(
+  id: string,
+  setNumber: number,
+  pointId: string,
+  winner: PlayerSide,
+): Promise<LocalMatch> {
+  if (!Number.isInteger(setNumber) || setNumber < 1) {
+    throw new Error('Choose a valid set number.');
+  }
+  if (winner !== 'tracked' && winner !== 'opponent') {
+    throw new Error('Choose one of the two players as the point winner.');
+  }
+
+  return withWriteLock(async () => {
+    const match = await readMatch(id);
+    if (!match) throw new Error('This match is not saved on this device.');
+    if (match.matchOutcome) {
+      throw new Error('Clear the retirement or walkover result before editing points.');
+    }
+
+    const setHistory = getLocalSetHistory(match);
+    const targetSet = setHistory.find((set) => set.setNumber === setNumber);
+    const targetPoint = targetSet?.points.find((point) => point.id === pointId);
+    if (!targetSet || !targetPoint) {
+      throw new Error('That saved point could not be found in this match.');
+    }
+    if (targetPoint.winner === winner) return match;
+
+    const rebuiltSets: LocalSetResult[] = [];
+    let firstServer = setHistory[0]?.firstServer ?? match.firstServer;
+    for (let index = 0; index < setHistory.length; index += 1) {
+      const set = setHistory[index]!;
+      const originalPoints = set.points.map((point) =>
+        point.id === pointId ? { ...point, winner } : point,
+      );
+      const rebuilt = rebuildLocalSetPoints(
+        { ...set, firstServer },
+        originalPoints,
+      );
+      if (index < setHistory.length - 1 && !rebuilt.score.isComplete) {
+        throw new Error(
+          `This correction would leave Set ${set.setNumber} unfinished before later sets. The match was not changed.`,
+        );
+      }
+      rebuiltSets.push({
+        ...set,
+        firstServer,
+        points: rebuilt.points,
+        score: rebuilt.score,
+      });
+      firstServer = rebuilt.score.nextServer;
+    }
+
+    const currentSet = rebuiltSets[rebuiltSets.length - 1];
+    if (!currentSet) throw new Error('This match has no saved set to edit.');
+    const completedSets = rebuiltSets
+      .slice(0, -1)
+      .map(({ isCurrent: _isCurrent, ...set }) => set);
+    const updated: LocalMatch = {
+      ...match,
+      firstServer: currentSet.firstServer,
+      completedSets,
+      points: currentSet.points,
+      score: currentSet.score,
+      status: currentSet.score.isComplete ? 'complete' : 'in_progress',
+      matchStatus:
+        match.matchStatus === 'complete' && !currentSet.score.isComplete
+          ? 'in_progress'
+          : match.matchStatus,
       pendingPointDeletes: [],
       syncStatus: 'local_only',
       syncError: null,
@@ -1803,6 +1941,34 @@ export function calculateLocalInsights(match: LocalMatch): LocalInsights {
     let setReturnPointsWon = 0;
     let tiebreakPointCount = 0;
     let trackedTiebreakPointsWon = 0;
+    const setServeStats: Record<PlayerSide, ServeSideStats> = {
+      tracked: {
+        servicePoints: 0,
+        servicePointsWon: 0,
+        firstServeFaults: 0,
+        firstServePoints: 0,
+        firstServePointsWon: 0,
+        secondServePoints: 0,
+        secondServePointsWon: 0,
+        aces: 0,
+        doubleFaults: 0,
+      },
+      opponent: {
+        servicePoints: 0,
+        servicePointsWon: 0,
+        firstServeFaults: 0,
+        firstServePoints: 0,
+        firstServePointsWon: 0,
+        secondServePoints: 0,
+        secondServePointsWon: 0,
+        aces: 0,
+        doubleFaults: 0,
+      },
+    };
+    const setCodeCounts = new Map<
+      PointCode,
+      { count: number; trackedWon: number; opponentWon: number }
+    >();
 
     for (const point of set.points) {
       if (point.winner === 'tracked') setTrackedPointsWon += 1;
@@ -1816,6 +1982,33 @@ export function calculateLocalInsights(match: LocalMatch): LocalInsights {
       if (point.isTiebreak) {
         tiebreakPointCount += 1;
         if (point.winner === 'tracked') trackedTiebreakPointsWon += 1;
+      }
+
+      const secondServePoint =
+        point.firstServeFault || point.endingCode === 'D';
+      const servingStats = setServeStats[point.server];
+      servingStats.servicePoints += 1;
+      if (point.winner === point.server) servingStats.servicePointsWon += 1;
+      if (point.endingCode === 'A') servingStats.aces += 1;
+      if (point.endingCode === 'D') servingStats.doubleFaults += 1;
+      if (secondServePoint) {
+        servingStats.firstServeFaults += 1;
+        servingStats.secondServePoints += 1;
+        if (point.winner === point.server) servingStats.secondServePointsWon += 1;
+      } else {
+        servingStats.firstServePoints += 1;
+        if (point.winner === point.server) servingStats.firstServePointsWon += 1;
+      }
+      if (point.endingCode) {
+        const stats = setCodeCounts.get(point.endingCode) ?? {
+          count: 0,
+          trackedWon: 0,
+          opponentWon: 0,
+        };
+        stats.count += 1;
+        if (point.winner === 'tracked') stats.trackedWon += 1;
+        else stats.opponentWon += 1;
+        setCodeCounts.set(point.endingCode, stats);
       }
     }
 
@@ -1834,6 +2027,10 @@ export function calculateLocalInsights(match: LocalMatch): LocalInsights {
       servicePointsWon: setServicePointsWon,
       trackedReturnPoints: setReturnPoints,
       returnPointsWon: setReturnPointsWon,
+      serveStats: setServeStats,
+      codes: [...setCodeCounts.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([code, stats]) => ({ code, ...stats })),
       tiebreakPointCount,
       trackedTiebreakPointsWon,
       breakPoints: calculateBreakPointStats(set.points, set.format),

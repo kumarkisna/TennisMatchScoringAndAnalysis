@@ -853,6 +853,8 @@ function reportSetFixture({
   tiebreakTarget = 10,
   isComplete = true,
   pointCount = 1,
+  serveStats = null,
+  codes = [],
 } = {}) {
   return {
     setNumber,
@@ -864,6 +866,8 @@ function reportSetFixture({
     tiebreakTarget,
     isComplete,
     pointCount,
+    serveStats,
+    codes,
     breakPoints: {
       tracked: { ...emptyBreakPoints },
       opponent: { ...emptyBreakPoints },
@@ -880,6 +884,7 @@ function reportSetFixture({
 }
 
 function winnerReportHtml(sets, matchStatus = 'complete', matchOutcome = null) {
+  const insights = { ...emptyInsight, sets };
   return buildPlayerReportHtml(
     {
       matchDate: '2026-10-30',
@@ -889,8 +894,8 @@ function winnerReportHtml(sets, matchStatus = 'complete', matchOutcome = null) {
       matchStatus,
       matchOutcome,
     },
-    { ...emptyInsight, sets },
-    { ...emptyPerformance, feedback: [] },
+    insights,
+    { ...summarizePlayerPerformance(insights), feedback: [] },
     ['sets'],
     [],
   );
@@ -1166,6 +1171,65 @@ test('retirement and walkover reports name the awarded winner without inventing 
   assert.match(walkoverHtml, /No set data recorded\./);
 });
 
+test('single-match reports show per-set samples and keep unsupported metrics unavailable', () => {
+  const noServes = {
+    ...emptySide,
+    servicePoints: 0,
+    servicePointsWon: 0,
+    firstServeFaults: 0,
+    firstServePoints: 0,
+    firstServePointsWon: 0,
+    secondServePoints: 0,
+    secondServePointsWon: 0,
+    aces: 0,
+    doubleFaults: 0,
+  };
+  const html = winnerReportHtml([
+    reportSetFixture({
+      setNumber: 1,
+      pointCount: 20,
+      serveStats: {
+        tracked: {
+          ...emptySide,
+          servicePoints: 10,
+          firstServePoints: 6,
+          secondServePoints: 4,
+          doubleFaults: 1,
+          aces: 2,
+        },
+        opponent: { ...emptySide },
+      },
+      codes: [
+        { code: 'F', count: 1, trackedWon: 1, opponentWon: 0 },
+        { code: 'V', count: 1, trackedWon: 0, opponentWon: 1 },
+        { code: 'A', count: 2, trackedWon: 2, opponentWon: 0 },
+        { code: 'N', count: 2, trackedWon: 0, opponentWon: 2 },
+        { code: 'L', count: 1, trackedWon: 1, opponentWon: 0 },
+      ],
+    }),
+    reportSetFixture({
+      setNumber: 2,
+      pointCount: 5,
+      serveStats: {
+        tracked: { ...noServes },
+        opponent: { ...noServes },
+      },
+    }),
+  ]);
+
+  assert.match(html, /Set-by-set player performance · Tracked/);
+  assert.match(html, /70%<\/span><span class="sub">6 of 10 first serves/);
+  assert.match(html, /75%<\/span><span class="sub">3 of 4 second serves/);
+  assert.match(html, /1 \(50%\)<\/span><span class="sub">1 of 2 tagged rally winners/);
+  assert.match(html, /2 aces \/ 10 tracked service points/);
+  assert.match(html, /2 of 3 tagged error points/);
+  assert.match(html, /No first serves recorded/);
+  assert.match(html, /No second serves recorded/);
+  assert.match(html, /No rally-winner tags/);
+  assert.match(html, /No tracked service points recorded/);
+  assert.match(html, /No unforced-error tags/);
+});
+
 test('match detail does not default an undetermined set winner to the tracked player', () => {
   const source = fs.readFileSync(
     path.join(__dirname, '../app/matches/[id].tsx'),
@@ -1175,6 +1239,19 @@ test('match detail does not default an undetermined set winner to the tracked pl
   assert.match(source, /match\.score\.isComplete && match\.score\.winner/);
   assert.match(source, /Set winner not determined/);
   assert.doesNotMatch(source, /match\.score\.winner\s*\?\?\s*'tracked'/);
+});
+
+test('match detail exposes set-by-set samples and point winner editing', () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, '../app/matches/[id].tsx'),
+    'utf8',
+  );
+
+  assert.match(source, /SET-BY-SET PERFORMANCE/);
+  assert.match(source, /performance\.setBreakdown/);
+  assert.match(source, /Tap T points to edit/);
+  assert.match(source, /Change point winner\?/);
+  assert.match(source, /editLocalPointWinner/);
 });
 
 test('break-point counts, set aggregation, exclusions, and report rates match scored sequences', () => {

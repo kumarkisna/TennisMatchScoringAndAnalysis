@@ -38,6 +38,7 @@ import {
   updateLocalGameNote,
   updateLocalSetReview,
   finishLocalMatch,
+  editLocalPointWinner,
   localInsightsKey,
   localMatchKey,
   recordLocalPoint,
@@ -51,6 +52,7 @@ import {
   type CourtSurface,
   type LocalMatch,
   type LocalMatchOutcomeReason,
+  type LocalPoint,
   type LocalMatchDetails,
   type LocalMatchDetailsUpdate,
   type LocalSetResult,
@@ -307,6 +309,8 @@ function ScoreProgressCell({
   side,
   colors,
   testID,
+  onPress,
+  editLabel,
 }: {
   score: string;
   point?: {
@@ -318,6 +322,8 @@ function ScoreProgressCell({
   side: Side;
   colors: ReturnType<typeof useColors>;
   testID: string;
+  onPress?: () => void;
+  editLabel?: string;
 }) {
   const isPointWinner = point?.winner === side;
   const sideColor = side === 'tracked' ? colors.primary : colors.accent;
@@ -326,9 +332,21 @@ function ScoreProgressCell({
     : '';
 
   return (
-    <View
+    <Pressable
       testID={testID}
-      accessibilityLabel={`${side === 'tracked' ? 'Tracked player' : 'Opponent'} score ${score}${isPointWinner ? `, won point by ${pointCode}` : ''}`}
+      accessibilityRole={point && onPress ? 'button' : undefined}
+      accessibilityLabel={
+        point && onPress
+          ? editLabel
+          : `${side === 'tracked' ? 'Tracked player' : 'Opponent'} score ${score}${isPointWinner ? `, won point by ${pointCode}` : ''}`
+      }
+      accessibilityHint={
+        point && onPress
+          ? 'Change the point winner; later scores and serving order will be recalculated.'
+          : undefined
+      }
+      disabled={!point || !onPress}
+      onPress={onPress}
       style={[
         styles.matrixScoreCell,
         {
@@ -358,7 +376,7 @@ function ScoreProgressCell({
       {isPointWinner && point?.firstServeFault ? (
         <View style={[styles.faultDot, { backgroundColor: colors.primaryForeground }]} />
       ) : null}
-    </View>
+    </Pressable>
   );
 }
 
@@ -486,6 +504,25 @@ export default function MatchScreen() {
     mutationFn: () => undoLocalPoint(matchId),
     onSuccess: onUpdated,
   });
+  const editPointWinner = useMutation({
+    mutationFn: (input: {
+      setNumber: number;
+      pointId: string;
+      winner: PlayerSide;
+    }) =>
+      editLocalPointWinner(
+        matchId,
+        input.setNumber,
+        input.pointId,
+        input.winner,
+      ),
+    onSuccess: onUpdated,
+    onError: (error) =>
+      Alert.alert(
+        'Could not change point',
+        error instanceof Error ? error.message : 'Please try again.',
+      ),
+  });
   const addSet = useMutation({
     mutationFn: (input: { format: SetFormat; tiebreakTarget?: number }) =>
       addLocalSet(matchId, input.format, input.tiebreakTarget),
@@ -579,6 +616,7 @@ export default function MatchScreen() {
   const isBusy =
     recordPoint.isPending ||
     undoPoint.isPending ||
+    editPointWinner.isPending ||
     addSet.isPending ||
     finishMatch.isPending ||
     recordMatchOutcome.isPending ||
@@ -869,6 +907,47 @@ export default function MatchScreen() {
           style: 'destructive',
           onPress: () => undoPoint.mutate(),
         },
+      ],
+    );
+  }
+
+  function confirmEditPoint(point: LocalPoint) {
+    if (!match || isBusy) return;
+    if (match.matchOutcome) {
+      Alert.alert(
+        'Resume scoring first',
+        'Clear the retirement or walkover result before editing recorded points.',
+      );
+      return;
+    }
+    const currentWinnerName =
+      point.winner === 'tracked' ? match.trackedPlayer : match.opponent;
+    const pointLocation = point.isTiebreak
+      ? 'tie-break'
+      : `Game ${point.gameNumber}`;
+    Alert.alert(
+      'Change point winner?',
+      `Set ${point.setNumber}, ${pointLocation}, point ${point.sequenceNumber} is currently won by ${currentWinnerName}. Later scores and serving order will be recalculated; notes and tags stay with the point.`,
+      [
+        {
+          text: match.trackedPlayer,
+          onPress: () =>
+            editPointWinner.mutate({
+              setNumber: point.setNumber,
+              pointId: point.id,
+              winner: 'tracked',
+            }),
+        },
+        {
+          text: match.opponent,
+          onPress: () =>
+            editPointWinner.mutate({
+              setNumber: point.setNumber,
+              pointId: point.id,
+              winner: 'opponent',
+            }),
+        },
+        { text: 'Cancel', style: 'cancel' },
       ],
     );
   }
@@ -1172,6 +1251,16 @@ export default function MatchScreen() {
                 point={point}
                 side={side}
                 colors={colors}
+                onPress={
+                  side === 'tracked' && point
+                    ? () => confirmEditPoint(point)
+                    : undefined
+                }
+                editLabel={
+                  point
+                    ? `Edit winner for Set ${point.setNumber}, tie-break point ${point.sequenceNumber}`
+                    : undefined
+                }
               />
             );
           })}
@@ -2177,12 +2266,12 @@ export default function MatchScreen() {
             </Text>
             <Text style={[styles.sectionCaption, { color: colors.mutedForeground }]}>
               {isReviewingHistoricalSet
-                ? `Read-only review · live scoring stays in Set ${match.setNumber} · T/O lanes are chronological`
+              ? `History · live scoring stays in Set ${match.setNumber} · tap T-row points to edit winners`
                 : viewedSet.score.isComplete
-                  ? 'Completed games in order · T/O lanes · both scores after each point · 40–40 is deuce'
+                  ? 'Completed games in order · both scores after each point · tap T-row points to edit winners'
                 : viewedSet.format === 'match_tiebreak'
-                  ? 'Tiebreak first · T/O lanes show both point totals after each point'
-                  : 'Current game first · T/O lanes show each point in order · 40–40 is deuce'}
+                  ? 'Tiebreak first · both point totals after each point · tap T-row points to edit winners'
+                  : 'Current game first · each point in order · tap T-row points to edit winners'
             </Text>
           </View>
           <View style={styles.matrixLegend}>
@@ -2193,6 +2282,9 @@ export default function MatchScreen() {
             <View style={[styles.legendDot, { backgroundColor: colors.accent }]} />
             <Text numberOfLines={1} style={[styles.legendText, { color: colors.mutedForeground }]}>
               O = opponent
+            </Text>
+            <Text numberOfLines={1} style={[styles.legendText, { color: colors.mutedForeground }]}>
+              Tap T points to edit
             </Text>
           </View>
         </View>
@@ -2315,6 +2407,7 @@ export default function MatchScreen() {
                       />
                       {Array.from({ length: matrixColumnCount }, (_, pointIndex) => {
                         const progress = gameScoreProgress[pointIndex];
+                        const point = gamePoints[pointIndex];
                         return (
                           <ScoreProgressCell
                             key={`${gameNumber}-${side}-${pointIndex}`}
@@ -2326,9 +2419,19 @@ export default function MatchScreen() {
                                   : progress.opponentScore
                                 : '·'
                             }
-                            point={gamePoints[pointIndex]}
+                            point={point}
                             side={side}
                             colors={colors}
+                            onPress={
+                              side === 'tracked' && point
+                                ? () => confirmEditPoint(point)
+                                : undefined
+                            }
+                            editLabel={
+                              point
+                                ? `Edit winner for Set ${point.setNumber}, Game ${point.gameNumber}, Point ${point.sequenceNumber}`
+                                : undefined
+                            }
                           />
                         );
                       })}
@@ -2745,6 +2848,91 @@ export default function MatchScreen() {
                 detail={`${insightsQuery.data.serveStats.tracked.aces} aces in ${performance.matchesInSample} match`}
                 colors={colors}
               />
+            </View>
+
+            <View style={[styles.breakPointBlock, { borderTopColor: colors.border }]}>
+              <Text style={[styles.codeStatsTitle, { color: colors.foreground }]}>
+                SET-BY-SET PERFORMANCE
+              </Text>
+              <Text style={[styles.insightHint, { color: colors.mutedForeground }]}>
+                Each set uses its own serve attempts and recorded tags. A dash means no usable sample.
+              </Text>
+              {performance.setBreakdown
+                .filter(
+                  (set) =>
+                    !match.matchOutcome || set.pointCount > 0 || set.isComplete,
+                )
+                .map((set) => (
+                  <View key={set.setNumber} style={{ gap: 7, marginTop: 9 }}>
+                    <Text style={[styles.breakPointPlayer, { color: colors.foreground }]}>
+                      Set {set.setNumber} · {set.isComplete ? 'Complete' : 'In progress'} · {set.pointCount} points
+                    </Text>
+                    <View style={styles.statGrid}>
+                      <Stat
+                        label="FIRST SERVE IN"
+                        value={formatPercent(set.firstServeIn.percent)}
+                        detail={
+                          set.firstServeIn.count === null
+                            ? 'No first-serve attempts recorded'
+                            : `${set.firstServeIn.count} of ${set.firstServeIn.total} first serves`
+                        }
+                        colors={colors}
+                      />
+                      <Stat
+                        label="SECOND SERVE IN"
+                        value={formatPercent(set.secondServeIn.percent)}
+                        detail={
+                          set.secondServeIn.count === null
+                            ? 'No second-serve attempts recorded'
+                            : `${set.secondServeIn.count} of ${set.secondServeIn.total} second serves`
+                        }
+                        colors={colors}
+                      />
+                      <Stat
+                        label="TAGGED RALLY WINNERS"
+                        value={formatPercent(set.rallyWinners.percent)}
+                        detail={
+                          set.rallyWinners.count === null
+                            ? 'No rally-winner tags recorded'
+                            : `${set.rallyWinners.count} of ${set.rallyWinners.total} tagged winners`
+                        }
+                        colors={colors}
+                      />
+                      <Stat
+                        label="ACES"
+                        value={set.aces === null ? '—' : String(set.aces)}
+                        detail={
+                          set.aces === null
+                            ? 'No tracked service points recorded'
+                            : `${set.aces} aces / ${set.trackedServicePoints} tracked service points`
+                        }
+                        colors={colors}
+                      />
+                      <Stat
+                        label="UNFORCED ERRORS"
+                        value={
+                          set.unforcedErrors.count === null
+                            ? '—'
+                            : String(set.unforcedErrors.count)
+                        }
+                        detail={
+                          set.unforcedErrors.count === null
+                            ? 'No unforced-error tags recorded'
+                            : `${set.unforcedErrors.count} of ${set.unforcedErrors.total} tagged error points`
+                        }
+                        colors={colors}
+                      />
+                    </View>
+                  </View>
+                ))}
+              {performance.setBreakdown.every(
+                (set) =>
+                  match.matchOutcome && set.pointCount === 0 && !set.isComplete,
+              ) ? (
+                <Text style={[styles.insightHint, { color: colors.mutedForeground }]}>
+                  No played-set data is available for this match outcome.
+                </Text>
+              ) : null}
             </View>
 
             <View style={[styles.breakPointBlock, { borderTopColor: colors.border }]}>

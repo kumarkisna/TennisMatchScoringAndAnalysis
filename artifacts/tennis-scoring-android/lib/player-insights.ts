@@ -44,6 +44,24 @@ export interface PlayerCodeInsight {
   sharePercent: number;
 }
 
+export interface SetPerformanceMetric {
+  count: number | null;
+  total: number;
+  percent: number | null;
+}
+
+export interface PlayerSetPerformance {
+  setNumber: number;
+  isComplete: boolean;
+  pointCount: number;
+  firstServeIn: SetPerformanceMetric;
+  secondServeIn: SetPerformanceMetric;
+  rallyWinners: SetPerformanceMetric;
+  aces: number | null;
+  trackedServicePoints: number;
+  unforcedErrors: SetPerformanceMetric;
+}
+
 export interface PlayerPerformanceSummary {
   overallWinPercent: number | null;
   serviceWinPercent: number | null;
@@ -67,6 +85,7 @@ export interface PlayerPerformanceSummary {
   acesPerSet: number | null;
   acesPerMatch: number | null;
   setsWithRecordedPoints: number;
+  setBreakdown: PlayerSetPerformance[];
   matchesInSample: number;
   shotTagCount: number;
   taggedPointCount: number;
@@ -403,6 +422,83 @@ export function summarizePlayerPerformance(
   const setsWithRecordedPoints = insights.sets.filter(
     (set) => set.pointCount > 0,
   ).length;
+  const setBreakdown = insights.sets.map((set) => {
+    const trackedSetServeStats = set.serveStats?.tracked;
+    const setCodes = (set.codes ?? []).filter((item) => isPointCode(item.code));
+    const rallyWinnerCodes: readonly PointCode[] = ['F', 'B', 'V', 'O', 'P'];
+    const rallyWinnerTagCount = setCodes.reduce(
+      (total, item) =>
+        total + (rallyWinnerCodes.includes(item.code) ? item.count : 0),
+      0,
+    );
+    const trackedRallyWinnerCount = setCodes.reduce(
+      (total, item) =>
+        total +
+        (rallyWinnerCodes.includes(item.code) ? item.trackedWon : 0),
+      0,
+    );
+    const unforcedErrorCodes: readonly PointCode[] = ['N', 'L', 'W'];
+    const unforcedErrorTagCount = setCodes.reduce(
+      (total, item) =>
+        total + (unforcedErrorCodes.includes(item.code) ? item.count : 0),
+      0,
+    );
+    const trackedUnforcedErrorCount = setCodes.reduce(
+      (total, item) =>
+        total +
+        (unforcedErrorCodes.includes(item.code) ? item.opponentWon : 0),
+      0,
+    );
+    const servicePointCount = trackedSetServeStats?.servicePoints ?? 0;
+    const secondServeAttemptCount =
+      trackedSetServeStats?.secondServePoints ?? 0;
+    const secondServeInCount = Math.max(
+      0,
+      secondServeAttemptCount - (trackedSetServeStats?.doubleFaults ?? 0),
+    );
+
+    return {
+      setNumber: set.setNumber,
+      isComplete: set.isComplete,
+      pointCount: set.pointCount,
+      firstServeIn: {
+        count:
+          servicePointCount > 0
+            ? (trackedSetServeStats?.firstServePoints ?? 0)
+            : null,
+        total: servicePointCount,
+        percent: percent(
+          trackedSetServeStats?.firstServePoints ?? 0,
+          servicePointCount,
+        ),
+      },
+      secondServeIn: {
+        count: secondServeAttemptCount > 0 ? secondServeInCount : null,
+        total: secondServeAttemptCount,
+        percent: percent(secondServeInCount, secondServeAttemptCount),
+      },
+      rallyWinners: {
+        count: rallyWinnerTagCount > 0 ? trackedRallyWinnerCount : null,
+        total: rallyWinnerTagCount,
+        percent: percent(trackedRallyWinnerCount, rallyWinnerTagCount),
+      },
+      aces:
+        servicePointCount > 0
+          ? (trackedSetServeStats?.aces ?? 0)
+          : null,
+      trackedServicePoints:
+        trackedSetServeStats?.servicePoints ?? set.trackedServicePoints,
+      unforcedErrors: {
+        count:
+          unforcedErrorTagCount > 0 ? trackedUnforcedErrorCount : null,
+        total: unforcedErrorTagCount,
+        percent: percent(
+          trackedUnforcedErrorCount,
+          unforcedErrorTagCount,
+        ),
+      },
+    };
+  });
   const aces = trackedServeStats.aces;
   const acesPerServiceGame =
     insights.serviceGames.tracked.gamesPlayed > 0
@@ -564,6 +660,7 @@ export function summarizePlayerPerformance(
     acesPerSet,
     acesPerMatch,
     setsWithRecordedPoints,
+    setBreakdown,
     matchesInSample,
     shotTagCount,
     taggedPointCount,
