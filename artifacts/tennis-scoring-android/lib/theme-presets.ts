@@ -31,7 +31,35 @@ export interface ThemePreset {
   dark: ThemeTokens;
 }
 
-const themeFamilies = [
+export interface CustomThemeColors {
+  primary: string;
+  accent: string;
+  background: string;
+}
+
+interface ThemeFamily {
+  id: string;
+  name: string;
+  hue: number;
+  accentHue: number;
+  backgroundHue: number;
+}
+
+interface ThemeVariant {
+  name: string;
+  hueShift: number;
+  saturation: number;
+  lightness: number;
+  accentHueShift: number;
+  accentSaturation: number;
+  accentLightness: number;
+  backgroundHueShift: number;
+  backgroundSaturation: number;
+  backgroundLightness: number;
+  darkBackgroundLightness: number;
+}
+
+const themeFamilies: ThemeFamily[] = [
   { id: 'court-green', name: 'Court Green', hue: 150, accentHue: 16, backgroundHue: 42 },
   { id: 'ocean', name: 'Deep Ocean', hue: 207, accentHue: 45, backgroundHue: 201 },
   { id: 'sunset', name: 'Sunset', hue: 15, accentHue: 194, backgroundHue: 32 },
@@ -42,9 +70,22 @@ const themeFamilies = [
   { id: 'slate', name: 'Carbon', hue: 220, accentHue: 23, backgroundHue: 220 },
   { id: 'saffron', name: 'Saffron', hue: 39, accentHue: 162, backgroundHue: 47 },
   { id: 'lagoon', name: 'Lagoon', hue: 174, accentHue: 326, backgroundHue: 180 },
-] as const;
+];
 
-const variants = [
+const vibrantFamilies: ThemeFamily[] = [
+  { id: 'vibrant-electric', name: 'Vibrant · Electric Pop', hue: 198, accentHue: 330, backgroundHue: 210 },
+  { id: 'vibrant-neon-lime', name: 'Vibrant · Neon Lime', hue: 100, accentHue: 265, backgroundHue: 95 },
+  { id: 'vibrant-fuchsia', name: 'Vibrant · Fuchsia', hue: 322, accentHue: 184, backgroundHue: 322 },
+  { id: 'vibrant-solar', name: 'Vibrant · Solar Flare', hue: 28, accentHue: 260, backgroundHue: 38 },
+  { id: 'vibrant-royal', name: 'Vibrant · Royal Blue', hue: 232, accentHue: 22, backgroundHue: 225 },
+  { id: 'vibrant-cherry', name: 'Vibrant · Cherry Red', hue: 355, accentHue: 52, backgroundHue: 352 },
+  { id: 'vibrant-ultraviolet', name: 'Vibrant · Ultraviolet', hue: 276, accentHue: 82, backgroundHue: 278 },
+  { id: 'vibrant-tropical', name: 'Vibrant · Tropical Punch', hue: 146, accentHue: 335, backgroundHue: 150 },
+  { id: 'vibrant-saffron', name: 'Vibrant · Saffron', hue: 42, accentHue: 225, backgroundHue: 45 },
+  { id: 'vibrant-laser-teal', name: 'Vibrant · Laser Teal', hue: 174, accentHue: 14, backgroundHue: 178 },
+];
+
+const variants: ThemeVariant[] = [
   { name: 'Airy', hueShift: 18, saturation: 49, lightness: 34, accentHueShift: 0, accentSaturation: 54, accentLightness: 44, backgroundHueShift: 8, backgroundSaturation: 17, backgroundLightness: 98, darkBackgroundLightness: 11 },
   { name: 'Soft', hueShift: -15, saturation: 38, lightness: 31, accentHueShift: 12, accentSaturation: 46, accentLightness: 43, backgroundHueShift: -12, backgroundSaturation: 12, backgroundLightness: 96, darkBackgroundLightness: 12 },
   { name: 'Calm', hueShift: 0, saturation: 43, lightness: 28, accentHueShift: -18, accentSaturation: 61, accentLightness: 43, backgroundHueShift: 22, backgroundSaturation: 18, backgroundLightness: 97, darkBackgroundLightness: 10 },
@@ -55,9 +96,23 @@ const variants = [
   { name: 'Rich', hueShift: 24, saturation: 70, lightness: 28, accentHueShift: -52, accentSaturation: 64, accentLightness: 42, backgroundHueShift: 52, backgroundSaturation: 25, backgroundLightness: 94, darkBackgroundLightness: 8 },
   { name: 'Mellow', hueShift: -24, saturation: 47, lightness: 38, accentHueShift: 64, accentSaturation: 62, accentLightness: 43, backgroundHueShift: -66, backgroundSaturation: 18, backgroundLightness: 96, darkBackgroundLightness: 13 },
   { name: 'Night', hueShift: 34, saturation: 60, lightness: 24, accentHueShift: -76, accentSaturation: 72, accentLightness: 45, backgroundHueShift: 78, backgroundSaturation: 19, backgroundLightness: 95, darkBackgroundLightness: 8 },
-] as const;
+];
+
+const vibrantVariants: ThemeVariant[] = [
+  { name: 'Neon', hueShift: 0, saturation: 96, lightness: 38, accentHueShift: 0, accentSaturation: 98, accentLightness: 48, backgroundHueShift: 0, backgroundSaturation: 24, backgroundLightness: 97, darkBackgroundLightness: 8 },
+  { name: 'Pop', hueShift: -7, saturation: 92, lightness: 34, accentHueShift: 18, accentSaturation: 94, accentLightness: 43, backgroundHueShift: 18, backgroundSaturation: 18, backgroundLightness: 95, darkBackgroundLightness: 10 },
+  { name: 'Laser', hueShift: 12, saturation: 100, lightness: 40, accentHueShift: -18, accentSaturation: 100, accentLightness: 45, backgroundHueShift: -16, backgroundSaturation: 22, backgroundLightness: 98, darkBackgroundLightness: 7 },
+  { name: 'Candy', hueShift: -18, saturation: 88, lightness: 42, accentHueShift: 32, accentSaturation: 96, accentLightness: 49, backgroundHueShift: 30, backgroundSaturation: 21, backgroundLightness: 96, darkBackgroundLightness: 12 },
+  { name: 'Voltage', hueShift: 24, saturation: 95, lightness: 32, accentHueShift: -34, accentSaturation: 92, accentLightness: 42, backgroundHueShift: -28, backgroundSaturation: 24, backgroundLightness: 95, darkBackgroundLightness: 9 },
+  { name: 'Festival', hueShift: 5, saturation: 100, lightness: 44, accentHueShift: 48, accentSaturation: 100, accentLightness: 46, backgroundHueShift: 46, backgroundSaturation: 19, backgroundLightness: 98, darkBackgroundLightness: 11 },
+  { name: 'Hyper', hueShift: -27, saturation: 94, lightness: 36, accentHueShift: -52, accentSaturation: 97, accentLightness: 44, backgroundHueShift: -46, backgroundSaturation: 27, backgroundLightness: 96, darkBackgroundLightness: 7 },
+  { name: 'Glow', hueShift: 19, saturation: 91, lightness: 39, accentHueShift: 70, accentSaturation: 93, accentLightness: 48, backgroundHueShift: 64, backgroundSaturation: 18, backgroundLightness: 97, darkBackgroundLightness: 10 },
+  { name: 'Prism', hueShift: -35, saturation: 98, lightness: 35, accentHueShift: 92, accentSaturation: 100, accentLightness: 43, backgroundHueShift: 86, backgroundSaturation: 22, backgroundLightness: 95, darkBackgroundLightness: 8 },
+  { name: 'Rally', hueShift: 31, saturation: 97, lightness: 37, accentHueShift: -84, accentSaturation: 95, accentLightness: 46, backgroundHueShift: -72, backgroundSaturation: 20, backgroundLightness: 97, darkBackgroundLightness: 9 },
+];
 
 export const DEFAULT_THEME_ID = 'court-green-classic';
+export const CUSTOM_THEME_ID = 'custom-palette';
 
 function hslToHex(hue: number, saturation: number, lightness: number): string {
   const h = ((hue % 360) + 360) % 360;
@@ -108,16 +163,14 @@ function readableForeground(background: string): string {
 }
 
 function createTokens(
-  hue: number,
-  familyAccentHue: number,
-  familyBackgroundHue: number,
+  family: ThemeFamily,
+  variant: ThemeVariant,
   variantIndex: number,
   dark: boolean,
 ): ThemeTokens {
-  const variant = variants[variantIndex]!;
-  const primaryHue = hue + variant.hueShift;
-  const accentHue = familyAccentHue + variant.accentHueShift;
-  const backgroundHue = familyBackgroundHue + variant.backgroundHueShift;
+  const primaryHue = family.hue + variant.hueShift;
+  const accentHue = family.accentHue + variant.accentHueShift;
+  const backgroundHue = family.backgroundHue + variant.backgroundHueShift;
   const primary = hslToHex(
     primaryHue,
     variant.saturation,
@@ -171,28 +224,26 @@ function createTokens(
   };
 }
 
-export const THEME_PRESETS: ThemePreset[] = themeFamilies.flatMap((family) =>
-  variants.map((variant, variantIndex) => ({
-    id: `${family.id}-${variant.name.toLowerCase()}`,
-    name: variant.name,
-    groupId: family.id,
-    groupName: family.name,
-    light: createTokens(
-      family.hue,
-      family.accentHue,
-      family.backgroundHue,
-      variantIndex,
-      false,
-    ),
-    dark: createTokens(
-      family.hue,
-      family.accentHue,
-      family.backgroundHue,
-      variantIndex,
-      true,
-    ),
-  })),
-);
+function createThemePresets(
+  families: ThemeFamily[],
+  themeVariants: ThemeVariant[],
+): ThemePreset[] {
+  return families.flatMap((family) =>
+    themeVariants.map((variant, variantIndex) => ({
+      id: `${family.id}-${variant.name.toLowerCase()}`,
+      name: variant.name,
+      groupId: family.id,
+      groupName: family.name,
+      light: createTokens(family, variant, variantIndex, false),
+      dark: createTokens(family, variant, variantIndex, true),
+    })),
+  );
+}
+
+export const THEME_PRESETS = [
+  ...createThemePresets(themeFamilies, variants),
+  ...createThemePresets(vibrantFamilies, vibrantVariants),
+];
 
 const originalCourtGreen = THEME_PRESETS.find(
   (theme) => theme.id === DEFAULT_THEME_ID,
@@ -214,7 +265,7 @@ if (originalCourtGreen) {
   );
 }
 
-export const THEME_GROUPS = themeFamilies.map((family) => ({
+export const THEME_GROUPS = [...themeFamilies, ...vibrantFamilies].map((family) => ({
   id: family.id,
   name: family.name,
   presets: THEME_PRESETS.filter((theme) => theme.groupId === family.id),
@@ -222,9 +273,11 @@ export const THEME_GROUPS = themeFamilies.map((family) => ({
 
 export const SELECTED_THEME_STORAGE_KEY =
   '@tennis-scoring/selected-theme-v1';
+export const CUSTOM_THEME_STORAGE_KEY =
+  '@tennis-scoring/custom-theme-colors-v1';
 
 export function isThemeId(value: string | null | undefined): value is string {
-  return THEME_PRESETS.some((theme) => theme.id === value);
+  return value === CUSTOM_THEME_ID || THEME_PRESETS.some((theme) => theme.id === value);
 }
 
 export function getThemePreset(themeId: string): ThemePreset {
@@ -234,6 +287,9 @@ export function getThemePreset(themeId: string): ThemePreset {
 
 export async function getSavedThemeId(): Promise<string> {
   const savedThemeId = await AsyncStorage.getItem(SELECTED_THEME_STORAGE_KEY);
+  if (savedThemeId === CUSTOM_THEME_ID && !(await getSavedCustomThemeColors())) {
+    return DEFAULT_THEME_ID;
+  }
   return isThemeId(savedThemeId) ? savedThemeId : DEFAULT_THEME_ID;
 }
 
@@ -241,5 +297,101 @@ export async function saveThemeId(themeId: string): Promise<void> {
   if (!isThemeId(themeId)) {
     throw new Error('Choose one of the available themes.');
   }
+  if (themeId === CUSTOM_THEME_ID && !(await getSavedCustomThemeColors())) {
+    throw new Error('Set valid custom colors before applying your palette.');
+  }
   await AsyncStorage.setItem(SELECTED_THEME_STORAGE_KEY, themeId);
+}
+
+export async function getSavedCustomThemeColors(): Promise<CustomThemeColors | null> {
+  const serialized = await AsyncStorage.getItem(CUSTOM_THEME_STORAGE_KEY);
+  if (!serialized) return null;
+  try {
+    const colors = JSON.parse(serialized) as unknown;
+    return isCustomThemeColors(colors) ? colors : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveCustomThemeColors(
+  colors: CustomThemeColors,
+): Promise<void> {
+  if (!isCustomThemeColors(colors)) {
+    throw new Error('Use a valid 3- or 6-digit hex color for each palette color.');
+  }
+  const normalized = {
+    primary: normalizeHexColor(colors.primary),
+    accent: normalizeHexColor(colors.accent),
+    background: normalizeHexColor(colors.background),
+  };
+  await AsyncStorage.setItem(CUSTOM_THEME_STORAGE_KEY, JSON.stringify(normalized));
+}
+
+export function createCustomThemeTokens(
+  palette: CustomThemeColors,
+  dark: boolean,
+): ThemeTokens {
+  const backgroundHue = hueFromHex(palette.background);
+  const background = dark
+    ? hslToHex(backgroundHue, 29, 10)
+    : normalizeHexColor(palette.background);
+  const primary = normalizeHexColor(palette.primary);
+  const accent = normalizeHexColor(palette.accent);
+  const foreground = dark ? '#f7f5f2' : readableForeground(background);
+  const secondary = dark ? '#252d38' : '#ffffff';
+  const muted = dark ? hslToHex(backgroundHue, 20, 22) : hslToHex(210, 12, 95);
+  const border = dark ? hslToHex(backgroundHue, 17, 31) : hslToHex(210, 12, 82);
+  return {
+    text: foreground,
+    tint: primary,
+    background,
+    foreground,
+    card: dark ? hslToHex(backgroundHue, 23, 15) : '#ffffff',
+    cardForeground: dark ? '#f7f5f2' : readableForeground('#ffffff'),
+    primary,
+    primaryForeground: readableForeground(primary),
+    secondary,
+    secondaryForeground: foreground,
+    muted,
+    mutedForeground: dark ? '#aeb7c3' : '#58616d',
+    accent,
+    accentForeground: readableForeground(accent),
+    destructive: dark ? '#f27b70' : '#a8433b',
+    destructiveForeground: '#ffffff',
+    border,
+    input: border,
+  };
+}
+
+function isCustomThemeColors(value: unknown): value is CustomThemeColors {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  return ['primary', 'accent', 'background'].every(
+    (key) =>
+      typeof candidate[key] === 'string' &&
+      /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(candidate[key] as string),
+  );
+}
+
+function normalizeHexColor(value: string): string {
+  const hex = value.trim().toLowerCase();
+  if (/^#[0-9a-f]{3}$/i.test(hex)) {
+    return `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`;
+  }
+  return hex;
+}
+
+function hueFromHex(value: string): number {
+  const hex = normalizeHexColor(value).slice(1);
+  const [red, green, blue] = hex.match(/.{2}/g)!.map(
+    (channel) => parseInt(channel, 16) / 255,
+  );
+  const max = Math.max(red!, green!, blue!);
+  const min = Math.min(red!, green!, blue!);
+  const delta = max - min;
+  if (delta === 0) return 0;
+  if (max === red) return ((60 * ((green! - blue!) / delta) + 360) % 360);
+  if (max === green) return 60 * ((blue! - red!) / delta + 2);
+  return 60 * ((red! - green!) / delta + 4);
 }

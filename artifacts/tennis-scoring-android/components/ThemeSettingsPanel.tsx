@@ -4,6 +4,7 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useAppTheme } from '@/hooks/ThemeContext';
 import { useColors } from '@/hooks/useColors';
 import { THEME_GROUPS } from '@/lib/theme-presets';
+import { CustomThemeEditor } from '@/components/CustomThemeEditor';
 
 export function ThemeSettingsPanel() {
   const colors = useColors();
@@ -30,23 +31,25 @@ export function ThemeSettingsPanel() {
         <Text style={[styles.eyebrow, { color: colors.accent }]}>PERSONALIZE</Text>
         <Text style={[styles.title, { color: colors.foreground }]}>Settings</Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-          Choose from 100 color themes. Your selection applies throughout the app.
+          Choose from 200 themes or build a palette from your own colors. Changes stay on this device.
         </Text>
       </View>
 
       <View style={styles.sectionHeading}>
         <View>
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
-            Theme groups
+            Theme collections
           </Text>
           <Text style={[styles.sectionCaption, { color: colors.mutedForeground }]}>
-            10 color families · 10 variations each
+            20 color families · 10 variations each
           </Text>
         </View>
         <View style={[styles.totalCount, { backgroundColor: colors.secondary }]}>
-          <Text style={[styles.totalCountText, { color: colors.primary }]}>100</Text>
+          <Text style={[styles.totalCountText, { color: colors.primary }]}>200</Text>
         </View>
       </View>
+
+      <CustomThemeEditor />
 
       {THEME_GROUPS.map((group) => (
         <View

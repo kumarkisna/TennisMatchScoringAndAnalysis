@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ThemeSettingsPanel } from '@/components/ThemeSettingsPanel';
+import { BottomTabBar } from '@/components/BottomTabBar';
 import { useColors } from '@/hooks/useColors';
 import {
   deleteLocalMatch,
@@ -36,7 +36,6 @@ import {
   saveHomeScreenPreferences,
   splitHomeMatches,
   type HomeScreenPreferences,
-  type MatchBookSection,
 } from '@/lib/home-screen-state';
 import {
   loadLocalBackupFromDevice,
@@ -139,11 +138,7 @@ export default function HomeScreen() {
   const localMatches = matchesQuery.data ?? [];
   const matches: LocalMatchSummary[] = localMatches;
   const matchSections = splitHomeMatches(matches);
-  const isSettings = homePreferences.matchBookSection === 'settings';
-  const visibleSection = homePreferences.matchBookSection === 'history'
-    ? 'history'
-    : 'recent';
-  const sectionMatches = isSettings ? [] : matchSections[visibleSection];
+  const sectionMatches = matchSections.recent;
   const visibleMatches = homePreferences.showCompletedMatches
     ? sectionMatches
     : sectionMatches.filter((match) => match.status !== 'complete');
@@ -153,10 +148,6 @@ export default function HomeScreen() {
   const completedCount = sectionMatches.filter(
     (match) => match.status === 'complete',
   ).length;
-
-  function selectMatchBookSection(section: MatchBookSection) {
-    updateHomePreferences((current) => ({ ...current, matchBookSection: section }));
-  }
 
   function toggleCompletedMatches() {
     updateHomePreferences((current) => ({
@@ -195,7 +186,7 @@ export default function HomeScreen() {
       edges={['top', 'left', 'right']}
     >
       <FlatList
-        data={isSettings ? [] : visibleMatches}
+        data={visibleMatches}
         keyExtractor={(item) => item.id}
         contentContainerStyle={[
           styles.content,
@@ -211,9 +202,6 @@ export default function HomeScreen() {
           />
         }
         ListHeaderComponent={
-          isSettings ? (
-            <ThemeSettingsPanel />
-          ) : (
           <View>
             <View style={styles.topLine}>
               <View style={[styles.brandMark, { borderColor: colors.primary }]}>
@@ -395,7 +383,7 @@ export default function HomeScreen() {
             <View style={styles.sectionHeader}>
               <View>
                 <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
-                  {visibleSection === 'history' ? 'Match history' : 'Match book'}
+                  Match book
                 </Text>
               </View>
               <View style={styles.matchControls}>
@@ -413,9 +401,7 @@ export default function HomeScreen() {
             </View>
             <View style={styles.matchSectionControlRow}>
               <Text style={[styles.matchSectionCaption, { color: colors.mutedForeground }]}>
-                {visibleSection === 'recent'
-                  ? 'Your two newest matches'
-                  : 'Older matches'}
+                Your two newest matches
               </Text>
               {completedCount > 0 ? (
                 <Pressable
@@ -478,7 +464,6 @@ export default function HomeScreen() {
               <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
             </Pressable>
           </View>
-          )
         }
         renderItem={({ item }) => {
           const finished = item.status === 'complete';
@@ -699,7 +684,7 @@ export default function HomeScreen() {
           );
         }}
         ListEmptyComponent={
-          isSettings ? undefined : matchesQuery.isLoading ? (
+          matchesQuery.isLoading ? (
             <View style={styles.stateBox}>
               <ActivityIndicator size="small" color={colors.primary} />
               <Text style={[styles.stateText, { color: colors.mutedForeground }]}>
@@ -756,23 +741,6 @@ export default function HomeScreen() {
                 </Text>
               </Pressable>
             </View>
-          ) : visibleSection === 'history' ? (
-            <View
-              style={[
-                styles.emptyCard,
-                { backgroundColor: colors.card, borderColor: colors.border },
-              ]}
-            >
-              <View style={[styles.emptyIcon, { backgroundColor: colors.secondary }]}>
-                <Ionicons name="time-outline" size={25} color={colors.primary} />
-              </View>
-              <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-                No older matches yet
-              </Text>
-              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-                Your two newest matches stay on Home. Older matches will appear here.
-              </Text>
-            </View>
           ) : (
             <View
               style={[
@@ -793,91 +761,15 @@ export default function HomeScreen() {
           )
         }
         ListFooterComponent={
-          isSettings ? undefined : (
           <View style={styles.footerNote}>
             <Ionicons name="shield-checkmark-outline" size={14} color={colors.mutedForeground} />
             <Text style={[styles.footerText, { color: colors.mutedForeground }]}>
               Scores and player profiles stay on this device · no online storage
             </Text>
           </View>
-          )
         }
       />
-      <View
-        testID="match-book-bottom-tabs"
-        accessibilityRole="tablist"
-        style={[
-          styles.bottomTabBar,
-          {
-            backgroundColor: colors.background,
-            borderTopColor: colors.border,
-            paddingBottom: Math.max(insets.bottom, 8),
-          },
-        ]}
-      >
-        {([
-          ['home', 'Home', 'home-outline'],
-          ['history', 'History', 'archive-outline'],
-          ['settings', 'Settings', 'settings-outline'],
-        ] as const).map(([section, label, icon]) => {
-          const selected = homePreferences.matchBookSection === section;
-          const historyCount =
-            section === 'history' ? matchSections.history.length : null;
-          return (
-            <Pressable
-              key={section}
-              testID={`match-book-tab-${section}`}
-              accessibilityRole="tab"
-              accessibilityState={{
-                selected,
-                disabled: homePreferencesQuery.isLoading,
-              }}
-              disabled={homePreferencesQuery.isLoading}
-              onPress={() => selectMatchBookSection(section)}
-              style={({ pressed }) => [
-                styles.bottomTab,
-                {
-                  opacity: homePreferencesQuery.isLoading ? 0.55 : pressed ? 0.7 : 1,
-                },
-              ]}
-            >
-              <View style={styles.bottomTabLabel}>
-                <Ionicons
-                  name={icon}
-                  size={18}
-                  color={selected ? colors.primary : colors.mutedForeground}
-                />
-                <Text
-                  style={[
-                    styles.bottomTabText,
-                    { color: selected ? colors.primary : colors.mutedForeground },
-                  ]}
-                >
-                  {label}
-                </Text>
-                {historyCount !== null ? (
-                  <Text
-                    style={[
-                      styles.bottomTabCount,
-                      { color: selected ? colors.primary : colors.mutedForeground },
-                    ]}
-                  >
-                    {historyCount}
-                  </Text>
-                ) : null}
-              </View>
-              {selected ? (
-                <View
-                  style={[
-                    styles.bottomTabIndicator,
-                    { backgroundColor: colors.primary },
-                  ]}
-                />
-              ) : null}
-            </Pressable>
-          );
-        })}
-      </View>
+      <BottomTabBar activeTab="home" historyCount={matchSections.history.length} />
     </SafeAreaView>
   );
 }

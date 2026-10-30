@@ -3,13 +3,13 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
+import { LocalPlayerPicker } from '@/components/LocalPlayerPicker';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useColors } from '@/hooks/useColors';
@@ -32,67 +32,6 @@ type Side = 'tracked' | 'opponent';
 type Surface = 'Hard' | 'Clay' | 'Grass' | 'Carpet' | 'Other';
 
 const surfaces: Surface[] = ['Hard', 'Clay', 'Grass', 'Carpet', 'Other'];
-
-function SavedPlayerChoices({
-  players,
-  value,
-  testIDPrefix,
-  onSelect,
-}: {
-  players: { id: string; name: string }[];
-  value: string;
-  testIDPrefix: string;
-  onSelect: (name: string) => void;
-}) {
-  const colors = useColors();
-  if (players.length === 0) return null;
-
-  return (
-    <View style={styles.savedPlayersBlock}>
-      <Text style={[styles.savedPlayersLabel, { color: colors.mutedForeground }]}>
-        SAVED PLAYERS · TAP TO USE
-      </Text>
-      <ScrollView
-        horizontal
-        nestedScrollEnabled
-        showsHorizontalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.savedPlayersRow}>
-          {players.map((player) => {
-            const selected =
-              value.trim().toLocaleLowerCase() === player.name.toLocaleLowerCase();
-            return (
-              <Pressable
-                key={player.id}
-                testID={`saved-player-choice-${testIDPrefix}-${player.id}`}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                onPress={() => onSelect(player.name)}
-                style={[
-                  styles.savedPlayerChip,
-                  {
-                    backgroundColor: selected ? colors.primary : colors.background,
-                    borderColor: selected ? colors.primary : colors.border,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.savedPlayerChipText,
-                    { color: selected ? colors.primaryForeground : colors.foreground },
-                  ]}
-                >
-                  {player.name}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </ScrollView>
-    </View>
-  );
-}
 
 function localDate() {
   const date = new Date();
@@ -154,7 +93,9 @@ export default function NewMatchScreen() {
   const [matchDate, setMatchDate] = useState(localDate());
   const [trackedPlayer, setTrackedPlayer] = useState('');
   const [trackedPlayerEdited, setTrackedPlayerEdited] = useState(false);
+  const [selectedTrackedPlayerId, setSelectedTrackedPlayerId] = useState<string | null>(null);
   const [opponent, setOpponent] = useState('');
+  const [selectedOpponentPlayerId, setSelectedOpponentPlayerId] = useState<string | null>(null);
   const [event, setEvent] = useState('');
   const [round, setRound] = useState('');
   const [setNumber, setSetNumber] = useState('1');
@@ -171,11 +112,14 @@ export default function NewMatchScreen() {
     queryFn: getActiveLocalPlayerId,
   });
   const players = playersQuery.data ?? [];
-  const activePlayerName =
-    players.find((player) => player.id === activePlayerQuery.data)?.name ?? '';
+  const activePlayer = players.find((player) => player.id === activePlayerQuery.data);
+  const activePlayerName = activePlayer?.name ?? '';
   const trackedPlayerValue = trackedPlayerEdited
     ? trackedPlayer
     : activePlayerName || trackedPlayer;
+  const trackedPlayerId = trackedPlayerEdited
+    ? selectedTrackedPlayerId
+    : activePlayer?.id ?? null;
   const savePlayers = useMutation({
     mutationFn: (names: string[]) => Promise.all(names.map((name) => addLocalPlayer(name))),
     onSuccess: async () => {
@@ -221,18 +165,8 @@ export default function NewMatchScreen() {
     createMatch.mutate({
       ...details,
       setNumber: parsedSet,
-      trackedPlayerId:
-        players.find(
-          (player) =>
-            player.name.trim().replace(/\s+/g, ' ').toLocaleLowerCase() ===
-            trackedPlayerValue.trim().replace(/\s+/g, ' ').toLocaleLowerCase(),
-        )?.id ?? null,
-      opponentPlayerId:
-        players.find(
-          (player) =>
-            player.name.trim().replace(/\s+/g, ' ').toLocaleLowerCase() ===
-            opponent.trim().replace(/\s+/g, ' ').toLocaleLowerCase(),
-        )?.id ?? null,
+      trackedPlayerId,
+      opponentPlayerId: selectedOpponentPlayerId,
     });
   }
 
@@ -308,33 +242,43 @@ export default function NewMatchScreen() {
             onChangeText={(value) => {
               setTrackedPlayer(value);
               setTrackedPlayerEdited(true);
+              setSelectedTrackedPlayerId(null);
             }}
             placeholder="Player being recorded"
             testID="input-tracked-player"
             maxLength={80}
           />
-          <SavedPlayerChoices
+          <LocalPlayerPicker
             players={players}
-            value={trackedPlayerValue}
+            side="tracked"
+            selectedPlayerId={trackedPlayerId}
             testIDPrefix="tracked"
-            onSelect={(name) => {
-              setTrackedPlayer(name);
+            onSelect={(player) => {
+              setTrackedPlayer(player.name);
               setTrackedPlayerEdited(true);
+              setSelectedTrackedPlayerId(player.id);
             }}
           />
           <Field
             label="OPPONENT"
             value={opponent}
-            onChangeText={setOpponent}
+            onChangeText={(value) => {
+              setOpponent(value);
+              setSelectedOpponentPlayerId(null);
+            }}
             placeholder="Opposing player or team"
             testID="input-opponent"
             maxLength={80}
           />
-          <SavedPlayerChoices
+          <LocalPlayerPicker
             players={players}
-            value={opponent}
+            side="opponent"
+            selectedPlayerId={selectedOpponentPlayerId}
             testIDPrefix="opponent"
-            onSelect={setOpponent}
+            onSelect={(player) => {
+              setOpponent(player.name);
+              setSelectedOpponentPlayerId(player.id);
+            }}
           />
           {players.length === 0 ? (
             <Pressable
@@ -546,11 +490,6 @@ const styles = StyleSheet.create({
   serverChoices: { gap: 8 },
   serverChoice: { minHeight: 43, borderWidth: 1, borderRadius: 8, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 9 },
   serverChoiceText: { flex: 1, fontFamily: 'DMSans_500Medium', fontSize: 13 },
-  savedPlayersBlock: { gap: 6, marginTop: -8 },
-  savedPlayersLabel: { fontFamily: 'DMSans_700Bold', fontSize: 8, letterSpacing: 0.8 },
-  savedPlayersRow: { flexDirection: 'row', gap: 6, paddingVertical: 2 },
-  savedPlayerChip: { minHeight: 31, paddingHorizontal: 10, borderWidth: 1, borderRadius: 16, justifyContent: 'center' },
-  savedPlayerChipText: { fontFamily: 'DMSans_600SemiBold', fontSize: 11 },
   managePlayersLink: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 6 },
   managePlayersText: { fontFamily: 'DMSans_600SemiBold', fontSize: 10 },
   savePlayersButton: { minHeight: 36, borderWidth: 1, borderRadius: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },

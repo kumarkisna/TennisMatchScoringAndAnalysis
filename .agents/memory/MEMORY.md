@@ -4,3 +4,5 @@
 - [Unbranded private reports](private-reports.md) — omit company marks; use optional on-device neutral labels consistently in previews and PDFs.
 - [Saved player links](player-profile-links.md) — preserve profile URLs with local player records and make them directly openable.
 - [pnpm security policy](pnpm-security-policy.md) — inspect workspace settings after dependency commands; pnpm can rewrite the release-age protection.
+- [Home and history split](home-history.md) — keep the two newest matches on Home; put older matches in a dedicated newest-first History screen.
+- [Vibrant local themes](offline-themes.md) — offer clearly varied, vivid palettes and editable custom colors while preserving the original default and offline storage.

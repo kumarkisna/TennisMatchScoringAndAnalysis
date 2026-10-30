@@ -1998,36 +1998,118 @@ test('home match sections sort by match date and remember tabs and expanded card
     path.join(__dirname, '../app/index.tsx'),
     'utf8',
   );
-  assert.match(homeSource, /testID=\{`match-book-tab-\$\{section\}`\}/);
-  assert.match(homeSource, /testID=\{`button-toggle-match-details-\$\{item\.id\}`\}/);
-  assert.match(homeSource, /\['home', 'Home', 'home-outline'\]/);
-  assert.match(homeSource, /\['settings', 'Settings', 'settings-outline'\]/);
-  assert.match(homeSource, /testID="match-book-bottom-tabs"/);
-  assert.match(homeSource, /historyCount !== null/);
+  const historySource = fs.readFileSync(
+    path.join(__dirname, '../app/history.tsx'),
+    'utf8',
+  );
+  const tabsSource = fs.readFileSync(
+    path.join(__dirname, '../components/BottomTabBar.tsx'),
+    'utf8',
+  );
+  const settingsSource = fs.readFileSync(
+    path.join(__dirname, '../app/settings.tsx'),
+    'utf8',
+  );
+  assert.match(homeSource, /<BottomTabBar activeTab="home"/);
+  assert.match(homeSource, /Your two newest matches/);
+  assert.match(historySource, /splitHomeMatches\(matchesQuery\.data \?\? \[\]\)/);
+  assert.match(historySource, /const allHistoryMatches = matchSections\.history/);
+  assert.match(historySource, /<BottomTabBar activeTab="history"/);
+  assert.match(historySource, /<MatchBookCard/);
+  assert.match(historySource, /older matches, with the most recent listed first/i);
+  assert.match(tabsSource, /route: '\/history'/);
+  assert.match(tabsSource, /route: '\/settings'/);
+  assert.match(tabsSource, /route: '\/'/);
+  assert.match(tabsSource, /tab\.id === 'history' \? historyCount : undefined/);
+  assert.match(settingsSource, /<BottomTabBar activeTab="settings"/);
+  assert.match(settingsSource, /<ThemeSettingsPanel/);
   assert.doesNotMatch(homeSource, /Saved on this device · no account or internet needed/);
-  assert.match(homeSource, /accessibilityState=\{\{\s*expanded,/);
+  assert.match(homeSource, /testID=\{`button-toggle-match-details-\$\{item\.id\}`\}/);
   assert.match(homeSource, /saveHomeScreenPreferences\(next\)/);
 });
 
-test('one hundred selectable theme presets persist locally', async () => {
+test('saved player pickers search device profiles and preserve explicit links', () => {
+  const pickerSource = fs.readFileSync(
+    path.join(__dirname, '../components/LocalPlayerPicker.tsx'),
+    'utf8',
+  );
+  const newMatchSource = fs.readFileSync(
+    path.join(__dirname, '../app/matches/new.tsx'),
+    'utf8',
+  );
+  const editMatchSource = fs.readFileSync(
+    path.join(__dirname, '../app/matches/[id].tsx'),
+    'utf8',
+  );
+
+  assert.match(pickerSource, /player\.profileUrlLabels/);
+  assert.match(pickerSource, /player\.profileUrls/);
+  assert.match(pickerSource, /searchableText\.includes\(normalizedSearch\)/);
+  assert.match(pickerSource, /onSelect\(player\)/);
+  assert.doesNotMatch(pickerSource, /\bfetch\s*\(/);
+  assert.equal((newMatchSource.match(/<LocalPlayerPicker/g) ?? []).length, 2);
+  assert.equal((editMatchSource.match(/<LocalPlayerPicker/g) ?? []).length, 2);
+  assert.match(newMatchSource, /trackedPlayerId,\s*opponentPlayerId: selectedOpponentPlayerId/);
+  assert.match(newMatchSource, /setSelectedTrackedPlayerId\(null\)/);
+  assert.match(newMatchSource, /setSelectedOpponentPlayerId\(null\)/);
+  assert.match(editMatchSource, /trackedPlayerId: null/);
+  assert.match(editMatchSource, /opponentPlayerId: null/);
+  assert.match(editMatchSource, /trackedPlayerId: player\.id/);
+  assert.match(editMatchSource, /opponentPlayerId: player\.id/);
+});
+
+test('two hundred classic and vibrant themes plus custom colors persist locally', async () => {
   storageValues.clear();
   delete require.cache[require.resolve(themePresetsPath)];
   const themes = require(themePresetsPath);
-  assert.equal(themes.THEME_PRESETS.length, 100);
-  assert.equal(themes.THEME_GROUPS.length, 10);
+  assert.equal(themes.THEME_PRESETS.length, 200);
+  assert.equal(themes.THEME_GROUPS.length, 20);
   assert.ok(themes.THEME_GROUPS.every((group) => group.presets.length === 10));
   assert.equal(
     new Set(themes.THEME_PRESETS.map(({ id }) => id)).size,
-    100,
+    200,
   );
   assert.ok(themes.THEME_GROUPS.some(({ name }) => name === 'Saffron'));
   assert.ok(themes.THEME_GROUPS.some(({ name }) => name === 'Sunrise'));
   assert.equal(
+    themes.THEME_GROUPS.filter(({ name }) => name.startsWith('Vibrant ·')).length,
+    10,
+  );
+  assert.equal(
     new Set(themes.THEME_PRESETS.map(({ light }) => light.primary)).size,
-    100,
+    200,
   );
   assert.equal(await themes.getSavedThemeId(), themes.DEFAULT_THEME_ID);
   await themes.saveThemeId('ocean-bold');
   assert.equal(await themes.getSavedThemeId(), 'ocean-bold');
   await assert.rejects(themes.saveThemeId('not-a-theme'), /available themes/);
+
+  const custom = {
+    primary: '#AbC',
+    accent: '#e6007e',
+    background: '#f9f5ef',
+  };
+  await themes.saveCustomThemeColors(custom);
+  assert.deepEqual(await themes.getSavedCustomThemeColors(), {
+    primary: '#aabbcc',
+    accent: '#e6007e',
+    background: '#f9f5ef',
+  });
+  await themes.saveThemeId(themes.CUSTOM_THEME_ID);
+  assert.equal(await themes.getSavedThemeId(), themes.CUSTOM_THEME_ID);
+  const customTokens = themes.createCustomThemeTokens(custom, false);
+  assert.equal(customTokens.primary, '#aabbcc');
+  assert.equal(customTokens.accent, '#e6007e');
+  assert.equal(customTokens.background, '#f9f5ef');
+  assert.ok(customTokens.primaryForeground);
+  assert.ok(customTokens.accentForeground);
+  assert.ok(customTokens.foreground);
+  await assert.rejects(
+    themes.saveCustomThemeColors({
+      primary: 'red',
+      accent: '#e6007e',
+      background: '#f9f5ef',
+    }),
+    /valid 3- or 6-digit hex color/,
+  );
 });

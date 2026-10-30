@@ -20,6 +20,7 @@ import {
 } from '@tanstack/react-query';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
+import { LocalPlayerPicker } from '@/components/LocalPlayerPicker';
 import { ReportBenchmarkManager } from '@/components/ReportBenchmarkManager';
 import { ReportAnonymityToggle } from '@/components/ReportAnonymityToggle';
 import { ReportSectionPicker } from '@/components/ReportSectionPicker';
@@ -143,69 +144,6 @@ function MatchDetailsField({
           },
         ]}
       />
-    </View>
-  );
-}
-
-function MatchSavedPlayerChoices({
-  players,
-  side,
-  selectedPlayerId,
-  onSelect,
-}: {
-  players: { id: string; name: string }[];
-  side: Side;
-  selectedPlayerId: string | null | undefined;
-  onSelect: (player: { id: string; name: string }) => void;
-}) {
-  const colors = useColors();
-  if (players.length === 0) return null;
-
-  const sideLabel = side === 'tracked' ? 'tracked player' : 'opponent';
-  return (
-    <View style={styles.editSavedPlayerBlock}>
-      <Text style={[styles.editSavedPlayerLabel, { color: colors.mutedForeground }]}>
-        SAVED PLAYERS · TAP TO USE
-      </Text>
-      <ScrollView
-        horizontal
-        nestedScrollEnabled
-        showsHorizontalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.editSavedPlayerRow}>
-          {players.map((player) => {
-            const selected = player.id === selectedPlayerId;
-            return (
-              <Pressable
-                key={player.id}
-                testID={`edit-saved-player-${side}-${player.id}`}
-                accessibilityRole="button"
-                accessibilityLabel={`Use ${player.name} as ${sideLabel}`}
-                accessibilityState={{ selected }}
-                onPress={() => onSelect(player)}
-                style={[
-                  styles.editSavedPlayerChip,
-                  {
-                    backgroundColor: selected ? colors.primary : colors.background,
-                    borderColor: selected ? colors.primary : colors.border,
-                    borderRadius: colors.radius,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.editSavedPlayerText,
-                    { color: selected ? colors.primaryForeground : colors.foreground },
-                  ]}
-                >
-                  {player.name}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </ScrollView>
     </View>
   );
 }
@@ -3537,10 +3475,11 @@ export default function MatchScreen() {
                 testID="edit-input-tracked-player"
                 maxLength={80}
               />
-              <MatchSavedPlayerChoices
+              <LocalPlayerPicker
                 players={savedPlayers}
                 side="tracked"
                 selectedPlayerId={editDraft.trackedPlayerId}
+                testIDPrefix="edit-tracked"
                 onSelect={(player) => selectEditPlayer('tracked', player)}
               />
               <MatchDetailsField
@@ -3551,10 +3490,11 @@ export default function MatchScreen() {
                 testID="edit-input-opponent"
                 maxLength={80}
               />
-              <MatchSavedPlayerChoices
+              <LocalPlayerPicker
                 players={savedPlayers}
                 side="opponent"
                 selectedPlayerId={editDraft.opponentPlayerId}
+                testIDPrefix="edit-opponent"
                 onSelect={(player) => selectEditPlayer('opponent', player)}
               />
               <View style={styles.editTwoFields}>
@@ -3793,11 +3733,6 @@ const styles = StyleSheet.create({
   editChoiceWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   editChoiceChip: { minHeight: 39, paddingHorizontal: 13, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   editChoiceText: { fontFamily: 'DMSans_600SemiBold', fontSize: 12 },
-  editSavedPlayerBlock: { gap: 6, marginTop: -8 },
-  editSavedPlayerLabel: { fontFamily: 'DMSans_700Bold', fontSize: 8, letterSpacing: 0.8 },
-  editSavedPlayerRow: { flexDirection: 'row', gap: 6, paddingVertical: 2 },
-  editSavedPlayerChip: { minHeight: 31, paddingHorizontal: 10, borderWidth: 1, justifyContent: 'center' },
-  editSavedPlayerText: { fontFamily: 'DMSans_600SemiBold', fontSize: 11 },
   editServerChoice: { minHeight: 48, borderWidth: 1, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
   editErrorBanner: { borderWidth: 1, borderRadius: 9, paddingHorizontal: 12, paddingVertical: 11, flexDirection: 'row', alignItems: 'center', gap: 8 },
   editErrorText: { flex: 1, fontFamily: 'DMSans_400Regular', fontSize: 12, lineHeight: 17 },

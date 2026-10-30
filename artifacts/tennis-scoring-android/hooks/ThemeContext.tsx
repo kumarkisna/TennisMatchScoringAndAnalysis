@@ -10,18 +10,25 @@ import React, {
 import { useColorScheme } from 'react-native';
 import {
   DEFAULT_THEME_ID,
+  CUSTOM_THEME_ID,
+  createCustomThemeTokens,
+  getSavedCustomThemeColors,
   getSavedThemeId,
   getThemePreset,
   isThemeId,
+  saveCustomThemeColors,
   saveThemeId,
+  type CustomThemeColors,
   type ThemeTokens,
 } from '@/lib/theme-presets';
 
 interface AppThemeContextValue {
   themeId: string;
   themeLoaded: boolean;
+  customThemeColors: CustomThemeColors | null;
   colors: ThemeTokens & { radius: number };
   selectTheme: (themeId: string) => Promise<void>;
+  saveCustomTheme: (colors: CustomThemeColors) => Promise<void>;
 }
 
 const AppThemeContext = createContext<AppThemeContextValue | null>(null);
@@ -30,13 +37,18 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
   const colorScheme = useColorScheme();
   const [themeId, setThemeId] = useState(DEFAULT_THEME_ID);
   const [themeLoaded, setThemeLoaded] = useState(false);
+  const [customThemeColors, setCustomThemeColors] =
+    useState<CustomThemeColors | null>(null);
 
   useEffect(() => {
     let isMounted = true;
-    void getSavedThemeId()
-      .then((storedThemeId) => {
+    void Promise.all([getSavedThemeId(), getSavedCustomThemeColors()])
+      .then(([storedThemeId, storedCustomColors]) => {
         if (isMounted && isThemeId(storedThemeId)) {
           setThemeId(storedThemeId);
+          setCustomThemeColors(
+            storedThemeId === CUSTOM_THEME_ID ? storedCustomColors : null,
+          );
         }
       })
       .catch(() => {
@@ -53,6 +65,14 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
   const selectTheme = useCallback(async (nextThemeId: string) => {
     await saveThemeId(nextThemeId);
     setThemeId(nextThemeId);
+    if (nextThemeId !== CUSTOM_THEME_ID) setCustomThemeColors(null);
+  }, []);
+
+  const saveCustomTheme = useCallback(async (nextColors: CustomThemeColors) => {
+    await saveCustomThemeColors(nextColors);
+    await saveThemeId(CUSTOM_THEME_ID);
+    setCustomThemeColors(nextColors);
+    setThemeId(CUSTOM_THEME_ID);
   }, []);
 
   const value = useMemo(() => {
@@ -60,13 +80,26 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
     return {
       themeId,
       themeLoaded,
+      customThemeColors,
       colors: {
-        ...(colorScheme === 'dark' ? preset.dark : preset.light),
+        ...(themeId === CUSTOM_THEME_ID && customThemeColors
+          ? createCustomThemeTokens(customThemeColors, colorScheme === 'dark')
+          : colorScheme === 'dark'
+            ? preset.dark
+            : preset.light),
         radius: 14,
       },
       selectTheme,
+      saveCustomTheme,
     };
-  }, [colorScheme, selectTheme, themeId, themeLoaded]);
+  }, [
+    colorScheme,
+    customThemeColors,
+    saveCustomTheme,
+    selectTheme,
+    themeId,
+    themeLoaded,
+  ]);
 
   return (
     <AppThemeContext.Provider value={value}>{children}</AppThemeContext.Provider>
