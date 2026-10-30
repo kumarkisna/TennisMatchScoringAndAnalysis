@@ -33,8 +33,8 @@ Report PDFs may show at most two selected user benchmark presets at a time, with
 
 ## Optional player-name anonymization
 
-Single-match and head-to-head reports can hide player names behind “Player A” and “Player B”. Apply the same choice to report preview and PDF sharing, redact those names from report text, and leave saved match records unchanged.
+Single-match and head-to-head reports can hide player names behind editable neutral labels. Keep the labels in separate on-device report settings, use them in both report types and their previews/PDFs, redact player names from report text and custom labels, and leave saved match records unchanged.
 
-**Why:** The user wants to choose whether a private report includes player identities while keeping its analysis useful.
+**Why:** The user wants privacy choices that are consistent between report types without changing the original player or match records.
 
-**How to apply:** Keep anonymization as a report-rendering option only; include the choice in review validity so a PDF reviewed under a different name setting cannot be shared as current.
+**How to apply:** Keep labels in local settings, never in match/player records. Include anonymization and custom labels in report review validity so a PDF reviewed with different labels cannot be shared as current.

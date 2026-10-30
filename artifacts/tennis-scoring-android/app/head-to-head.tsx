@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
+import { useLocalReportNameLabels } from '@/hooks/useLocalReportNameLabels';
 import { ReportAnonymityToggle } from '@/components/ReportAnonymityToggle';
 import { ReportSectionPicker } from '@/components/ReportSectionPicker';
 import {
@@ -282,6 +283,7 @@ function StatTable({
 
 export default function HeadToHeadScreen() {
   const colors = useColors();
+  const reportNameLabels = useLocalReportNameLabels();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [trackedOverride, setTrackedOverride] = useState('');
@@ -378,15 +380,24 @@ export default function HeadToHeadScreen() {
     report?.meetings
       .map(({ summary }) => `${summary.id}:${summary.updatedAt}`)
       .join('|') ?? '';
+  const reportLabelVersion = hidePlayerNames
+    ? JSON.stringify(reportNameLabels.labels)
+    : 'named';
   const reportReviewVersion = reportVersion
-    ? `${reportVersion}:${selectedReportSections.join(',')}:${hidePlayerNames ? 'anonymous' : 'named'}`
+    ? `${reportVersion}:${selectedReportSections.join(',')}:${reportLabelVersion}`
     : '';
   const hasReviewedReport =
     Boolean(reportReviewVersion) && reviewedVersion === reportReviewVersion;
   const reportHtml = report
-    ? buildHeadToHeadReportHtml(report, selectedReportSections, { hidePlayerNames })
+    ? buildHeadToHeadReportHtml(report, selectedReportSections, {
+        hidePlayerNames,
+        labels: reportNameLabels.labels,
+      })
     : null;
   const isReportBusy = reportAction !== null;
+  const reportLabelsReady =
+    !hidePlayerNames ||
+    (reportNameLabels.isReady && reportNameLabels.isValid);
 
   const trackedServe = report?.insights.serveStats.tracked;
   const opponentServe = report?.insights.serveStats.opponent;
@@ -695,7 +706,14 @@ export default function HeadToHeadScreen() {
     : [];
 
   async function previewReport() {
-    if (!reportHtml || !reportReviewVersion || isReportBusy) return;
+    if (
+      !reportHtml ||
+      !reportReviewVersion ||
+      !reportLabelsReady ||
+      isReportBusy
+    ) {
+      return;
+    }
     setReportAction('review');
     setReportError('');
     try {
@@ -935,6 +953,13 @@ export default function HeadToHeadScreen() {
               testID="head-to-head-report-hide-names"
               hidePlayerNames={hidePlayerNames}
               onToggle={() => setHidePlayerNames((current) => !current)}
+              labels={reportNameLabels.labels}
+              labelsReady={reportNameLabels.isReady}
+              labelsDirty={reportNameLabels.isDirty}
+              labelsSaving={reportNameLabels.isSaving}
+              labelsError={reportNameLabels.errorMessage}
+              onLabelsChange={reportNameLabels.onChange}
+              onSaveLabels={reportNameLabels.save}
             />
 
             <View
@@ -1251,14 +1276,15 @@ export default function HeadToHeadScreen() {
                   testID="button-review-head-to-head-pdf"
                   accessibilityRole="button"
                   accessibilityLabel="Review and save head-to-head report as PDF"
-                  disabled={isReportBusy || !reportHtml}
+                  disabled={isReportBusy || !reportHtml || !reportLabelsReady}
                   onPress={() => void previewReport()}
                   style={[
                     styles.reviewButton,
                     {
                       backgroundColor: colors.secondary,
                       borderRadius: colors.radius,
-                      opacity: isReportBusy || !reportHtml ? 0.5 : 1,
+                      opacity:
+                        isReportBusy || !reportHtml || !reportLabelsReady ? 0.5 : 1,
                     },
                   ]}
                 >

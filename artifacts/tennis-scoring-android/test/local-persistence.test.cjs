@@ -54,17 +54,20 @@ require.extensions['.ts'] = function (module, filename) {
 const localMatchesPath = path.join(__dirname, '../lib/local-matches.ts');
 const localPlayersPath = path.join(__dirname, '../lib/local-players.ts');
 const localReportBenchmarksPath = path.join(__dirname, '../lib/local-benchmarks.ts');
+const localReportNameLabelsPath = path.join(__dirname, '../lib/local-report-labels.ts');
 const playerInsightsPath = path.join(__dirname, '../lib/player-insights.ts');
 
 function loadStorageModulesAfterRestart() {
   delete require.cache[require.resolve(localMatchesPath)];
   delete require.cache[require.resolve(localPlayersPath)];
   delete require.cache[require.resolve(localReportBenchmarksPath)];
+  delete require.cache[require.resolve(localReportNameLabelsPath)];
 
   return {
     localMatches: require(localMatchesPath),
     localPlayers: require(localPlayersPath),
     localReportBenchmarks: require(localReportBenchmarksPath),
+    localReportNameLabels: require(localReportNameLabelsPath),
   };
 }
 
@@ -778,6 +781,54 @@ test('report benchmark presets can be managed offline and survive app restart', 
       serviceGamesWon: null,
     }),
     /percentages from 0 to 100/,
+  );
+  assert.equal(networkRequestCount, 0);
+});
+
+test('custom neutral report labels stay local and survive app restart', async (t) => {
+  storageValues.clear();
+  const originalFetch = global.fetch;
+  let networkRequestCount = 0;
+  global.fetch = async () => {
+    networkRequestCount += 1;
+    throw new Error('Neutral report labels must stay on this device.');
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const beforeRestart = loadStorageModulesAfterRestart().localReportNameLabels;
+  assert.deepEqual(await beforeRestart.getLocalReportNameLabels(), {
+    trackedPlayer: 'Player A',
+    opponent: 'Player B',
+  });
+  const saved = await beforeRestart.saveLocalReportNameLabels({
+    trackedPlayer: '  Main   athlete ',
+    opponent: ' Practice partner  ',
+  });
+  assert.deepEqual(saved, {
+    trackedPlayer: 'Main athlete',
+    opponent: 'Practice partner',
+  });
+  assert.deepEqual([...storageValues.keys()], [
+    '@tennis-scoring/report-name-labels/record-v1',
+  ]);
+
+  const afterRestart = loadStorageModulesAfterRestart().localReportNameLabels;
+  assert.deepEqual(await afterRestart.getLocalReportNameLabels(), saved);
+  await assert.rejects(
+    afterRestart.saveLocalReportNameLabels({
+      trackedPlayer: 'Same label',
+      opponent: ' same   label ',
+    }),
+    /different label/,
+  );
+  await assert.rejects(
+    afterRestart.saveLocalReportNameLabels({
+      trackedPlayer: '',
+      opponent: 'Practice partner',
+    }),
+    /label for both players/,
   );
   assert.equal(networkRequestCount, 0);
 });

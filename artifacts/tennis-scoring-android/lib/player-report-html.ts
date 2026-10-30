@@ -6,6 +6,7 @@ import type {
 } from '@/lib/player-insights';
 import type { LocalReportBenchmarkPreset } from '@/lib/local-benchmarks';
 import {
+  getAnonymizedReportPlayerLabels,
   anonymizeReportPlayerNames,
   escapeReportHtml as escapeHtml,
 } from '@/lib/report-html-utils';
@@ -149,11 +150,21 @@ export function buildPlayerReportHtml(
     LocalReportBenchmarkPreset,
     'firstServePointsWon' | 'secondServePointsWon' | 'serviceGamesWon'
   >[] = [],
-  options: { hidePlayerNames?: boolean } = {},
+  options: {
+    hidePlayerNames?: boolean;
+    labels?: { trackedPlayer: string; opponent: string };
+  } = {},
 ): string {
   const hidePlayerNames = options.hidePlayerNames ?? false;
-  const trackedPlayerLabel = hidePlayerNames ? 'Player A' : match.trackedPlayer;
-  const opponentLabel = hidePlayerNames ? 'Player B' : match.opponent;
+  const anonymizedLabels = hidePlayerNames
+    ? getAnonymizedReportPlayerLabels(
+        match.trackedPlayer,
+        match.opponent,
+        options.labels,
+      )
+    : null;
+  const trackedPlayerLabel = anonymizedLabels?.trackedPlayer ?? match.trackedPlayer;
+  const opponentLabel = anonymizedLabels?.opponent ?? match.opponent;
   const displayMatch = {
     ...match,
     trackedPlayer: trackedPlayerLabel,

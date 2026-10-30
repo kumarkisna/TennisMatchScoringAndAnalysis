@@ -19,8 +19,54 @@ export function anonymizeReportPlayerNames(
       .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
       .join('\\s+');
     const namePattern = new RegExp(`(^|[^\\w])${escapedName}(?=$|[^\\w])`, 'gi');
-    return text.replace(namePattern, (_match, prefix: string) => `${prefix}${label}`);
+    return text.replace(namePattern, (match, prefix: string, offset: number) => {
+      const precedingText = text.slice(0, offset + prefix.length);
+      if (name.length === 1 && /(?:^|\W)player\s$/i.test(precedingText)) {
+        return match;
+      }
+      return `${prefix}${label}`;
+    });
   }, value);
+}
+
+export function getAnonymizedReportPlayerLabels(
+  trackedPlayer: string,
+  opponent: string,
+  labels?: { trackedPlayer?: string; opponent?: string },
+): { trackedPlayer: string; opponent: string } {
+  const anonymizeLabel = (
+    value: string | undefined,
+    fallback: string,
+    playerName: string,
+  ) => {
+    const normalized = value?.trim().replace(/\s+/g, ' ') || fallback;
+    if (
+      normalized.toLowerCase() === fallback.toLowerCase() ||
+      normalized.toLowerCase() === playerName.trim().toLowerCase()
+    ) {
+      return fallback;
+    }
+    return anonymizeReportPlayerNames(normalized, trackedPlayer, opponent);
+  };
+
+  const result = {
+    trackedPlayer: anonymizeLabel(
+      labels?.trackedPlayer,
+      'Player A',
+      trackedPlayer,
+    ),
+    opponent: anonymizeLabel(labels?.opponent, 'Player B', opponent),
+  };
+  if (
+    result.trackedPlayer.toLocaleLowerCase() ===
+    result.opponent.toLocaleLowerCase()
+  ) {
+    result.opponent =
+      result.trackedPlayer.toLocaleLowerCase() === 'player b'
+        ? 'Player A'
+        : 'Player B';
+  }
+  return result;
 }
 
 export function escapeReportHtml(value: string): string {

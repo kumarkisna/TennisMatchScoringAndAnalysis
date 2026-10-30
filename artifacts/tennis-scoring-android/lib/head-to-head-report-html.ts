@@ -4,6 +4,7 @@ import {
 } from '@/lib/head-to-head';
 import { POINT_CODE_LABELS } from '@/lib/player-report-html';
 import {
+  getAnonymizedReportPlayerLabels,
   anonymizeReportPlayerNames,
   escapeReportHtml as escapeHtml,
 } from '@/lib/report-html-utils';
@@ -78,11 +79,21 @@ export function buildHeadToHeadReportHtml(
   report: HeadToHeadReport,
   selectedSections: readonly HeadToHeadReportSection[] =
     allHeadToHeadReportSections(),
-  options: { hidePlayerNames?: boolean } = {},
+  options: {
+    hidePlayerNames?: boolean;
+    labels?: { trackedPlayer: string; opponent: string };
+  } = {},
 ): string {
   const hidePlayerNames = options.hidePlayerNames ?? false;
-  const trackedPlayer = hidePlayerNames ? 'Player A' : report.trackedPlayer;
-  const opponent = hidePlayerNames ? 'Player B' : report.opponent;
+  const anonymizedLabels = hidePlayerNames
+    ? getAnonymizedReportPlayerLabels(
+        report.trackedPlayer,
+        report.opponent,
+        options.labels,
+      )
+    : null;
+  const trackedPlayer = anonymizedLabels?.trackedPlayer ?? report.trackedPlayer;
+  const opponent = anonymizedLabels?.opponent ?? report.opponent;
   const displayReport = { ...report, trackedPlayer, opponent };
   const includes = (section: HeadToHeadReportSection) =>
     selectedSections.includes(section);

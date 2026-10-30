@@ -1234,13 +1234,58 @@ test('anonymized single-match reports replace names in headings and match notes'
     { hidePlayerNames: true },
   );
   const namedHtml = buildPlayerReportHtml(match, insights, summary);
+  const customHtml = buildPlayerReportHtml(
+    match,
+    insights,
+    summary,
+    undefined,
+    [],
+    {
+      hidePlayerNames: true,
+      labels: { trackedPlayer: 'Main athlete', opponent: 'Visitor' },
+    },
+  );
+  const accidentalNameHtml = buildPlayerReportHtml(
+    match,
+    insights,
+    summary,
+    undefined,
+    [],
+    {
+      hidePlayerNames: true,
+      labels: { trackedPlayer: 'Alex', opponent: 'Bailey' },
+    },
+  );
 
   assert.match(anonymousHtml, /Player A/);
   assert.match(anonymousHtml, /Player B/);
   assert.doesNotMatch(anonymousHtml, /Alex|Bailey/i);
+  assert.match(customHtml, /Main athlete/);
+  assert.match(customHtml, /Visitor/);
+  assert.doesNotMatch(customHtml, /Alex|Bailey/i);
+  assert.doesNotMatch(accidentalNameHtml, /Alex|Bailey/i);
+  assert.match(accidentalNameHtml, /Player A/);
+  assert.match(accidentalNameHtml, /Player B/);
   assert.match(namedHtml, /Alex/);
   assert.match(namedHtml, /Bailey/);
   assert.deepEqual(match, originalMatch);
+
+  const initialsMatch = performanceSampleMatch();
+  initialsMatch.trackedPlayer = 'A';
+  initialsMatch.opponent = 'B';
+  initialsMatch.event = 'Player A vs Player B';
+  const initialsInsights = calculateLocalInsights(initialsMatch);
+  const initialsHtml = buildPlayerReportHtml(
+    initialsMatch,
+    initialsInsights,
+    summarizePlayerPerformance(initialsInsights),
+    undefined,
+    [],
+    { hidePlayerNames: true },
+  );
+  assert.match(initialsHtml, /Player A/);
+  assert.match(initialsHtml, /Player B/);
+  assert.doesNotMatch(initialsHtml, /Player Player/);
 });
 
 test('anonymized head-to-head reports hide player names in match results', () => {
@@ -1261,10 +1306,32 @@ test('anonymized head-to-head reports hide player names in match results', () =>
     { hidePlayerNames: true },
   );
   const namedHtml = buildHeadToHeadReportHtml(report);
+  const customHtml = buildHeadToHeadReportHtml(
+    report,
+    undefined,
+    {
+      hidePlayerNames: true,
+      labels: { trackedPlayer: 'Main athlete', opponent: 'Visitor' },
+    },
+  );
+  const accidentalNameHtml = buildHeadToHeadReportHtml(
+    report,
+    undefined,
+    {
+      hidePlayerNames: true,
+      labels: { trackedPlayer: 'Alex', opponent: 'Bailey' },
+    },
+  );
 
   assert.match(anonymousHtml, /Player A/);
   assert.match(anonymousHtml, /Player B/);
   assert.doesNotMatch(anonymousHtml, /Alex|Bailey/i);
+  assert.match(customHtml, /Main athlete/);
+  assert.match(customHtml, /Visitor/);
+  assert.doesNotMatch(customHtml, /Alex|Bailey/i);
+  assert.doesNotMatch(accidentalNameHtml, /Alex|Bailey/i);
+  assert.match(accidentalNameHtml, /Player A/);
+  assert.match(accidentalNameHtml, /Player B/);
   assert.match(namedHtml, /Alex/);
   assert.match(namedHtml, /Bailey/);
   assert.deepEqual(report, originalReport);

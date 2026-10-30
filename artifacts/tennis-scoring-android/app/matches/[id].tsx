@@ -24,6 +24,7 @@ import { ReportBenchmarkManager } from '@/components/ReportBenchmarkManager';
 import { ReportAnonymityToggle } from '@/components/ReportAnonymityToggle';
 import { ReportSectionPicker } from '@/components/ReportSectionPicker';
 import { useColors } from '@/hooks/useColors';
+import { useLocalReportNameLabels } from '@/hooks/useLocalReportNameLabels';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import {
@@ -387,6 +388,7 @@ function MatrixLaneLabel({
 
 export default function MatchScreen() {
   const colors = useColors();
+  const reportNameLabels = useLocalReportNameLabels();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
@@ -539,14 +541,20 @@ export default function MatchScreen() {
       }),
     ),
   );
+  const reportLabelVersion = hidePlayerNames
+    ? JSON.stringify(reportNameLabels.labels)
+    : 'named';
   const reportReviewVersion = reportVersion
-    ? `${reportVersion}:${selectedReportSections.join(',')}:${selectedBenchmarkVersion}:${hidePlayerNames ? 'anonymous' : 'named'}`
+    ? `${reportVersion}:${selectedReportSections.join(',')}:${selectedBenchmarkVersion}:${reportLabelVersion}`
     : null;
   const hasReviewedReport =
     reportReviewVersion !== null &&
     reviewedReport?.version === reportReviewVersion &&
     (Platform.OS === 'web' || Boolean(reviewedReport.uri));
   const isReportBusy = reportAction !== null;
+  const reportLabelsReady =
+    !hidePlayerNames ||
+    (reportNameLabels.isReady && reportNameLabels.isValid);
   const setHistory = match ? getLocalSetHistory(match) : [];
   const currentSet = setHistory.find((set) => set.isCurrent);
   const displayedSet =
@@ -778,7 +786,7 @@ export default function MatchScreen() {
           serviceGamesWon,
         }),
       ),
-      { hidePlayerNames },
+      { hidePlayerNames, labels: reportNameLabels.labels },
     );
   }
 
@@ -788,6 +796,7 @@ export default function MatchScreen() {
     if (
       !html ||
       !reviewVersion ||
+      !reportLabelsReady ||
       insightsQuery.isFetching ||
       reportBenchmarksQuery.isFetching ||
       isReportBusy
@@ -2350,6 +2359,7 @@ export default function MatchScreen() {
               accessibilityLabel="Preview the generated PDF report"
               disabled={
                 isReportBusy ||
+                !reportLabelsReady ||
                 !insightsQuery.data ||
                 insightsQuery.isFetching ||
                 !reportBenchmarksQuery.data ||
@@ -2362,6 +2372,7 @@ export default function MatchScreen() {
                   backgroundColor: colors.secondary,
                   opacity:
                     isReportBusy ||
+                    !reportLabelsReady ||
                     !insightsQuery.data ||
                     insightsQuery.isFetching ||
                     !reportBenchmarksQuery.data ||
@@ -2420,6 +2431,13 @@ export default function MatchScreen() {
           testID="player-report-hide-names"
           hidePlayerNames={hidePlayerNames}
           onToggle={() => setHidePlayerNames((current) => !current)}
+          labels={reportNameLabels.labels}
+          labelsReady={reportNameLabels.isReady}
+          labelsDirty={reportNameLabels.isDirty}
+          labelsSaving={reportNameLabels.isSaving}
+          labelsError={reportNameLabels.errorMessage}
+          onLabelsChange={reportNameLabels.onChange}
+          onSaveLabels={reportNameLabels.save}
         />
         <ReportBenchmarkManager />
 
