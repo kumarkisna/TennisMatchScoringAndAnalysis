@@ -92,14 +92,16 @@ const {
   buildHeadToHeadReportReviewVersion,
 } = require('../lib/head-to-head-report-html.ts');
 const { summarizePlayerPerformance } = playerInsightsExports;
-const { buildHeadToHeadReport } = headToHeadExports;
+const { buildHeadToHeadReport, getHeadToHeadOpponentOptions } = headToHeadExports;
 Module._load = originalLoad;
 const { createAndPreviewLocalPdf } = require('../lib/report-pdf.ts');
 const {
   calculateBreakPointStats,
   calculateLocalInsights,
   createLocalMatch,
+  deleteLocalMatch,
   editLocalPointWinner,
+  getLocalInsights,
   getLocalMatch,
   getBreakPointPointOutcomes,
   getLocalPointHistory,
@@ -812,6 +814,116 @@ test('head-to-head break-point rates are unavailable for empty samples', () => {
     'Break points saved 1/2 · 50.0% —',
     'Break points lost while serving 1/2 · 50.0% —',
   ]);
+});
+
+test('deleting a match removes its break points from the personal baseline and PDF', async () => {
+  storageValues.clear();
+  async function createBreakPointMatch(opponent, matchDate) {
+    const match = await createLocalMatch({
+      matchDate,
+      event: `Tracked player vs ${opponent}`,
+      round: 'Round 1',
+      trackedPlayer: 'Alex',
+      opponent,
+      chairCoach: null,
+      surface: 'Hard',
+      firstServer: 'opponent',
+      setNumber: 1,
+    });
+    for (let point = 0; point < 4; point += 1) {
+      await recordLocalPoint(match.id, { winner: 'tracked' });
+    }
+    return match.id;
+  }
+
+  const deletedMatchId = await createBreakPointMatch('Bailey', '2026-10-01');
+  await createBreakPointMatch('Casey', '2026-10-02');
+
+  async function trackedMeetingsFromLocalMatches() {
+    const summaries = await listLocalMatches();
+    const meetings = (
+      await Promise.all(
+        summaries
+          .filter(({ trackedPlayer }) => trackedPlayer === 'Alex')
+          .map(async (summary) => {
+            const insights = await getLocalInsights(summary.id);
+            return insights ? { summary, insights } : null;
+          }),
+      )
+    ).filter((meeting) => meeting !== null);
+    return { summaries, meetings };
+  }
+
+  const beforeDeletion = await trackedMeetingsFromLocalMatches();
+  const baileyMeetings = beforeDeletion.meetings.filter(
+    ({ summary }) => summary.opponent === 'Bailey',
+  );
+  const initialReport = buildHeadToHeadReport(
+    'Alex',
+    'Bailey',
+    baileyMeetings,
+    beforeDeletion.meetings,
+  );
+  assert.equal(initialReport.matchesRecorded, 1);
+  assert.equal(initialReport.personalAverageMatches, 2);
+  assert.deepEqual(initialReport.personalAverageInsights.breakPoints.tracked, {
+    opportunities: 2,
+    converted: 2,
+    faced: 0,
+    saved: 0,
+  });
+  const initialHtml = buildHeadToHeadReportHtml(initialReport);
+  assert.match(initialHtml, /1 recorded · 0 complete/);
+  assert.match(initialHtml, /Pooled break-point chances across 2 saved matches/);
+  assert.deepEqual(reportRows(initialHtml, 'Alex · personal average'), [
+    'Break points converted 2/2 · 100.0%',
+    'Break points missed 0/2 · 0.0%',
+    'Break points saved —',
+    'Break points lost while serving —',
+  ]);
+
+  assert.equal(await deleteLocalMatch(deletedMatchId), true);
+  assert.equal(await getLocalMatch(deletedMatchId), null);
+  const afterDeletion = await trackedMeetingsFromLocalMatches();
+  assert.deepEqual(getHeadToHeadOpponentOptions('Alex', afterDeletion.summaries), [
+    'Casey',
+  ]);
+
+  const remainingReport = buildHeadToHeadReport(
+    'Alex',
+    'Casey',
+    afterDeletion.meetings.filter(({ summary }) => summary.opponent === 'Casey'),
+    afterDeletion.meetings,
+  );
+  assert.equal(remainingReport.matchesRecorded, 1);
+  assert.equal(remainingReport.personalAverageMatches, 1);
+  assert.deepEqual(remainingReport.personalAverageInsights.breakPoints.tracked, {
+    opportunities: 1,
+    converted: 1,
+    faced: 0,
+    saved: 0,
+  });
+  const remainingHtml = buildHeadToHeadReportHtml(remainingReport);
+  assert.match(remainingHtml, /1 recorded · 0 complete/);
+  assert.match(remainingHtml, /Pooled break-point chances across 1 saved match/);
+
+  const deletedPairingReport = buildHeadToHeadReport(
+    'Alex',
+    'Bailey',
+    [],
+    afterDeletion.meetings,
+  );
+  assert.equal(deletedPairingReport.matchesRecorded, 0);
+  assert.equal(deletedPairingReport.personalAverageMatches, 1);
+  assert.deepEqual(deletedPairingReport.personalAverageInsights.breakPoints.tracked, {
+    opportunities: 1,
+    converted: 1,
+    faced: 0,
+    saved: 0,
+  });
+  const deletedPairingHtml = buildHeadToHeadReportHtml(deletedPairingReport);
+  assert.match(deletedPairingHtml, /0 recorded · 0 complete/);
+  assert.match(deletedPairingHtml, /Pooled break-point chances across 1 saved match/);
 });
 
 test('player statistics match a deterministic four-game point log', () => {
