@@ -1,6 +1,7 @@
 import {
   RALLY_LENGTH_OPTIONS,
   SHOT_DIRECTION_OPTIONS,
+  STROKE_TYPE_OPTIONS,
   type LocalContextInsight,
   type LocalSetInsights,
   type PointCode,
@@ -10,6 +11,7 @@ import {
   type LocalInsights,
   type LocalStrokeTally,
   type ShotDirection,
+  type StrokeType,
   BreakPointStats,
   type LocalPlayerMatchInsight,
 } from '@/lib/local-matches';
@@ -758,4 +760,398 @@ export function summarizePlayerPerformance(
       ...shotFeedback,
     ].slice(0, 6),
   };
+}
+
+export type MatchNoteThemeId =
+  | 'serve-return'
+  | 'movement'
+  | 'mental'
+  | 'tactics'
+  | 'stroke'
+  | 'general';
+
+export interface MatchNoteObservation {
+  context: string;
+  text: string;
+}
+
+export interface MatchNoteThemeSummary {
+  id: MatchNoteThemeId;
+  label: string;
+  observationCount: number;
+  observations: MatchNoteObservation[];
+  relatedStats: string[];
+  reviewQuestion: string;
+}
+
+interface IndexedMatchNote extends MatchNoteObservation {
+  themeId: MatchNoteThemeId;
+  setNumber: number;
+  gameNumber: number;
+  pointNumber: number;
+  order: number;
+  strokeType?: StrokeType;
+  player?: 'tracked' | 'opponent';
+}
+
+const matchNoteThemeDefinitions: Record<
+  MatchNoteThemeId,
+  { label: string; reviewQuestion: string }
+> = {
+  'serve-return': {
+    label: 'Serve and return',
+    reviewQuestion:
+      'Compare these notes with the recorded serve and return outcomes. Those rates show results, not why they happened.',
+  },
+  movement: {
+    label: 'Movement and court coverage',
+    reviewQuestion:
+      'Compare these notes with rally-length and point outcomes; movement itself was not directly measured.',
+  },
+  mental: {
+    label: 'Focus and composure',
+    reviewQuestion:
+      'Review these notes beside any break-point results; the statistics do not measure confidence or focus.',
+  },
+  tactics: {
+    label: 'Tactics and patterns',
+    reviewQuestion:
+      'Compare these notes with shot-direction and rally-length results; these match-wide samples do not prove a tactic caused an outcome.',
+  },
+  stroke: {
+    label: 'Stroke execution',
+    reviewQuestion:
+      'Compare these notes with recorded stroke or point-ending counts; the counts do not explain the cause.',
+  },
+  general: {
+    label: 'Other observations',
+    reviewQuestion:
+      'Use these notes as prompts for video or coach review; the score log alone cannot establish why an event occurred.',
+  },
+};
+
+function classifyMatchNote(text: string): MatchNoteThemeId {
+  const value = text.toLocaleLowerCase();
+  if (/\b(serve|serving|return|ace|double fault)\b/.test(value)) {
+    return 'serve-return';
+  }
+  if (
+    /\b(footwork|movement|moved|move|recover|recovery|split step|balance|court coverage|positioning)\b/.test(
+      value,
+    )
+  ) {
+    return 'movement';
+  }
+  if (
+    /\b(focus|pressure|confidence|confident|calm|composure|composed|nerves|nervous|frustration|patient|patience|mental|body language|routine)\b/.test(
+      value,
+    )
+  ) {
+    return 'mental';
+  }
+  if (
+    /\b(tactic|tactics|strategy|pattern|target|depth|rally|attack|defend|construction|cross.court|down the line|middle)\b/.test(
+      value,
+    )
+  ) {
+    return 'tactics';
+  }
+  if (
+    /\b(forehand|backhand|volley|overhead|smash|drop shot|slice|drive|stroke|swing|contact|topspin|lob|passing shot)\b/.test(
+      value,
+    )
+  ) {
+    return 'stroke';
+  }
+  return 'general';
+}
+
+function formatMatchEvidenceRate(
+  label: string,
+  successful: number,
+  total: number,
+): string | null {
+  if (total <= 0) return null;
+  return `${label}: ${successful}/${total} (${Math.round((successful / total) * 100)}%).`;
+}
+
+function matchNoteRelatedStats(
+  themeId: MatchNoteThemeId,
+  observations: readonly IndexedMatchNote[],
+  insights: PlayerReportInsights,
+): string[] {
+  const evidence: string[] = [];
+  const trackedServe = insights.serveStats.tracked;
+  const addRate = (
+    label: string,
+    successful: number,
+    total: number,
+  ) => {
+    const value = formatMatchEvidenceRate(label, successful, total);
+    if (value) evidence.push(value);
+  };
+
+  if (themeId === 'serve-return') {
+    addRate(
+      'Tracked-player first serves in',
+      trackedServe.firstServePoints,
+      trackedServe.servicePoints,
+    );
+    addRate(
+      'Tracked-player first-serve points won',
+      trackedServe.firstServePointsWon,
+      trackedServe.firstServePoints,
+    );
+    addRate(
+      'Tracked-player second-serve points won',
+      trackedServe.secondServePointsWon,
+      trackedServe.secondServePoints,
+    );
+    addRate(
+      'Tracked-player return points won',
+      insights.returnPointsWon,
+      insights.trackedReturnPoints,
+    );
+  } else if (themeId === 'movement') {
+    for (const option of RALLY_LENGTH_OPTIONS) {
+      const sample = insights.rallyLengths.find(
+        (item) => item.value === option.value,
+      );
+      if (!sample?.count) continue;
+      addRate(
+        `Tracked-player points won in ${option.label} rallies`,
+        sample.trackedWon,
+        sample.count,
+      );
+    }
+  } else if (themeId === 'mental') {
+    const breakPoints = insights.breakPoints.tracked;
+    addRate(
+      'Tracked-player break points converted',
+      breakPoints.converted,
+      breakPoints.opportunities,
+    );
+    addRate(
+      'Tracked-player break points saved',
+      breakPoints.saved,
+      breakPoints.faced,
+    );
+  } else if (themeId === 'tactics') {
+    for (const option of SHOT_DIRECTION_OPTIONS) {
+      const sample = insights.shotDirections.find(
+        (item) => item.value === option.value,
+      );
+      if (!sample?.count) continue;
+      addRate(
+        `Tracked-player points won after ${option.label.toLocaleLowerCase()} tags`,
+        sample.trackedWon,
+        sample.count,
+      );
+    }
+    for (const option of RALLY_LENGTH_OPTIONS) {
+      const sample = insights.rallyLengths.find(
+        (item) => item.value === option.value,
+      );
+      if (!sample?.count) continue;
+      addRate(
+        `Tracked-player points won in ${option.label} rallies`,
+        sample.trackedWon,
+        sample.count,
+      );
+    }
+  } else if (themeId === 'stroke') {
+    const strokeSubjects = new Map<StrokeType, Set<'tracked' | 'opponent'>>();
+    for (const observation of observations) {
+      if (!observation.strokeType) continue;
+      const subjects = strokeSubjects.get(observation.strokeType) ?? new Set();
+      subjects.add(observation.player ?? 'tracked');
+      strokeSubjects.set(observation.strokeType, subjects);
+    }
+    for (const [strokeType, subjects] of strokeSubjects) {
+      const label =
+        STROKE_TYPE_OPTIONS.find((option) => option.value === strokeType)?.label ??
+        strokeType;
+      for (const player of subjects) {
+        const tally = insights.strokeTallies.find(
+          (item) => item.strokeType === strokeType && item.player === player,
+        );
+        if (!tally?.sampleCount) continue;
+        const playerLabel = player === 'tracked' ? 'Tracked player' : 'Opponent';
+        evidence.push(
+          `${playerLabel} ${label.toLocaleLowerCase()} strokes: ${tally.sampleCount} recorded (${tally.winners} winners, ${tally.errors} errors, ${tally.inPlay} in play).`,
+        );
+      }
+    }
+  }
+
+  if (
+    !evidence.length &&
+    themeId === 'general' &&
+    insights.pointCount > 0
+  ) {
+    addRate(
+      'Tracked-player points won in the match',
+      insights.trackedPointsWon,
+      insights.pointCount,
+    );
+  }
+  return evidence.length
+    ? evidence.slice(0, 4)
+    : ['No directly related match statistic was recorded.'];
+}
+
+export function summarizeMatchNotes(
+  insights: PlayerReportInsights,
+): MatchNoteThemeSummary[] {
+  const observations: IndexedMatchNote[] = [];
+  let order = 0;
+  const add = (
+    setNumber: number,
+    gameNumber: number,
+    pointNumber: number,
+    context: string,
+    text: string,
+    options: {
+      themeId?: MatchNoteThemeId;
+      strokeType?: StrokeType;
+      player?: 'tracked' | 'opponent';
+    } = {},
+  ) => {
+    const normalizedText = text.trim();
+    if (!normalizedText) return;
+    const classifierText = options.strokeType
+      ? `${options.strokeType.replace(/_/g, ' ')} ${normalizedText}`
+      : normalizedText;
+    observations.push({
+      themeId: options.themeId ?? classifyMatchNote(classifierText),
+      setNumber,
+      gameNumber,
+      pointNumber,
+      order,
+      context,
+      text: normalizedText,
+      strokeType: options.strokeType,
+      player: options.player,
+    });
+    order += 1;
+  };
+
+  for (const note of insights.strokeNotes) {
+    const strokeLabel =
+      STROKE_TYPE_OPTIONS.find((option) => option.value === note.strokeType)
+        ?.label ?? note.strokeType;
+    add(
+      note.setNumber,
+      note.gameNumber,
+      note.sequenceNumber,
+      `Set ${note.setNumber} · Game ${note.gameNumber} · Point ${note.sequenceNumber} · ${note.player === 'tracked' ? 'Tracked player' : 'Opponent'} · ${strokeLabel}`,
+      note.note,
+      { strokeType: note.strokeType, player: note.player },
+    );
+  }
+
+  for (const set of insights.sets) {
+    for (const note of set.gameNotes) {
+      add(
+        set.setNumber,
+        note.gameNumber,
+        0,
+        `Set ${set.setNumber} · Game ${note.gameNumber}`,
+        note.note,
+      );
+    }
+
+    const review = set.review;
+    for (const [strokeType, rating] of Object.entries(review.strokeRatings)) {
+      const typedStroke = strokeType as StrokeType;
+      const strokeLabel =
+        STROKE_TYPE_OPTIONS.find((option) => option.value === typedStroke)
+          ?.label ?? strokeType;
+      const note = review.strokeNotes[typedStroke]?.trim();
+      add(
+        set.setNumber,
+        0,
+        0,
+        `Set ${set.setNumber} · Stroke rating · ${strokeLabel}`,
+        `Self-rating ${rating}/5${note ? ` · ${note}` : ''}`,
+        { themeId: 'stroke', strokeType: typedStroke, player: 'tracked' },
+      );
+    }
+    for (const [strokeType, note] of Object.entries(review.strokeNotes)) {
+      if (review.strokeRatings[strokeType as StrokeType]) continue;
+      const typedStroke = strokeType as StrokeType;
+      const strokeLabel =
+        STROKE_TYPE_OPTIONS.find((option) => option.value === typedStroke)
+          ?.label ?? strokeType;
+      add(
+        set.setNumber,
+        0,
+        0,
+        `Set ${set.setNumber} · Stroke note · ${strokeLabel}`,
+        note,
+        { themeId: 'stroke', strokeType: typedStroke, player: 'tracked' },
+      );
+    }
+    add(
+      set.setNumber,
+      0,
+      0,
+      `Set ${set.setNumber} · Footwork and court coverage`,
+      review.footworkNote,
+      { themeId: 'movement' },
+    );
+    add(
+      set.setNumber,
+      0,
+      0,
+      `Set ${set.setNumber} · Tactical adjustments`,
+      review.tacticalNote,
+      { themeId: 'tactics' },
+    );
+    add(
+      set.setNumber,
+      0,
+      0,
+      `Set ${set.setNumber} · Mental review`,
+      review.mentalNote,
+      { themeId: 'mental' },
+    );
+  }
+
+  const grouped = new Map<MatchNoteThemeId, IndexedMatchNote[]>();
+  for (const observation of observations) {
+    const group = grouped.get(observation.themeId) ?? [];
+    group.push(observation);
+    grouped.set(observation.themeId, group);
+  }
+
+  const themeOrder: MatchNoteThemeId[] = [
+    'serve-return',
+    'movement',
+    'mental',
+    'tactics',
+    'stroke',
+    'general',
+  ];
+  return themeOrder.flatMap((id) => {
+    const group = grouped.get(id);
+    if (!group?.length) return [];
+    const ordered = [...group].sort(
+      (left, right) =>
+        left.setNumber - right.setNumber ||
+        left.gameNumber - right.gameNumber ||
+        left.pointNumber - right.pointNumber ||
+        left.order - right.order,
+    );
+    return [
+      {
+        id,
+        label: matchNoteThemeDefinitions[id].label,
+        observationCount: ordered.length,
+        observations: ordered.map(({ context, text }) => ({ context, text })),
+        relatedStats: matchNoteRelatedStats(id, ordered, insights),
+        reviewQuestion: matchNoteThemeDefinitions[id].reviewQuestion,
+      },
+    ];
+  });
 }

@@ -10,6 +10,7 @@ import type {
   PlayerReportInsights,
   SetPerformanceMetric,
 } from '@/lib/player-insights';
+import { summarizeMatchNotes } from '@/lib/player-insights';
 import type { LocalReportBenchmarkPreset } from '@/lib/local-benchmarks';
 import {
   getAnonymizedReportPlayerLabels,
@@ -214,6 +215,28 @@ export function buildPlayerReportHtml(
     .join('');
   const feedbackRows = summary.feedback
     .map((item) => `<li>${escape(displayText(item))}</li>`)
+    .join('');
+  const noteThemeHtml = summarizeMatchNotes(insights)
+    .map(
+      (theme) => `
+        <section class="note-theme">
+          <h3>${escape(theme.label)} · ${theme.observationCount} recorded ${theme.observationCount === 1 ? 'observation' : 'observations'}</h3>
+          <p class="note-theme-caption">Note locations</p>
+          <ul class="note-observations">
+            ${theme.observations
+              .map(
+                (observation) =>
+                  `<li><strong>${escape(displayText(observation.context))}</strong></li>`,
+              )
+              .join('')}
+          </ul>
+          <p class="note-theme-caption">Related match data</p>
+          <ul class="note-evidence">
+            ${theme.relatedStats.map((item) => `<li>${escape(item)}</li>`).join('')}
+          </ul>
+          <p class="note-review-question"><strong>Review question:</strong> ${escape(theme.reviewQuestion)}</p>
+        </section>`,
+    )
     .join('');
   const strokeResultLabels = {
     in_play: 'In play',
@@ -663,6 +686,12 @@ export function buildPlayerReportHtml(
       .summary { background: #f2f1e9; border-left: 3px solid #245d4b; font-size: 11px; line-height: 1.5; padding: 10px 13px; }
       .feedback { background: #f2f1e9; border-left: 3px solid #a45c45; break-inside: auto; margin-top: 8px; padding: 8px 13px; page-break-inside: auto; }
       .feedback li { break-inside: avoid; font-size: 10px; line-height: 1.5; margin: 4px 0; page-break-inside: avoid; }
+      .note-theme { border: 1px solid #dedbd1; border-radius: 7px; break-inside: auto; margin: 8px 0; padding: 8px 10px; page-break-inside: auto; }
+      .note-theme h3 { font-size: 11px; margin: 0 0 6px; }
+      .note-theme-caption { color: #65665e; font-size: 8px; font-weight: 700; letter-spacing: .04em; margin: 6px 0 2px; text-transform: uppercase; }
+      .note-observations, .note-evidence { margin: 2px 0 4px; padding-left: 17px; }
+      .note-observations li, .note-evidence li { font-size: 9px; line-height: 1.45; margin: 3px 0; }
+      .note-review-question { background: #f2f1e9; border-radius: 4px; font-size: 9px; line-height: 1.45; margin: 5px 0 0; padding: 6px; }
       .match-heading, .date-result, .meta, .stats, .summary { break-inside: avoid; page-break-inside: avoid; }
       p, li { orphans: 2; widows: 2; }
       table { border-collapse: collapse; break-inside: auto; font-size: 9px; width: 100%; }
@@ -860,6 +889,11 @@ export function buildPlayerReportHtml(
     ${includes('coaching') ? `
     <h2>Match feedback from this sample</h2>
     <ul class="feedback">${feedbackRows}</ul>
+    ${noteThemeHtml ? `
+      <h3>Recorded notes grouped for review</h3>
+      <p class="note">Themes are grouped from note wording. Original note text remains in the game, set, or point details; match statistics are sample context and do not establish cause.</p>
+      ${noteThemeHtml}
+    ` : ''}
     ` : ''}
 
     ${includes('point-ending') ? `

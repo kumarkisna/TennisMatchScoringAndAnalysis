@@ -91,8 +91,8 @@ require.extensions['.ts'] = function (module, filename) {
 };
 
 localMatchExports = require('../lib/local-matches.ts');
-playerReportExports = require('../lib/player-report-html.ts');
 playerInsightsExports = require('../lib/player-insights.ts');
+playerReportExports = require('../lib/player-report-html.ts');
 headToHeadExports = require('../lib/head-to-head.ts');
 const { buildPlayerReportHtml } = playerReportExports;
 const {
@@ -104,7 +104,7 @@ const {
   getReportNameVisibilityVersion,
   isReportReviewCurrent,
 } = require('../lib/report-review.ts');
-const { summarizePlayerPerformance } = playerInsightsExports;
+const { summarizeMatchNotes, summarizePlayerPerformance } = playerInsightsExports;
 const { buildHeadToHeadReport, getHeadToHeadOpponentOptions } = headToHeadExports;
 Module._load = originalLoad;
 const {
@@ -3417,4 +3417,111 @@ test('web report preview keeps using the HTML print dialog without a local share
 
   assert.equal(uri, null);
   assert.deepEqual(events, [{ action: 'preview', options: { html } }]);
+});
+
+test('match notes become contextual, evidence-linked post-match feedback', () => {
+  const match = performanceSampleMatch();
+  match.trackedPlayer = 'Krishan';
+  match.opponent = 'Rudransh';
+  const insights = calculateLocalInsights(match);
+  const set = insights.sets[0];
+
+  set.gameNotes.push(
+    { gameNumber: 2, note: 'First serve placement opened the middle.' },
+    { gameNumber: 3, note: 'Krishan stayed patient after a long rally.' },
+    { gameNumber: 4, note: 'Ask the coach to review this moment.' },
+  );
+  set.review.footworkNote = 'Slow recovery after a wide ball.';
+  set.review.tacticalNote = 'Cross-court depth opened space down the line.';
+  set.review.mentalNote = 'Stayed composed under pressure.';
+  set.review.strokeRatings = { forehand_drive: 3 };
+  set.review.strokeNotes = {
+    forehand_drive: 'Late contact on the forehand drive.',
+  };
+  insights.strokeNotes.push({
+    setNumber: 1,
+    gameNumber: 1,
+    sequenceNumber: 3,
+    player: 'tracked',
+    strokeType: 'forehand_drive',
+    result: 'error',
+    note: 'Forehand contact was late.',
+  });
+
+  const forehandTally = insights.strokeTallies.find(
+    (item) => item.player === 'tracked' && item.strokeType === 'forehand_drive',
+  );
+  Object.assign(forehandTally, {
+    sampleCount: 1,
+    inPlay: 0,
+    errors: 1,
+    winners: 0,
+  });
+  insights.rallyLengths = [
+    { value: '4-6', count: 4, trackedWon: 3 },
+  ];
+  insights.shotDirections = [
+    { value: 'cross_court', count: 4, trackedWon: 3 },
+  ];
+  insights.breakPoints.tracked = {
+    opportunities: 2,
+    converted: 1,
+    faced: 1,
+    saved: 1,
+  };
+
+  const themes = summarizeMatchNotes(insights);
+  const byId = Object.fromEntries(themes.map((theme) => [theme.id, theme]));
+  assert.equal(byId['serve-return'].observationCount, 1);
+  assert.match(byId['serve-return'].observations[0].context, /Set 1 · Game 2/);
+  assert.ok(
+    byId['serve-return'].relatedStats.some((item) =>
+      item.includes('Tracked-player first serves in:'),
+    ),
+  );
+  assert.ok(
+    byId.movement.relatedStats.some((item) => item.includes('3/4 (75%)')),
+  );
+  assert.ok(
+    byId.tactics.relatedStats.some((item) => item.includes('cross-court tags')),
+  );
+  assert.ok(
+    byId.mental.relatedStats.some((item) => item.includes('break points converted')),
+  );
+  assert.ok(
+    byId.stroke.relatedStats.some((item) => item.includes('1 recorded (0 winners, 1 errors')),
+  );
+  assert.ok(byId.general.observations[0].context.includes('Set 1 · Game 4'));
+  assert.match(byId.tactics.reviewQuestion, /do not prove a tactic caused an outcome/);
+
+  const summary = summarizePlayerPerformance(insights);
+  const reportHtml = buildPlayerReportHtml(match, insights, summary);
+  assert.match(reportHtml, /Recorded notes grouped for review/);
+  assert.match(reportHtml, /Related match data/);
+  assert.match(reportHtml, /Review question/);
+  assert.match(reportHtml, /Set 1 · Game 2/);
+  assert.match(reportHtml, /Match feedback from this sample/);
+  assert.match(playerMatchScreenSource, /summarizeMatchNotes\(insightsQuery\.data\)/);
+  assert.match(playerMatchScreenSource, /NOTES TO REVIEW/);
+  assert.match(playerMatchScreenSource, /RELATED MATCH DATA/);
+  assert.match(playerMatchScreenSource, /Review question:/);
+  assert.doesNotMatch(headToHeadScreenSource, /summarizeMatchNotes/);
+
+  set.gameNotes[0].note =
+    'Krishan served well against Rudransh <script>alert(1)</script>.';
+  const anonymizedHtml = buildPlayerReportHtml(
+    match,
+    insights,
+    summary,
+    undefined,
+    undefined,
+    { hidePlayerNames: true },
+  );
+  assert.doesNotMatch(anonymizedHtml, /Krishan|Rudransh/);
+  assert.match(anonymizedHtml, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+});
+
+test('matches without recorded notes have no invented note themes', () => {
+  const insights = calculateLocalInsights(performanceSampleMatch());
+  assert.deepEqual(summarizeMatchNotes(insights), []);
 });

@@ -68,7 +68,10 @@ import {
   type StrokeResult,
   type StrokeType,
 } from '@/lib/local-matches';
-import { summarizePlayerPerformance } from '@/lib/player-insights';
+import {
+  summarizeMatchNotes,
+  summarizePlayerPerformance,
+} from '@/lib/player-insights';
 import { buildPlayerReportHtml } from '@/lib/player-report-html';
 import {
   getLocalReportBenchmarkSettings,
@@ -580,6 +583,9 @@ export default function MatchScreen() {
   const performance = insightsQuery.data
     ? summarizePlayerPerformance(insightsQuery.data)
     : null;
+  const noteThemes = insightsQuery.data
+    ? summarizeMatchNotes(insightsQuery.data)
+    : [];
 
   function openDetailsEditor() {
     if (!match) return;
@@ -2995,6 +3001,60 @@ export default function MatchScreen() {
                   </Text>
                 </View>
               ))}
+              {noteThemes.length > 0 ? (
+                <View
+                  testID="match-note-analysis"
+                  style={[styles.noteSummary, { borderTopColor: colors.border }]}
+                >
+                  <Text style={[styles.codeStatsTitle, { color: colors.secondaryForeground }]}>
+                    NOTES TO REVIEW
+                  </Text>
+                  <Text style={[styles.noteSummaryIntro, { color: colors.mutedForeground }]}>
+                    Theme groups follow note wording. Related statistics describe this sample; they do not prove cause.
+                  </Text>
+                  {noteThemes.map((theme) => (
+                    <View
+                      key={theme.id}
+                      style={[
+                        styles.noteThemeCard,
+                        { backgroundColor: colors.background, borderColor: colors.border },
+                      ]}
+                    >
+                      <Text style={[styles.noteThemeHeading, { color: colors.foreground }]}>
+                        {theme.label} · {theme.observationCount} recorded{' '}
+                        {theme.observationCount === 1 ? 'observation' : 'observations'}
+                      </Text>
+                      <Text style={[styles.noteThemeSubhead, { color: colors.mutedForeground }]}>
+                        RECORDED OBSERVATIONS
+                      </Text>
+                      {theme.observations.map((observation, index) => (
+                        <Text
+                          key={`${theme.id}-${index}`}
+                          style={[styles.noteThemeCopy, { color: colors.foreground }]}
+                        >
+                          <Text style={styles.noteThemeContext}>{observation.context}: </Text>
+                          {observation.text}
+                        </Text>
+                      ))}
+                      <Text style={[styles.noteThemeSubhead, { color: colors.mutedForeground }]}>
+                        RELATED MATCH DATA
+                      </Text>
+                      {theme.relatedStats.map((item, index) => (
+                        <Text
+                          key={`${theme.id}-stat-${index}`}
+                          style={[styles.noteThemeCopy, { color: colors.foreground }]}
+                        >
+                          · {item}
+                        </Text>
+                      ))}
+                      <Text style={[styles.noteThemeReview, { color: colors.secondaryForeground }]}>
+                        <Text style={styles.noteThemeContext}>Review question: </Text>
+                        {theme.reviewQuestion}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
             </View>
 
             {performance.codeInsights.length > 0 ? (
@@ -3907,6 +3967,14 @@ const styles = StyleSheet.create({
   feedbackRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 7 },
   feedbackDot: { width: 5, height: 5, borderRadius: 3, marginTop: 5 },
   feedbackText: { flex: 1, fontFamily: 'DMSans_400Regular', fontSize: 10, lineHeight: 15 },
+  noteSummary: { marginTop: 5, paddingTop: 9, borderTopWidth: StyleSheet.hairlineWidth, gap: 6 },
+  noteSummaryIntro: { fontFamily: 'DMSans_400Regular', fontSize: 9, lineHeight: 13 },
+  noteThemeCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 8, padding: 8, gap: 4 },
+  noteThemeHeading: { fontFamily: 'DMSans_700Bold', fontSize: 10, lineHeight: 14 },
+  noteThemeSubhead: { marginTop: 3, fontFamily: 'DMSans_700Bold', fontSize: 7, letterSpacing: 0.7 },
+  noteThemeCopy: { fontFamily: 'DMSans_400Regular', fontSize: 9, lineHeight: 13 },
+  noteThemeContext: { fontFamily: 'DMSans_700Bold' },
+  noteThemeReview: { marginTop: 3, fontFamily: 'DMSans_400Regular', fontSize: 9, lineHeight: 13 },
   codeStats: { marginTop: 12, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
   codeStatsTitle: { marginBottom: 6, fontFamily: 'DMSans_700Bold', fontSize: 8, letterSpacing: 1 },
   codeStatRow: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 8 },
