@@ -45,6 +45,7 @@ import {
   type CourtSurface,
   type LocalMatch,
   type LocalMatchDetails,
+  type LocalMatchDetailsUpdate,
   type LocalSetResult,
   type LocalSetReview,
   type NewLocalPoint,
@@ -64,6 +65,7 @@ import {
   PLAYER_REPORT_SECTIONS,
   type PlayerReportSection,
 } from '@/lib/report-sections';
+import { listLocalPlayers, LOCAL_PLAYERS_KEY } from '@/lib/local-players';
 
 type Side = PlayerSide;
 type NoteEditorTarget =
@@ -117,6 +119,69 @@ function MatchDetailsField({
           },
         ]}
       />
+    </View>
+  );
+}
+
+function MatchSavedPlayerChoices({
+  players,
+  side,
+  selectedPlayerId,
+  onSelect,
+}: {
+  players: { id: string; name: string }[];
+  side: Side;
+  selectedPlayerId: string | null | undefined;
+  onSelect: (player: { id: string; name: string }) => void;
+}) {
+  const colors = useColors();
+  if (players.length === 0) return null;
+
+  const sideLabel = side === 'tracked' ? 'tracked player' : 'opponent';
+  return (
+    <View style={styles.editSavedPlayerBlock}>
+      <Text style={[styles.editSavedPlayerLabel, { color: colors.mutedForeground }]}>
+        SAVED PLAYERS · TAP TO USE
+      </Text>
+      <ScrollView
+        horizontal
+        nestedScrollEnabled
+        showsHorizontalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.editSavedPlayerRow}>
+          {players.map((player) => {
+            const selected = player.id === selectedPlayerId;
+            return (
+              <Pressable
+                key={player.id}
+                testID={`edit-saved-player-${side}-${player.id}`}
+                accessibilityRole="button"
+                accessibilityLabel={`Use ${player.name} as ${sideLabel}`}
+                accessibilityState={{ selected }}
+                onPress={() => onSelect(player)}
+                style={[
+                  styles.editSavedPlayerChip,
+                  {
+                    backgroundColor: selected ? colors.primary : colors.background,
+                    borderColor: selected ? colors.primary : colors.border,
+                    borderRadius: colors.radius,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.editSavedPlayerText,
+                    { color: selected ? colors.primaryForeground : colors.foreground },
+                  ]}
+                >
+                  {player.name}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -249,13 +314,17 @@ export default function MatchScreen() {
   const [customTiebreakTarget, setCustomTiebreakTarget] = useState('');
   const [selectedReviewSetNumber, setSelectedReviewSetNumber] = useState<number | null>(null);
   const [isEditingDetails, setIsEditingDetails] = useState(false);
-  const [editDraft, setEditDraft] = useState<LocalMatchDetails | null>(null);
+  const [editDraft, setEditDraft] = useState<LocalMatchDetailsUpdate | null>(null);
   const [editValidationError, setEditValidationError] = useState('');
 
   const matchQuery = useQuery({
     queryKey: localMatchKey(matchId),
     queryFn: () => getLocalMatch(matchId),
     enabled: Boolean(matchId),
+  });
+  const playersQuery = useQuery({
+    queryKey: LOCAL_PLAYERS_KEY,
+    queryFn: listLocalPlayers,
   });
   const insightsQuery = useQuery({
     queryKey: localInsightsKey(matchId),
@@ -280,6 +349,7 @@ export default function MatchScreen() {
     queryClient.setQueryData(localMatchKey(matchId), updatedMatch);
     void queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
     void queryClient.invalidateQueries({ queryKey: localInsightsKey(matchId) });
+    void queryClient.invalidateQueries({ queryKey: ['player-performance-history'] });
   };
 
   const recordPoint = useMutation({
@@ -311,7 +381,7 @@ export default function MatchScreen() {
     onSuccess: onUpdated,
   });
   const updateDetails = useMutation({
-    mutationFn: (details: LocalMatchDetails) =>
+    mutationFn: (details: LocalMatchDetailsUpdate) =>
       updateLocalMatchDetails(matchId, details),
     onSuccess: (updatedMatch) => {
       onUpdated(updatedMatch);
@@ -339,6 +409,7 @@ export default function MatchScreen() {
     },
   });
   const match = matchQuery.data;
+  const savedPlayers = playersQuery.data ?? [];
   const reportVersion =
     match && insightsQuery.data
       ? `${match.id}:${match.updatedAt}:${insightsQuery.dataUpdatedAt}`
@@ -381,7 +452,9 @@ export default function MatchScreen() {
     setEditDraft({
       matchDate: match.matchDate,
       trackedPlayer: match.trackedPlayer,
+      trackedPlayerId: match.trackedPlayerId,
       opponent: match.opponent,
+      opponentPlayerId: match.opponentPlayerId,
       event: match.event,
       round: match.round,
       chairCoach: match.chairCoach,
@@ -404,6 +477,36 @@ export default function MatchScreen() {
     value: LocalMatchDetails[Key],
   ) {
     setEditDraft((current) => (current ? { ...current, [key]: value } : current));
+    setEditValidationError('');
+  }
+
+  function changeEditPlayerName(side: Side, name: string) {
+    setEditDraft((current) =>
+      current
+        ? side === 'tracked'
+          ? { ...current, trackedPlayer: name, trackedPlayerId: null }
+          : { ...current, opponent: name, opponentPlayerId: null }
+        : current,
+    );
+    setEditValidationError('');
+  }
+
+  function selectEditPlayer(side: Side, player: { id: string; name: string }) {
+    setEditDraft((current) =>
+      current
+        ? side === 'tracked'
+          ? {
+              ...current,
+              trackedPlayer: player.name,
+              trackedPlayerId: player.id,
+            }
+          : {
+              ...current,
+              opponent: player.name,
+              opponentPlayerId: player.id,
+            }
+        : current,
+    );
     setEditValidationError('');
   }
 
@@ -2605,18 +2708,30 @@ export default function MatchScreen() {
               <MatchDetailsField
                 label="TRACKED PLAYER"
                 value={editDraft.trackedPlayer}
-                onChangeText={(value) => changeEditDraft('trackedPlayer', value)}
+                onChangeText={(value) => changeEditPlayerName('tracked', value)}
                 placeholder="Player being recorded"
                 testID="edit-input-tracked-player"
                 maxLength={80}
               />
+              <MatchSavedPlayerChoices
+                players={savedPlayers}
+                side="tracked"
+                selectedPlayerId={editDraft.trackedPlayerId}
+                onSelect={(player) => selectEditPlayer('tracked', player)}
+              />
               <MatchDetailsField
                 label="OPPONENT"
                 value={editDraft.opponent}
-                onChangeText={(value) => changeEditDraft('opponent', value)}
+                onChangeText={(value) => changeEditPlayerName('opponent', value)}
                 placeholder="Opposing player or team"
                 testID="edit-input-opponent"
                 maxLength={80}
+              />
+              <MatchSavedPlayerChoices
+                players={savedPlayers}
+                side="opponent"
+                selectedPlayerId={editDraft.opponentPlayerId}
+                onSelect={(player) => selectEditPlayer('opponent', player)}
               />
               <View style={styles.editTwoFields}>
                 <View style={styles.editHalfField}>
@@ -2854,6 +2969,11 @@ const styles = StyleSheet.create({
   editChoiceWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   editChoiceChip: { minHeight: 39, paddingHorizontal: 13, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   editChoiceText: { fontFamily: 'DMSans_600SemiBold', fontSize: 12 },
+  editSavedPlayerBlock: { gap: 6, marginTop: -8 },
+  editSavedPlayerLabel: { fontFamily: 'DMSans_700Bold', fontSize: 8, letterSpacing: 0.8 },
+  editSavedPlayerRow: { flexDirection: 'row', gap: 6, paddingVertical: 2 },
+  editSavedPlayerChip: { minHeight: 31, paddingHorizontal: 10, borderWidth: 1, justifyContent: 'center' },
+  editSavedPlayerText: { fontFamily: 'DMSans_600SemiBold', fontSize: 11 },
   editServerChoice: { minHeight: 48, borderWidth: 1, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
   editErrorBanner: { borderWidth: 1, borderRadius: 9, paddingHorizontal: 12, paddingVertical: 11, flexDirection: 'row', alignItems: 'center', gap: 8 },
   editErrorText: { flex: 1, fontFamily: 'DMSans_400Regular', fontSize: 12, lineHeight: 17 },

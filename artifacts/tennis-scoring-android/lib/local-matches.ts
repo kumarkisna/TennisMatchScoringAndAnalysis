@@ -172,6 +172,11 @@ export interface LocalMatchDetails {
   firstServer: PlayerSide;
 }
 
+export interface LocalMatchDetailsUpdate extends LocalMatchDetails {
+  trackedPlayerId?: string | null;
+  opponentPlayerId?: string | null;
+}
+
 export interface NewLocalMatch extends LocalMatchDetails {
   setNumber: number;
   trackedPlayerId?: string | null;
@@ -951,7 +956,7 @@ export async function createLocalMatch(input: NewLocalMatch): Promise<LocalMatch
 
 export async function updateLocalMatchDetails(
   id: string,
-  input: LocalMatchDetails,
+  input: LocalMatchDetailsUpdate,
 ): Promise<LocalMatch> {
   const details = normalizeMatchDetails(input);
   return withWriteLock(async () => {
@@ -964,12 +969,18 @@ export async function updateLocalMatchDetails(
     const updatedDetails = {
       ...match,
       ...details,
-      trackedPlayerId: sameName(match.trackedPlayer, details.trackedPlayer)
-        ? match.trackedPlayerId
-        : null,
-      opponentPlayerId: sameName(match.opponent, details.opponent)
-        ? match.opponentPlayerId
-        : null,
+      trackedPlayerId:
+        input.trackedPlayerId !== undefined
+          ? input.trackedPlayerId
+          : sameName(match.trackedPlayer, details.trackedPlayer)
+            ? match.trackedPlayerId
+            : null,
+      opponentPlayerId:
+        input.opponentPlayerId !== undefined
+          ? input.opponentPlayerId
+          : sameName(match.opponent, details.opponent)
+            ? match.opponentPlayerId
+            : null,
     };
     const nextServer = calculateLocalScore(updatedDetails, match.points).nextServer;
     const updated: LocalMatch = {

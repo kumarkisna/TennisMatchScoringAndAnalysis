@@ -344,6 +344,81 @@ test('match detail edits preserve multi-set point history, score totals, and ana
   assert.deepEqual(localMatches.calculateLocalInsights(standardEdited), standardInsights);
 });
 
+test('saved player choices relink both match sides without changing recorded points', async (t) => {
+  storageValues.clear();
+  const originalFetch = global.fetch;
+  let networkRequestCount = 0;
+  global.fetch = async () => {
+    networkRequestCount += 1;
+    throw new Error('Saved player choices must remain on-device.');
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const { localMatches, localPlayers } = loadStorageModulesAfterRestart();
+  const oldTracked = await localPlayers.addLocalPlayer('Tracked Before');
+  const oldOpponent = await localPlayers.addLocalPlayer('Opponent Before');
+  const selectedTracked = await localPlayers.addLocalPlayer('Tracked From Roster');
+  const selectedOpponent = await localPlayers.addLocalPlayer('Opponent From Roster');
+  const match = await localMatches.createLocalMatch({
+    matchDate: '2026-10-30',
+    event: 'City Open',
+    round: 'Final',
+    trackedPlayer: oldTracked.name,
+    trackedPlayerId: oldTracked.id,
+    opponent: oldOpponent.name,
+    opponentPlayerId: oldOpponent.id,
+    chairCoach: null,
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+  await localMatches.recordLocalPoint(match.id, {
+    winner: 'tracked',
+    endingCode: 'A',
+  });
+  const before = await localMatches.getLocalMatch(match.id);
+  assert.ok(before);
+
+  const edited = await localMatches.updateLocalMatchDetails(match.id, {
+    matchDate: before.matchDate,
+    event: before.event,
+    round: before.round,
+    trackedPlayer: selectedTracked.name,
+    trackedPlayerId: selectedTracked.id,
+    opponent: selectedOpponent.name,
+    opponentPlayerId: selectedOpponent.id,
+    chairCoach: before.chairCoach,
+    surface: before.surface,
+    firstServer: before.firstServer,
+  });
+
+  assert.equal(edited.trackedPlayer, selectedTracked.name);
+  assert.equal(edited.trackedPlayerId, selectedTracked.id);
+  assert.equal(edited.opponent, selectedOpponent.name);
+  assert.equal(edited.opponentPlayerId, selectedOpponent.id);
+  assert.deepEqual(edited.points, before.points);
+  assert.deepEqual(edited.completedSets, before.completedSets);
+  assert.deepEqual(edited.score, before.score);
+  const roster = await localPlayers.listLocalPlayers();
+  const trackedHistory = await localMatches.listLocalPlayerMatchInsights(
+    selectedTracked.id,
+    roster,
+  );
+  const opponentHistory = await localMatches.listLocalPlayerMatchInsights(
+    selectedOpponent.id,
+    roster,
+  );
+  assert.equal(trackedHistory.length, 1);
+  assert.equal(trackedHistory[0].match.id, match.id);
+  assert.equal(trackedHistory[0].playerSide, 'tracked');
+  assert.equal(opponentHistory.length, 1);
+  assert.equal(opponentHistory[0].match.id, match.id);
+  assert.equal(opponentHistory[0].playerSide, 'opponent');
+  assert.equal(networkRequestCount, 0);
+});
+
 test('legacy match links preserve names and trend metrics count points from every set', async () => {
   storageValues.clear();
   const { localMatches, localPlayers } = loadStorageModulesAfterRestart();
