@@ -23,3 +23,10 @@ Reports must always retain the existing generic match statistics, even when poin
 **Why:** The user asked for detailed analysis to supplement the generic statistics, not replace them.
 
 **How to apply:** Keep serve, return, and break-point statistics in every report; add recorded shot counts, ratings, and observations alongside them.
+
+## Benchmark references
+Report PDFs may show at most two selected user benchmark presets at a time, with generic headings that do not expose preset names.
+
+**Why:** A two-column reference layout remains readable in a printable report and avoids printing outside-company attribution from a user-entered preset name.
+
+**How to apply:** Keep saved presets unlimited and editable on-device, but limit selected references to two and label exported columns as generic user references.

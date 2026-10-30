@@ -20,6 +20,7 @@ import {
 } from '@tanstack/react-query';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
+import { ReportBenchmarkManager } from '@/components/ReportBenchmarkManager';
 import { ReportSectionPicker } from '@/components/ReportSectionPicker';
 import { useColors } from '@/hooks/useColors';
 import * as Print from 'expo-print';
@@ -61,6 +62,10 @@ import {
 } from '@/lib/local-matches';
 import { summarizePlayerPerformance } from '@/lib/player-insights';
 import { buildPlayerReportHtml } from '@/lib/player-report-html';
+import {
+  getLocalReportBenchmarkSettings,
+  LOCAL_REPORT_BENCHMARKS_KEY,
+} from '@/lib/local-benchmarks';
 import { createAndPreviewLocalPdf } from '@/lib/report-pdf';
 import {
   getStandardPointProgress,
@@ -429,6 +434,10 @@ export default function MatchScreen() {
     queryFn: () => getLocalInsights(matchId),
     enabled: Boolean(matchId),
   });
+  const reportBenchmarksQuery = useQuery({
+    queryKey: LOCAL_REPORT_BENCHMARKS_KEY,
+    queryFn: getLocalReportBenchmarkSettings,
+  });
   useEffect(() => {
     setSelectedReviewSetNumber(null);
     setEndingCode(null);
@@ -508,12 +517,28 @@ export default function MatchScreen() {
   });
   const match = matchQuery.data;
   const savedPlayers = playersQuery.data ?? [];
+  const selectedReportBenchmarks = reportBenchmarksQuery.data
+    ? reportBenchmarksQuery.data.selectedPresetIds.flatMap((id) => {
+        const preset = reportBenchmarksQuery.data?.presets.find((item) => item.id === id);
+        return preset ? [preset] : [];
+      })
+    : [];
   const reportVersion =
     match && insightsQuery.data
       ? `${match.id}:${match.updatedAt}:${insightsQuery.dataUpdatedAt}`
       : null;
+  const selectedBenchmarkVersion = JSON.stringify(
+    selectedReportBenchmarks.map(
+      ({ id, firstServePointsWon, secondServePointsWon, serviceGamesWon }) => ({
+        id,
+        firstServePointsWon,
+        secondServePointsWon,
+        serviceGamesWon,
+      }),
+    ),
+  );
   const reportReviewVersion = reportVersion
-    ? `${reportVersion}:${selectedReportSections.join(',')}`
+    ? `${reportVersion}:${selectedReportSections.join(',')}:${selectedBenchmarkVersion}`
     : null;
   const hasReviewedReport =
     reportReviewVersion !== null &&
@@ -738,19 +763,34 @@ export default function MatchScreen() {
   }
 
   function buildCurrentReportHtml() {
-    if (!match || !insightsQuery.data) return null;
+    if (!match || !insightsQuery.data || !reportBenchmarksQuery.data) return null;
     return buildPlayerReportHtml(
       match,
       insightsQuery.data,
       summarizePlayerPerformance(insightsQuery.data),
       selectedReportSections,
+      selectedReportBenchmarks.map(
+        ({ firstServePointsWon, secondServePointsWon, serviceGamesWon }) => ({
+          firstServePointsWon,
+          secondServePointsWon,
+          serviceGamesWon,
+        }),
+      ),
     );
   }
 
   async function previewPlayerReport() {
     const html = buildCurrentReportHtml();
     const reviewVersion = reportReviewVersion;
-    if (!html || !reviewVersion || insightsQuery.isFetching || isReportBusy) return;
+    if (
+      !html ||
+      !reviewVersion ||
+      insightsQuery.isFetching ||
+      reportBenchmarksQuery.isFetching ||
+      isReportBusy
+    ) {
+      return;
+    }
 
     setReportAction('preview');
     setReportExportError('');
@@ -2297,14 +2337,24 @@ export default function MatchScreen() {
               testID="button-export-player-report"
               accessibilityRole="button"
               accessibilityLabel="Preview the generated PDF report"
-              disabled={isReportBusy || !insightsQuery.data || insightsQuery.isFetching}
+              disabled={
+                isReportBusy ||
+                !insightsQuery.data ||
+                insightsQuery.isFetching ||
+                !reportBenchmarksQuery.data ||
+                reportBenchmarksQuery.isFetching
+              }
               onPress={() => void previewPlayerReport()}
               style={[
                 styles.exportButton,
                 {
                   backgroundColor: colors.secondary,
                   opacity:
-                    isReportBusy || !insightsQuery.data || insightsQuery.isFetching
+                    isReportBusy ||
+                    !insightsQuery.data ||
+                    insightsQuery.isFetching ||
+                    !reportBenchmarksQuery.data ||
+                    reportBenchmarksQuery.isFetching
                       ? 0.55
                       : 1,
                 },
@@ -2355,6 +2405,7 @@ export default function MatchScreen() {
           onSelectAll={() => setSelectedReportSections(allPlayerReportSections())}
           onClear={() => setSelectedReportSections([])}
         />
+        <ReportBenchmarkManager />
 
         {reportExportError ? (
           <View accessibilityRole="alert" style={styles.exportError}>

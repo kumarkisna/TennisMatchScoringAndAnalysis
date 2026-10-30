@@ -324,6 +324,19 @@ test('single-match report removes URL-like text and keeps match details and anal
     },
     insights,
     summary,
+    undefined,
+    [
+      {
+        firstServePointsWon: 75.1,
+        secondServePointsWon: 56.4,
+        serviceGamesWon: 86.8,
+      },
+      {
+        firstServePointsWon: 79.2,
+        secondServePointsWon: 61.7,
+        serviceGamesWon: 94.3,
+      },
+    ],
   );
 
   assertCleanReport(html);
@@ -334,8 +347,74 @@ test('single-match report removes URL-like text and keeps match details and anal
   assert.match(html, /Strong serve\./);
   assert.match(html, />Serve</);
   assert.match(html, />Return</);
-  assert.match(html, /Reference 1/);
+  assert.match(html, /User reference 1/);
+  assert.match(html, /User reference 2/);
+  assert.match(
+    html,
+    /<td>First-serve points won<\/td>.*?<td>75\.1%<\/td><td>79\.2%<\/td>/s,
+  );
+  assert.match(
+    html,
+    /<td>Second-serve points won<\/td>.*?<td>56\.4%<\/td><td>61\.7%<\/td>/s,
+  );
+  assert.match(
+    html,
+    /<td>Service games won<\/td>.*?<td>86\.8%<\/td><td>94\.3%<\/td>/s,
+  );
+  assert.doesNotMatch(html, /2026 Cincinnati|ATP|ITF/i);
   assert.doesNotMatch(html, /Cincinnati/i);
+
+  const noReferences = buildPlayerReportHtml(
+    {
+      matchDate: '2026-10-30',
+      trackedPlayer: 'Alex',
+      opponent: 'Jordan',
+      surface: 'Hard',
+      matchStatus: 'complete',
+    },
+    insights,
+    summary,
+    undefined,
+    [],
+  );
+  assert.doesNotMatch(noReferences, /User reference/);
+});
+
+test('single benchmark columns keep their generic source label and missing values blank', () => {
+  const html = buildPlayerReportHtml(
+    {
+      matchDate: '2026-10-30',
+      trackedPlayer: 'Alex',
+      opponent: 'Jordan',
+      surface: 'Hard',
+      matchStatus: 'complete',
+    },
+    emptyInsight,
+    emptyPerformance,
+    undefined,
+    [
+      {
+        firstServePointsWon: 72.4,
+        secondServePointsWon: null,
+        serviceGamesWon: 88,
+      },
+    ],
+  );
+
+  assert.match(html, /User reference 1/);
+  assert.doesNotMatch(html, /User reference 2/);
+  assert.match(
+    html,
+    /<td>First-serve points won<\/td>.*?<td>72\.4%<\/td>/s,
+  );
+  assert.match(
+    html,
+    /<td>Second-serve points won<\/td>.*?<td>—<\/td>/s,
+  );
+  assert.match(
+    html,
+    /<td>Service games won<\/td>.*?<td>88\.0%<\/td>/s,
+  );
 });
 
 test('break-point counts, set aggregation, exclusions, and report rates match scored sequences', () => {

@@ -53,15 +53,18 @@ require.extensions['.ts'] = function (module, filename) {
 
 const localMatchesPath = path.join(__dirname, '../lib/local-matches.ts');
 const localPlayersPath = path.join(__dirname, '../lib/local-players.ts');
+const localReportBenchmarksPath = path.join(__dirname, '../lib/local-benchmarks.ts');
 const playerInsightsPath = path.join(__dirname, '../lib/player-insights.ts');
 
 function loadStorageModulesAfterRestart() {
   delete require.cache[require.resolve(localMatchesPath)];
   delete require.cache[require.resolve(localPlayersPath)];
+  delete require.cache[require.resolve(localReportBenchmarksPath)];
 
   return {
     localMatches: require(localMatchesPath),
     localPlayers: require(localPlayersPath),
+    localReportBenchmarks: require(localReportBenchmarksPath),
   };
 }
 
@@ -681,4 +684,100 @@ test('legacy match names that match multiple saved identities stay unlinked', as
   const unchanged = await localMatches.getLocalMatch(match.id);
   assert.equal(unchanged.trackedPlayerId, null);
   assert.equal(unchanged.trackedPlayer, 'Alex Kim');
+});
+
+test('report benchmark presets can be managed offline and survive app restart', async (t) => {
+  storageValues.clear();
+  const originalFetch = global.fetch;
+  let networkRequestCount = 0;
+  global.fetch = async () => {
+    networkRequestCount += 1;
+    throw new Error('Report benchmarks must stay on this device.');
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const beforeRestart = loadStorageModulesAfterRestart().localReportBenchmarks;
+  const initial = await beforeRestart.getLocalReportBenchmarkSettings();
+  assert.equal(initial.presets.length, 2);
+  assert.deepEqual(initial.selectedPresetIds, [
+    'reference-season-2026',
+    'reference-cincinnati-2026',
+  ]);
+  assert.deepEqual(
+    initial.presets.map((preset) => [
+      preset.firstServePointsWon,
+      preset.secondServePointsWon,
+      preset.serviceGamesWon,
+    ]),
+    [
+      [75.1, 56.4, 86.8],
+      [79.2, 61.7, 94.3],
+    ],
+  );
+
+  const created = await beforeRestart.saveLocalReportBenchmarkPreset({
+    name: 'My season goal',
+    firstServePointsWon: 73.5,
+    secondServePointsWon: 55,
+    serviceGamesWon: null,
+  });
+  const customPreset = created.presets.find((preset) => preset.name === 'My season goal');
+  assert.ok(customPreset);
+  assert.equal(created.selectedPresetIds.length, 2);
+  await assert.rejects(
+    beforeRestart.setSelectedLocalReportBenchmarkPresets([
+      ...created.selectedPresetIds,
+      customPreset.id,
+    ]),
+    /Choose up to 2/,
+  );
+
+  await beforeRestart.setSelectedLocalReportBenchmarkPresets([customPreset.id]);
+  await beforeRestart.saveLocalReportBenchmarkPreset(
+    {
+      name: 'My season goal',
+      firstServePointsWon: 77,
+      secondServePointsWon: null,
+      serviceGamesWon: 89.4,
+    },
+    customPreset.id,
+  );
+
+  const afterRestart = loadStorageModulesAfterRestart().localReportBenchmarks;
+  const restored = await afterRestart.getLocalReportBenchmarkSettings();
+  assert.deepEqual(restored.selectedPresetIds, [customPreset.id]);
+  const restoredCustomPreset = restored.presets.find(
+    (preset) => preset.id === customPreset.id,
+  );
+  assert.ok(restoredCustomPreset);
+  assert.equal(restoredCustomPreset.name, 'My season goal');
+  assert.equal(restoredCustomPreset.firstServePointsWon, 77);
+  assert.equal(restoredCustomPreset.secondServePointsWon, null);
+  assert.equal(restoredCustomPreset.serviceGamesWon, 89.4);
+  assert.match(restoredCustomPreset.updatedAt, /^\d{4}-\d\d-\d\dT/);
+
+  const removed = await afterRestart.removeLocalReportBenchmarkPreset(customPreset.id);
+  assert.equal(removed.presets.some((preset) => preset.id === customPreset.id), false);
+  assert.deepEqual(removed.selectedPresetIds, []);
+  await assert.rejects(
+    afterRestart.saveLocalReportBenchmarkPreset({
+      name: 'Empty preset',
+      firstServePointsWon: null,
+      secondServePointsWon: null,
+      serviceGamesWon: null,
+    }),
+    /at least one reference percentage/,
+  );
+  await assert.rejects(
+    afterRestart.saveLocalReportBenchmarkPreset({
+      name: 'Invalid preset',
+      firstServePointsWon: 100.1,
+      secondServePointsWon: null,
+      serviceGamesWon: null,
+    }),
+    /percentages from 0 to 100/,
+  );
+  assert.equal(networkRequestCount, 0);
 });

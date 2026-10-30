@@ -4,6 +4,7 @@ import type {
   PlayerPerformanceSummary,
   PlayerReportInsights,
 } from '@/lib/player-insights';
+import type { LocalReportBenchmarkPreset } from '@/lib/local-benchmarks';
 import { escapeReportHtml as escapeHtml } from '@/lib/report-html-utils';
 import {
   allPlayerReportSections,
@@ -141,6 +142,10 @@ export function buildPlayerReportHtml(
   insights: PlayerReportInsights,
   summary: PlayerPerformanceSummary,
   selectedSections: readonly PlayerReportSection[] = allPlayerReportSections(),
+  benchmarks: readonly Pick<
+    LocalReportBenchmarkPreset,
+    'firstServePointsWon' | 'secondServePointsWon' | 'serviceGamesWon'
+  >[] = [],
 ): string {
   const includes = (section: PlayerReportSection) =>
     selectedSections.includes(section);
@@ -256,49 +261,53 @@ export function buildPlayerReportHtml(
   const opponentReturnGamesPlayed = insights.serviceGames.tracked.gamesPlayed;
   const opponentReturnGamesWon =
     opponentReturnGamesPlayed - insights.serviceGames.tracked.gamesWon;
+  const benchmarkValues = (
+    key: 'firstServePointsWon' | 'secondServePointsWon' | 'serviceGamesWon',
+  ) =>
+    benchmarks.map((benchmark) =>
+      benchmark[key] === null ? '—' : `${benchmark[key]!.toFixed(1)}%`,
+    );
+  const noBenchmarkValues = benchmarks.map(() => '—');
+  const benchmarkHeaders = benchmarks
+    .map((_, index) => `<th>User reference ${index + 1}</th>`)
+    .join('');
   const serveRows = [
-    ['Aces', String(trackedServe.aces), String(opponentServe.aces), '—', '—'],
+    ['Aces', String(trackedServe.aces), String(opponentServe.aces), ...noBenchmarkValues],
     [
       'Double faults',
       String(trackedServe.doubleFaults),
       String(opponentServe.doubleFaults),
-      '—',
-      '—',
+      ...noBenchmarkValues,
     ],
     [
       'First serve in',
       rate(trackedServe.firstServePoints, trackedServe.servicePoints),
       rate(opponentServe.firstServePoints, opponentServe.servicePoints),
-      '—',
-      '—',
+      ...noBenchmarkValues,
     ],
     [
       'Second serve in',
       rate(trackedSecondServeIn, trackedServe.secondServePoints),
       rate(opponentSecondServeIn, opponentServe.secondServePoints),
-      '—',
-      '—',
+      ...noBenchmarkValues,
     ],
     [
       'First-serve points won',
       rate(trackedServe.firstServePointsWon, trackedServe.firstServePoints),
       rate(opponentServe.firstServePointsWon, opponentServe.firstServePoints),
-      '75.1%',
-      '79.2%',
+      ...benchmarkValues('firstServePointsWon'),
     ],
     [
       'Second-serve points won',
       rate(trackedServe.secondServePointsWon, trackedServe.secondServePoints),
       rate(opponentServe.secondServePointsWon, opponentServe.secondServePoints),
-      '56.4%',
-      '61.7%',
+      ...benchmarkValues('secondServePointsWon'),
     ],
     [
       'Service games played',
       String(insights.serviceGames.tracked.gamesPlayed),
       String(insights.serviceGames.opponent.gamesPlayed),
-      '—',
-      '—',
+      ...noBenchmarkValues,
     ],
     [
       'Service games won',
@@ -310,8 +319,7 @@ export function buildPlayerReportHtml(
         insights.serviceGames.opponent.gamesWon,
         insights.serviceGames.opponent.gamesPlayed,
       ),
-      '86.8%',
-      '94.3%',
+      ...benchmarkValues('serviceGamesWon'),
     ],
     [
       'Aces per service game',
@@ -325,39 +333,34 @@ export function buildPlayerReportHtml(
         insights.serviceGames.opponent.gamesPlayed,
         'service games',
       ),
-      '—',
-      '—',
+      ...noBenchmarkValues,
     ],
     [
       'Aces per set',
       averageAces(trackedServe.aces, recordedSetCount, 'sets with points'),
       averageAces(opponentServe.aces, recordedSetCount, 'sets with points'),
-      '—',
-      '—',
+      ...noBenchmarkValues,
     ],
     [
       'Aces per match',
       averageAces(trackedServe.aces, 1, 'match'),
       averageAces(opponentServe.aces, 1, 'match'),
-      '—',
-      '—',
+      ...noBenchmarkValues,
     ],
     [
       'Total service points won',
       rate(trackedServe.servicePointsWon, trackedServe.servicePoints),
       rate(opponentServe.servicePointsWon, opponentServe.servicePoints),
-      '—',
-      '—',
+      ...noBenchmarkValues,
     ],
   ]
     .map(
-      ([label, tracked, opponent, season, event]) => `
+      ([label, tracked, opponent, ...references]) => `
         <tr>
           <td>${escape(label ?? '')}</td>
           <td>${escape(tracked ?? '—')}</td>
           <td>${escape(opponent ?? '—')}</td>
-          <td>${escape(season ?? '—')}</td>
-          <td>${escape(event ?? '—')}</td>
+          ${references.map((value) => `<td>${escape(value ?? '—')}</td>`).join('')}
         </tr>`,
     )
     .join('');
@@ -602,7 +605,7 @@ export function buildPlayerReportHtml(
       <div><strong>Points logged:</strong> ${insights.pointCount}</div>
     </div>
     <p class="note">
-      <strong>Report basis:</strong> Generated from saved match points. Rates include denominators; small samples are directional, not conclusions. Break-point counts are reconstructed from regular games; standard tie-break points and match tie-break sets are excluded. Reference values are user-provided.
+      <strong>Report basis:</strong> Generated from saved match points. Rates include denominators; small samples are directional, not conclusions. Break-point counts are reconstructed from regular games; standard tie-break points and match tie-break sets are excluded. Any reference columns are user-entered preset values, not match results or live statistics.
     </p>
 
     ${includes('overview') ? `<h2>Match performance at a glance</h2>
@@ -653,14 +656,13 @@ export function buildPlayerReportHtml(
           <th>Stat</th>
           <th>${escape(match.trackedPlayer)} · match</th>
           <th>${escape(match.opponent)} · match</th>
-          <th>Reference 1</th>
-          <th>Reference 2</th>
+          ${benchmarkHeaders}
         </tr>
       </thead>
       <tbody>${serveRows}</tbody>
     </table>
     <p class="context-coverage">
-      Reference values are user-provided. Service-game percentages use completed regular games; tie-breaks are excluded.
+      Reference columns, when shown, contain user-entered saved preset values. They are not match results or live statistics. Service-game percentages use completed regular games; tie-breaks are excluded.
     </p>` : ''}
 
     ${includes('return') ? `<h2>Return</h2>
