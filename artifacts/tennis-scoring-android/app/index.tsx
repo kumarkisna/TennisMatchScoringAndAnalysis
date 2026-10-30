@@ -1,7 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
 import {
   Alert,
   ActivityIndicator,
@@ -13,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ThemeSettingsPanel } from '@/components/ThemeSettingsPanel';
 import { useColors } from '@/hooks/useColors';
 import {
   deleteLocalMatch,
@@ -29,6 +29,15 @@ import {
   listLocalPlayers,
   LOCAL_PLAYERS_KEY,
 } from '@/lib/local-players';
+import {
+  DEFAULT_HOME_SCREEN_PREFERENCES,
+  getHomeScreenPreferences,
+  HOME_SCREEN_PREFERENCES_KEY,
+  saveHomeScreenPreferences,
+  splitHomeMatches,
+  type HomeScreenPreferences,
+  type MatchBookSection,
+} from '@/lib/home-screen-state';
 import {
   loadLocalBackupFromDevice,
   saveLocalBackupToDevice,
@@ -51,7 +60,6 @@ export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
-  const [showCompletedMatches, setShowCompletedMatches] = useState(true);
   const matchesQuery = useQuery({
     queryKey: LOCAL_MATCH_LIST_KEY,
     queryFn: listLocalMatches,
@@ -64,11 +72,37 @@ export default function HomeScreen() {
     queryKey: ACTIVE_LOCAL_PLAYER_KEY,
     queryFn: getActiveLocalPlayerId,
   });
+  const homePreferencesQuery = useQuery({
+    queryKey: [HOME_SCREEN_PREFERENCES_KEY],
+    queryFn: getHomeScreenPreferences,
+  });
+  const homePreferences =
+    homePreferencesQuery.data ?? DEFAULT_HOME_SCREEN_PREFERENCES;
+  function updateHomePreferences(
+    update: (current: HomeScreenPreferences) => HomeScreenPreferences,
+  ) {
+    const current =
+      queryClient.getQueryData<HomeScreenPreferences>([
+        HOME_SCREEN_PREFERENCES_KEY,
+      ]) ?? DEFAULT_HOME_SCREEN_PREFERENCES;
+    const next = update(current);
+    queryClient.setQueryData([HOME_SCREEN_PREFERENCES_KEY], next);
+    void saveHomeScreenPreferences(next).catch((error: unknown) => {
+      Alert.alert(
+        'Could not save home screen setting',
+        error instanceof Error ? error.message : 'Try again.',
+      );
+    });
+  }
   const deleteMatch = useMutation({
     mutationFn: deleteLocalMatch,
     onSuccess: async (_deleted, matchId) => {
       queryClient.removeQueries({ queryKey: localMatchKey(matchId) });
       queryClient.removeQueries({ queryKey: localInsightsKey(matchId) });
+      updateHomePreferences((current) => ({
+        ...current,
+        expandedMatchIds: current.expandedMatchIds.filter((id) => id !== matchId),
+      }));
       await queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
     },
     onError: (error) => Alert.alert('Could not delete match', error.message),
@@ -104,13 +138,41 @@ export default function HomeScreen() {
   });
   const localMatches = matchesQuery.data ?? [];
   const matches: LocalMatchSummary[] = localMatches;
+  const matchSections = splitHomeMatches(matches);
+  const isSettings = homePreferences.matchBookSection === 'settings';
+  const visibleSection = homePreferences.matchBookSection === 'history'
+    ? 'history'
+    : 'recent';
+  const sectionMatches = isSettings ? [] : matchSections[visibleSection];
+  const visibleMatches = homePreferences.showCompletedMatches
+    ? sectionMatches
+    : sectionMatches.filter((match) => match.status !== 'complete');
   const activePlayer = playersQuery.data?.find(
     (player) => player.id === activePlayerQuery.data,
   );
-  const completedCount = matches.filter((match) => match.status === 'complete').length;
-  const visibleMatches = showCompletedMatches
-    ? matches
-    : matches.filter((match) => match.status !== 'complete');
+  const completedCount = sectionMatches.filter(
+    (match) => match.status === 'complete',
+  ).length;
+
+  function selectMatchBookSection(section: MatchBookSection) {
+    updateHomePreferences((current) => ({ ...current, matchBookSection: section }));
+  }
+
+  function toggleCompletedMatches() {
+    updateHomePreferences((current) => ({
+      ...current,
+      showCompletedMatches: !current.showCompletedMatches,
+    }));
+  }
+
+  function toggleMatchDetails(matchId: string) {
+    updateHomePreferences((current) => ({
+      ...current,
+      expandedMatchIds: current.expandedMatchIds.includes(matchId)
+        ? current.expandedMatchIds.filter((id) => id !== matchId)
+        : [...current.expandedMatchIds, matchId],
+    }));
+  }
 
   function confirmDeleteMatch(match: LocalMatchSummary) {
     Alert.alert(
@@ -133,7 +195,7 @@ export default function HomeScreen() {
       edges={['top', 'left', 'right']}
     >
       <FlatList
-        data={visibleMatches}
+        data={isSettings ? [] : visibleMatches}
         keyExtractor={(item) => item.id}
         contentContainerStyle={[
           styles.content,
@@ -149,9 +211,12 @@ export default function HomeScreen() {
           />
         }
         ListHeaderComponent={
+          isSettings ? (
+            <ThemeSettingsPanel />
+          ) : (
           <View>
             <View style={styles.topLine}>
-              <View style={styles.brandMark}>
+              <View style={[styles.brandMark, { borderColor: colors.primary }]}>
                 <Ionicons name="tennisball-outline" size={21} color={colors.primary} />
               </View>
               <Text style={[styles.brandName, { color: colors.foreground }]}>
@@ -330,40 +395,59 @@ export default function HomeScreen() {
             <View style={styles.sectionHeader}>
               <View>
                 <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
-                  Match book
-                </Text>
-                <Text style={[styles.sectionCaption, { color: colors.mutedForeground }]}>
-                  Saved on this device · no account or internet needed
+                  {visibleSection === 'history' ? 'Match history' : 'Match book'}
                 </Text>
               </View>
               <View style={styles.matchControls}>
-                {completedCount > 0 ? (
-                  <Pressable
-                    testID="toggle-completed-matches"
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: showCompletedMatches }}
-                    onPress={() => setShowCompletedMatches((value) => !value)}
+                <View style={[styles.countPill, { backgroundColor: colors.secondary }]}>
+                  <Text
                     style={[
-                      styles.completedToggle,
-                      { borderColor: colors.border, backgroundColor: colors.card },
+                      styles.countText,
+                      { color: colors.secondaryForeground },
                     ]}
                   >
-                    <Ionicons
-                      name={showCompletedMatches ? 'eye-off-outline' : 'eye-outline'}
-                      size={13}
-                      color={colors.primary}
-                    />
-                    <Text style={[styles.completedToggleText, { color: colors.primary }]}>
-                      {showCompletedMatches ? 'Hide completed' : 'Show completed'}
-                    </Text>
-                  </Pressable>
-                ) : null}
-                <View style={[styles.countPill, { backgroundColor: colors.secondary }]}>
-                  <Text style={[styles.countText, { color: colors.secondaryForeground }]}>
-                    {matches.length}
+                    {sectionMatches.length}
                   </Text>
                 </View>
               </View>
+            </View>
+            <View style={styles.matchSectionControlRow}>
+              <Text style={[styles.matchSectionCaption, { color: colors.mutedForeground }]}>
+                {visibleSection === 'recent'
+                  ? 'Your two newest matches'
+                  : 'Older matches'}
+              </Text>
+              {completedCount > 0 ? (
+                <Pressable
+                  testID="toggle-completed-matches"
+                  accessibilityRole="button"
+                  accessibilityState={{
+                    selected: homePreferences.showCompletedMatches,
+                    disabled: homePreferencesQuery.isLoading,
+                  }}
+                  disabled={homePreferencesQuery.isLoading}
+                  onPress={toggleCompletedMatches}
+                  style={[
+                    styles.completedToggle,
+                    { borderColor: colors.border, backgroundColor: colors.card },
+                  ]}
+                >
+                  <Ionicons
+                    name={
+                      homePreferences.showCompletedMatches
+                        ? 'eye-off-outline'
+                        : 'eye-outline'
+                    }
+                    size={13}
+                    color={colors.primary}
+                  />
+                  <Text style={[styles.completedToggleText, { color: colors.primary }]}>
+                    {homePreferences.showCompletedMatches
+                      ? 'Hide completed'
+                      : 'Show completed'}
+                  </Text>
+                </Pressable>
+              ) : null}
             </View>
             <Pressable
               testID="button-open-head-to-head"
@@ -394,10 +478,12 @@ export default function HomeScreen() {
               <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
             </Pressable>
           </View>
+          )
         }
         renderItem={({ item }) => {
           const finished = item.status === 'complete';
           const resultLabel = getLocalMatchSummaryResultLabel(item);
+          const expanded = homePreferences.expandedMatchIds.includes(item.id);
           return (
             <View
               testID={`match-card-${item.id}`}
@@ -410,130 +496,210 @@ export default function HomeScreen() {
               ]}
             >
               <Pressable
-                testID={`button-open-match-${item.id}`}
+                testID={`button-toggle-match-details-${item.id}`}
                 accessibilityRole="button"
-                onPress={() => router.push(`/matches/${item.id}`)}
+                accessibilityLabel={`${expanded ? 'Collapse' : 'Expand'} match details for ${item.trackedPlayer} versus ${item.opponent}`}
+                accessibilityState={{
+                  expanded,
+                  disabled: homePreferencesQuery.isLoading,
+                }}
+                disabled={homePreferencesQuery.isLoading}
+                onPress={() => toggleMatchDetails(item.id)}
                 style={({ pressed }) => [
                   styles.matchCardBody,
                   { opacity: pressed ? 0.84 : 1 },
                 ]}
               >
-              <View style={styles.matchCardTop}>
-                <View style={styles.matchMeta}>
-                  <Text style={[styles.matchEvent, { color: colors.mutedForeground }]}>
-                    {item.event?.trim() || 'MATCH SESSION'}
-                  </Text>
-                  <Text style={[styles.matchDate, { color: colors.mutedForeground }]}>
-                    {formatMatchDate(item.matchDate)}
-                    {item.round ? ` · ${item.round}` : ''}
-                    {` · ${item.setScores.length} ${item.setScores.length === 1 ? 'SET' : 'SETS'}`}
-                  </Text>
-                </View>
-                <View
-                  style={[
-                    styles.matchStatus,
-                    {
-                      backgroundColor: finished ? colors.secondary : colors.accent,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.matchStatusText,
-                      {
-                        color: finished
-                          ? colors.secondaryForeground
-                          : colors.accentForeground,
-                      },
-                    ]}
-                  >
-                    {finished ? 'FINAL' : 'LIVE'}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.matchScoreRow}>
-                <View style={styles.matchNames}>
-                  <Text style={[styles.matchPlayer, { color: colors.foreground }]}>
-                    {item.trackedPlayer}
-                  </Text>
-                  <Text style={[styles.matchOpponent, { color: colors.mutedForeground }]}>
-                    {item.opponent}
-                  </Text>
-                  {resultLabel ? (
-                    <Text
-                      testID={`match-result-${item.id}`}
-                      accessibilityLabel={resultLabel}
+                <View style={styles.matchCardTop}>
+                  <View style={styles.matchMeta}>
+                    <Text style={[styles.matchEvent, { color: colors.mutedForeground }]}>
+                      {item.event?.trim() || 'MATCH SESSION'}
+                    </Text>
+                    <Text style={[styles.matchDate, { color: colors.mutedForeground }]}>
+                      {formatMatchDate(item.matchDate)}
+                      {item.round ? ` · ${item.round}` : ''}
+                      {` · ${item.setScores.length} ${item.setScores.length === 1 ? 'SET' : 'SETS'}`}
+                    </Text>
+                  </View>
+                  <View style={styles.matchCardTopActions}>
+                    <View
                       style={[
-                        styles.matchResult,
+                        styles.matchStatus,
                         {
-                          color: item.winner
-                            ? colors.primary
-                            : colors.mutedForeground,
+                          backgroundColor: finished ? colors.secondary : colors.accent,
                         },
                       ]}
                     >
-                      {resultLabel}
-                    </Text>
-                  ) : null}
-                </View>
-              </View>
-              <View style={styles.matchSetScores}>
-                {item.setScores.map((set) => {
-                  const result =
-                    set.format === 'match_tiebreak'
-                      ? `${set.trackedTiebreakPoints}–${set.opponentTiebreakPoints} TB`
-                      : `${set.trackedGames}–${set.opponentGames}`;
-                  return (
-                    <View
-                      key={set.setNumber}
-                      style={[styles.matchSetScore, { backgroundColor: colors.background }]}
-                    >
-                      <Text style={[styles.matchSetNumber, { color: colors.mutedForeground }]}>
-                        S{set.setNumber}
-                      </Text>
-                      <Text style={[styles.matchSetResult, { color: colors.foreground }]}>
-                        {result}
+                      <Text
+                        style={[
+                          styles.matchStatusText,
+                          {
+                            color: finished
+                              ? colors.secondaryForeground
+                              : colors.accentForeground,
+                          },
+                        ]}
+                      >
+                        {finished ? 'FINAL' : 'LIVE'}
                       </Text>
                     </View>
-                  );
-                })}
-              </View>
-
-              <View style={[styles.matchCardBottom, { borderTopColor: colors.border }]}>
-                <Text style={[styles.matchBottomText, { color: colors.mutedForeground }]}>
-                  {item.surface.toUpperCase()} COURT
-                </Text>
-                <Text style={[styles.matchBottomText, { color: colors.mutedForeground }]}>
-                  {`${item.pointCount} ${item.pointCount === 1 ? 'POINT' : 'POINTS'}`}
-                </Text>
-                <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
-              </View>
+                    <Ionicons
+                      name={expanded ? 'chevron-up' : 'chevron-down'}
+                      size={17}
+                      color={colors.mutedForeground}
+                    />
+                  </View>
+                </View>
+                <View style={styles.matchScoreRow}>
+                  <View style={styles.matchNames}>
+                    <Text style={[styles.matchPlayer, { color: colors.foreground }]}>
+                      {item.trackedPlayer}
+                    </Text>
+                    <Text style={[styles.matchOpponent, { color: colors.mutedForeground }]}>
+                      {item.opponent}
+                    </Text>
+                    {resultLabel ? (
+                      <Text
+                        testID={`match-result-${item.id}`}
+                        accessibilityLabel={resultLabel}
+                        style={[
+                          styles.matchResult,
+                          {
+                            color: item.winner
+                              ? colors.primary
+                              : colors.mutedForeground,
+                          },
+                        ]}
+                      >
+                        {resultLabel}
+                      </Text>
+                    ) : null}
+                  </View>
+                </View>
               </Pressable>
-              <Pressable
-                testID={`button-delete-match-${item.id}`}
-                accessibilityRole="button"
-                accessibilityLabel={`Delete match ${item.trackedPlayer} versus ${item.opponent}`}
-                disabled={deleteMatch.isPending}
-                onPress={() => confirmDeleteMatch(item)}
-                style={({ pressed }) => [
-                  styles.deleteMatchAction,
-                  {
-                    borderTopColor: colors.border,
-                    opacity: deleteMatch.isPending ? 0.45 : pressed ? 0.65 : 1,
-                  },
-                ]}
-              >
-                <Ionicons name="trash-outline" size={14} color={colors.destructive} />
-                <Text style={[styles.deleteMatchText, { color: colors.destructive }]}>
-                  Delete match
-                </Text>
-              </Pressable>
+              {expanded ? (
+                <View style={styles.expandedMatchDetails}>
+                  <View style={styles.matchSetScores}>
+                    {item.setScores.map((set) => {
+                      const result =
+                        set.format === 'match_tiebreak'
+                          ? `${set.trackedTiebreakPoints}–${set.opponentTiebreakPoints} TB`
+                          : `${set.trackedGames}–${set.opponentGames}`;
+                      return (
+                        <View
+                          key={set.setNumber}
+                          style={[
+                            styles.matchSetScore,
+                            { backgroundColor: colors.background },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.matchSetNumber,
+                              { color: colors.mutedForeground },
+                            ]}
+                          >
+                            S{set.setNumber}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.matchSetResult,
+                              { color: colors.foreground },
+                            ]}
+                          >
+                            {result}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                  <View
+                    style={[
+                      styles.matchCardBottom,
+                      { borderTopColor: colors.border },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.matchBottomText,
+                        { color: colors.mutedForeground },
+                      ]}
+                    >
+                      {item.surface.toUpperCase()} COURT
+                    </Text>
+                    <Text
+                      style={[
+                        styles.matchBottomText,
+                        { color: colors.mutedForeground },
+                      ]}
+                    >
+                      {`${item.pointCount} ${item.pointCount === 1 ? 'POINT' : 'POINTS'}`}
+                    </Text>
+                  </View>
+                  <View style={styles.matchCardActions}>
+                    <Pressable
+                      testID={`button-open-match-${item.id}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Open match ${item.trackedPlayer} versus ${item.opponent}`}
+                      onPress={() => router.push(`/matches/${item.id}`)}
+                      style={({ pressed }) => [
+                        styles.openMatchAction,
+                        {
+                          backgroundColor: colors.primary,
+                          opacity: pressed ? 0.82 : 1,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.openMatchActionText,
+                          { color: colors.primaryForeground },
+                        ]}
+                      >
+                        Open match
+                      </Text>
+                      <Ionicons
+                        name="arrow-forward"
+                        size={14}
+                        color={colors.primaryForeground}
+                      />
+                    </Pressable>
+                    <Pressable
+                      testID={`button-delete-match-${item.id}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete match ${item.trackedPlayer} versus ${item.opponent}`}
+                      disabled={deleteMatch.isPending}
+                      onPress={() => confirmDeleteMatch(item)}
+                      style={({ pressed }) => [
+                        styles.deleteMatchAction,
+                        {
+                          borderColor: colors.border,
+                          opacity: deleteMatch.isPending ? 0.45 : pressed ? 0.65 : 1,
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        name="trash-outline"
+                        size={14}
+                        color={colors.destructive}
+                      />
+                      <Text
+                        style={[
+                          styles.deleteMatchText,
+                          { color: colors.destructive },
+                        ]}
+                      >
+                        Delete
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : null}
             </View>
           );
         }}
         ListEmptyComponent={
-          matchesQuery.isLoading ? (
+          isSettings ? undefined : matchesQuery.isLoading ? (
             <View style={styles.stateBox}>
               <ActivityIndicator size="small" color={colors.primary} />
               <Text style={[styles.stateText, { color: colors.mutedForeground }]}>
@@ -563,7 +729,7 @@ export default function HomeScreen() {
                 <Text style={[styles.retryText, { color: colors.primary }]}>Try again</Text>
               </Pressable>
             </View>
-          ) : matches.length > 0 ? (
+          ) : sectionMatches.length > 0 && !homePreferences.showCompletedMatches ? (
             <View
               style={[
                 styles.emptyCard,
@@ -582,13 +748,30 @@ export default function HomeScreen() {
               <Pressable
                 testID="button-show-completed-matches"
                 accessibilityRole="button"
-                onPress={() => setShowCompletedMatches(true)}
+                onPress={toggleCompletedMatches}
                 style={[styles.retryButton, { borderColor: colors.border }]}
               >
                 <Text style={[styles.retryText, { color: colors.primary }]}>
                   Show completed matches
                 </Text>
               </Pressable>
+            </View>
+          ) : visibleSection === 'history' ? (
+            <View
+              style={[
+                styles.emptyCard,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <View style={[styles.emptyIcon, { backgroundColor: colors.secondary }]}>
+                <Ionicons name="time-outline" size={25} color={colors.primary} />
+              </View>
+              <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
+                No older matches yet
+              </Text>
+              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
+                Your two newest matches stay on Home. Older matches will appear here.
+              </Text>
             </View>
           ) : (
             <View
@@ -610,14 +793,91 @@ export default function HomeScreen() {
           )
         }
         ListFooterComponent={
+          isSettings ? undefined : (
           <View style={styles.footerNote}>
             <Ionicons name="shield-checkmark-outline" size={14} color={colors.mutedForeground} />
             <Text style={[styles.footerText, { color: colors.mutedForeground }]}>
               Scores and player profiles stay on this device · no online storage
             </Text>
           </View>
+          )
         }
       />
+      <View
+        testID="match-book-bottom-tabs"
+        accessibilityRole="tablist"
+        style={[
+          styles.bottomTabBar,
+          {
+            backgroundColor: colors.background,
+            borderTopColor: colors.border,
+            paddingBottom: Math.max(insets.bottom, 8),
+          },
+        ]}
+      >
+        {([
+          ['home', 'Home', 'home-outline'],
+          ['history', 'History', 'archive-outline'],
+          ['settings', 'Settings', 'settings-outline'],
+        ] as const).map(([section, label, icon]) => {
+          const selected = homePreferences.matchBookSection === section;
+          const historyCount =
+            section === 'history' ? matchSections.history.length : null;
+          return (
+            <Pressable
+              key={section}
+              testID={`match-book-tab-${section}`}
+              accessibilityRole="tab"
+              accessibilityState={{
+                selected,
+                disabled: homePreferencesQuery.isLoading,
+              }}
+              disabled={homePreferencesQuery.isLoading}
+              onPress={() => selectMatchBookSection(section)}
+              style={({ pressed }) => [
+                styles.bottomTab,
+                {
+                  opacity: homePreferencesQuery.isLoading ? 0.55 : pressed ? 0.7 : 1,
+                },
+              ]}
+            >
+              <View style={styles.bottomTabLabel}>
+                <Ionicons
+                  name={icon}
+                  size={18}
+                  color={selected ? colors.primary : colors.mutedForeground}
+                />
+                <Text
+                  style={[
+                    styles.bottomTabText,
+                    { color: selected ? colors.primary : colors.mutedForeground },
+                  ]}
+                >
+                  {label}
+                </Text>
+                {historyCount !== null ? (
+                  <Text
+                    style={[
+                      styles.bottomTabCount,
+                      { color: selected ? colors.primary : colors.mutedForeground },
+                    ]}
+                  >
+                    {historyCount}
+                  </Text>
+                ) : null}
+              </View>
+              {selected ? (
+                <View
+                  style={[
+                    styles.bottomTabIndicator,
+                    { backgroundColor: colors.primary },
+                  ]}
+                />
+              ) : null}
+            </Pressable>
+          );
+        })}
+      </View>
     </SafeAreaView>
   );
 }
@@ -693,7 +953,34 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   sectionTitle: { fontFamily: 'Manrope_700Bold', fontSize: 20, letterSpacing: -0.5 },
-  sectionCaption: { marginTop: 3, fontFamily: 'DMSans_400Regular', fontSize: 12 },
+  matchSectionControlRow: {
+    minHeight: 34,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  matchSectionCaption: { flex: 1, fontFamily: 'DMSans_400Regular', fontSize: 10 },
+  bottomTabBar: {
+    minHeight: 60,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 6,
+    paddingHorizontal: 28,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    justifyContent: 'space-around',
+  },
+  bottomTab: {
+    flex: 1,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  bottomTabLabel: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  bottomTabText: { fontFamily: 'DMSans_600SemiBold', fontSize: 11 },
+  bottomTabCount: { fontFamily: 'DMSans_700Bold', fontSize: 9 },
+  bottomTabIndicator: { height: 2, width: 42, borderRadius: 2, marginTop: 6 },
   countPill: {
     minWidth: 30,
     height: 28,
@@ -737,8 +1024,10 @@ const styles = StyleSheet.create({
   matchCardBody: {
     paddingHorizontal: 16,
     paddingTop: 15,
+    paddingBottom: 4,
   },
-  matchCardTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
+  matchCardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  matchCardTopActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   matchMeta: { flex: 1, gap: 5 },
   matchEvent: { fontFamily: 'DMSans_700Bold', fontSize: 9, letterSpacing: 1.4 },
   matchDate: { fontFamily: 'DMSans_400Regular', fontSize: 11 },
@@ -750,7 +1039,7 @@ const styles = StyleSheet.create({
   },
   matchStatusText: { fontFamily: 'DMSans_700Bold', fontSize: 8, letterSpacing: 1 },
   matchScoreRow: {
-    marginTop: 18,
+    marginTop: 13,
     marginBottom: 10,
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -768,14 +1057,33 @@ const styles = StyleSheet.create({
   scoreText: { fontFamily: 'DMSans_700Bold', fontSize: 21, fontVariant: ['tabular-nums'] },
   scoreDivider: { fontFamily: 'DMSans_400Regular', fontSize: 16 },
   matchCardBottom: {
-    minHeight: 38,
+    minHeight: 34,
+    marginTop: 2,
+    marginBottom: 9,
     borderTopWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
   matchBottomText: { fontFamily: 'DMSans_600SemiBold', fontSize: 9, letterSpacing: 0.7 },
-  deleteMatchAction: { minHeight: 38, marginHorizontal: 16, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
+  expandedMatchDetails: { paddingHorizontal: 16 },
+  matchCardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  openMatchAction: {
+    flex: 1,
+    minHeight: 36,
+    borderRadius: 8,
+    paddingHorizontal: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  openMatchActionText: { fontFamily: 'DMSans_700Bold', fontSize: 11 },
+  deleteMatchAction: { minHeight: 36, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   deleteMatchText: { fontFamily: 'DMSans_600SemiBold', fontSize: 10 },
   stateBox: { minHeight: 130, alignItems: 'center', justifyContent: 'center', gap: 10 },
   stateText: { fontFamily: 'DMSans_400Regular', fontSize: 13 },

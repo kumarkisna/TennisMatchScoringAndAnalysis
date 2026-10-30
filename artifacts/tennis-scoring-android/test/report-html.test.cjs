@@ -254,7 +254,6 @@ function pointFixture(
     winner,
     endingCode: null,
     firstServeFault: false,
-    syncStatus: 'synced',
     createdAt: '2026-10-30T00:00:00.000Z',
   };
 }
@@ -357,7 +356,6 @@ function performanceSampleMatch() {
   const set = setFixture(1, 'standard', points);
   return {
     id: 'player-performance-sample',
-    ownerUserId: null,
     matchDate: '2026-10-30',
     event: null,
     round: null,
@@ -434,7 +432,6 @@ function breakPointSampleMatch() {
   return {
     match: {
       id: 'break-point-sample',
-      ownerUserId: null,
       matchDate: '2026-10-30',
       event: 'Test match',
       round: 'Final',
@@ -451,11 +448,6 @@ function breakPointSampleMatch() {
       completedSets: [setOne, setTwo],
       matchStatus: 'complete',
       status: 'complete',
-      syncStatus: 'local_only',
-      syncToken: null,
-      remoteMatchId: null,
-      pendingPointDeletes: [],
-      syncError: null,
       score: matchTiebreakSet.score,
       points: matchTiebreakSet.points,
       gameNotes: [],
@@ -690,7 +682,6 @@ function breakPointMeeting(
   return {
     summary: {
       id,
-      remoteMatchId: null,
       matchDate,
       event: null,
       round: null,
@@ -699,7 +690,6 @@ function breakPointMeeting(
       opponent,
       surface,
       status: 'complete',
-      syncStatus: 'local_only',
       pendingPointCount: 0,
       trackedGames: 6,
       opponentGames: 4,

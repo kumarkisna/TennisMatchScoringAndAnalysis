@@ -55,6 +55,9 @@ const localMatchesPath = path.join(__dirname, '../lib/local-matches.ts');
 const localPlayersPath = path.join(__dirname, '../lib/local-players.ts');
 const localReportBenchmarksPath = path.join(__dirname, '../lib/local-benchmarks.ts');
 const localReportNameLabelsPath = path.join(__dirname, '../lib/local-report-labels.ts');
+const homeScreenStatePath = path.join(__dirname, '../lib/home-screen-state.ts');
+const themePresetsPath = path.join(__dirname, '../lib/theme-presets.ts');
+const colorsPath = path.join(__dirname, '../constants/colors.ts');
 const playerInsightsPath = path.join(__dirname, '../lib/player-insights.ts');
 
 function loadStorageModulesAfterRestart() {
@@ -80,6 +83,9 @@ const originalModuleLoad = Module._load;
 Module._load = function (request, parent, isMain) {
   if (request === '@/lib/local-matches') {
     return originalModuleLoad.call(this, localMatchesPath, parent, isMain);
+  }
+  if (request === '@/constants/colors') {
+    return originalModuleLoad.call(this, colorsPath, parent, isMain);
   }
   return originalModuleLoad.call(this, request, parent, isMain);
 };
@@ -140,6 +146,16 @@ test('saved match points and editable player profiles survive offline app restar
     endingCode: 'A',
     firstServeFault: false,
   });
+  const matchStorageKey = `@tennis-scoring/matches/record-v1/${match.id}`;
+  const legacyRecord = JSON.parse(storageValues.get(matchStorageKey));
+  legacyRecord.ownerUserId = 'former-user';
+  legacyRecord.syncStatus = 'local_only';
+  legacyRecord.syncToken = 'legacy-token';
+  legacyRecord.remoteMatchId = 'remote-match';
+  legacyRecord.pendingPointDeletes = ['removed-point'];
+  legacyRecord.syncError = 'old sync error';
+  legacyRecord.points[0].syncStatus = 'pending';
+  storageValues.set(matchStorageKey, JSON.stringify(legacyRecord));
 
   const afterRestart = loadStorageModulesAfterRestart();
   const [restoredMatch, restoredPlayer, activePlayerId, matchSummaries] =
@@ -157,10 +173,25 @@ test('saved match points and editable player profiles survive offline app restar
   assert.equal(restoredMatch.trackedPlayer, 'Sana Iyer');
   assert.equal(restoredMatch.trackedPlayerId, player.id);
   assert.equal(restoredMatch.opponent, 'Maya Rao');
-  assert.equal(restoredMatch.syncStatus, 'local_only');
   assert.equal(restoredMatch.points.length, 1);
   assert.equal(restoredMatch.points[0].winner, 'tracked');
   assert.equal(restoredMatch.points[0].endingCode, 'A');
+  assert.equal('syncStatus' in restoredMatch, false);
+  assert.equal('syncStatus' in restoredMatch.points[0], false);
+  const migratedRecord = JSON.parse(storageValues.get(matchStorageKey));
+  for (const field of [
+    'ownerUserId',
+    'syncStatus',
+    'syncToken',
+    'remoteMatchId',
+    'pendingPointDeletes',
+    'syncError',
+  ]) {
+    assert.equal(field in migratedRecord, false);
+  }
+  assert.equal('syncStatus' in migratedRecord.points[0], false);
+  assert.equal(migratedRecord.points[0].winner, 'tracked');
+  assert.equal(migratedRecord.matchDate, '2026-10-30');
 
   assert.ok(restoredPlayer);
   assert.equal(restoredPlayer.dateOfBirth, '2005-07-09');
@@ -1924,4 +1955,79 @@ test('custom neutral report labels stay local and survive app restart', async (t
     /label for both players/,
   );
   assert.equal(networkRequestCount, 0);
+});
+
+test('home match sections sort by match date and remember tabs and expanded cards locally', async () => {
+  storageValues.clear();
+  delete require.cache[require.resolve(homeScreenStatePath)];
+  const homeState = require(homeScreenStatePath);
+  assert.deepEqual(await homeState.getHomeScreenPreferences(), {
+    matchBookSection: 'home',
+    showCompletedMatches: true,
+    expandedMatchIds: [],
+  });
+
+  await homeState.saveHomeScreenPreferences({
+    matchBookSection: 'history',
+    showCompletedMatches: false,
+    expandedMatchIds: ['match-2', 'match-2', ''],
+  });
+  assert.deepEqual(await homeState.getHomeScreenPreferences(), {
+    matchBookSection: 'history',
+    showCompletedMatches: false,
+    expandedMatchIds: ['match-2'],
+  });
+
+  const match = (id, matchDate, updatedAt) => ({ id, matchDate, updatedAt });
+  const sections = homeState.splitHomeMatches([
+    match('oldest', '2026-10-20', '2026-10-30T00:00:00.000Z'),
+    match('newest', '2026-10-29', '2026-10-29T00:00:00.000Z'),
+    match('middle', '2026-10-25', '2026-10-30T00:00:00.000Z'),
+    match('second-newest', '2026-10-28', '2026-10-28T00:00:00.000Z'),
+  ]);
+  assert.deepEqual(
+    sections.recent.map(({ id }) => id),
+    ['newest', 'second-newest'],
+  );
+  assert.deepEqual(
+    sections.history.map(({ id }) => id),
+    ['middle', 'oldest'],
+  );
+
+  const homeSource = fs.readFileSync(
+    path.join(__dirname, '../app/index.tsx'),
+    'utf8',
+  );
+  assert.match(homeSource, /testID=\{`match-book-tab-\$\{section\}`\}/);
+  assert.match(homeSource, /testID=\{`button-toggle-match-details-\$\{item\.id\}`\}/);
+  assert.match(homeSource, /\['home', 'Home', 'home-outline'\]/);
+  assert.match(homeSource, /\['settings', 'Settings', 'settings-outline'\]/);
+  assert.match(homeSource, /testID="match-book-bottom-tabs"/);
+  assert.match(homeSource, /historyCount !== null/);
+  assert.doesNotMatch(homeSource, /Saved on this device · no account or internet needed/);
+  assert.match(homeSource, /accessibilityState=\{\{\s*expanded,/);
+  assert.match(homeSource, /saveHomeScreenPreferences\(next\)/);
+});
+
+test('one hundred selectable theme presets persist locally', async () => {
+  storageValues.clear();
+  delete require.cache[require.resolve(themePresetsPath)];
+  const themes = require(themePresetsPath);
+  assert.equal(themes.THEME_PRESETS.length, 100);
+  assert.equal(themes.THEME_GROUPS.length, 10);
+  assert.ok(themes.THEME_GROUPS.every((group) => group.presets.length === 10));
+  assert.equal(
+    new Set(themes.THEME_PRESETS.map(({ id }) => id)).size,
+    100,
+  );
+  assert.ok(themes.THEME_GROUPS.some(({ name }) => name === 'Saffron'));
+  assert.ok(themes.THEME_GROUPS.some(({ name }) => name === 'Sunrise'));
+  assert.equal(
+    new Set(themes.THEME_PRESETS.map(({ light }) => light.primary)).size,
+    100,
+  );
+  assert.equal(await themes.getSavedThemeId(), themes.DEFAULT_THEME_ID);
+  await themes.saveThemeId('ocean-bold');
+  assert.equal(await themes.getSavedThemeId(), 'ocean-bold');
+  await assert.rejects(themes.saveThemeId('not-a-theme'), /available themes/);
 });

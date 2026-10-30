@@ -1045,7 +1045,10 @@ export async function listLocalMatches(): Promise<LocalMatchSummary[]> {
       const storedMatch = value as Record<string, unknown>;
       const match = normalizeLocalMatch(storedMatch);
       if (hasLegacyLocalSyncState(storedMatch)) {
-        await AsyncStorage.setItem(key, JSON.stringify(match));
+        await AsyncStorage.setItem(
+          key,
+          JSON.stringify(stripLegacyLocalSyncState(storedMatch)),
+        );
       }
       matches.push(match);
     }
@@ -1997,7 +2000,9 @@ export async function listLocalPlayerMatchInsights(
       if (linked || hasLegacySyncState) {
         await AsyncStorage.setItem(
           matchStorageKey(match.id),
-          JSON.stringify(updated),
+          linked
+            ? JSON.stringify(updated)
+            : JSON.stringify(stripLegacyLocalSyncState(storedMatch)),
         );
       }
       if (

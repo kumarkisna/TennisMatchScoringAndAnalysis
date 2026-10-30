@@ -280,15 +280,42 @@ test('backup save, share, and restore preserve all players and sets without netw
   assert.equal(exported.matches[0].tiebreakTarget, 7);
   assert.equal(exported.matches[0].points.length, 1);
   assert.equal(exported.matches[0].points[0].isTiebreak, true);
+  for (const field of [
+    'ownerUserId',
+    'syncStatus',
+    'syncToken',
+    'remoteMatchId',
+    'pendingPointDeletes',
+    'syncError',
+  ]) {
+    assert.equal(field in exported.matches[0], false);
+  }
+  assert.equal('syncStatus' in exported.matches[0].points[0], false);
+  assert.equal(
+    'syncStatus' in exported.matches[0].completedSets[0].points[0],
+    false,
+  );
 
   await backup.shareLocalBackup();
   assert.ok(sharedUri.startsWith('file://cache/'));
   assert.equal(JSON.parse(sharedBackup).matches[0].completedSets[0].points.length, 24);
   assert.equal(networkRequestCount, 0);
 
+  const legacyBackup = JSON.parse(savedDeviceBackup.contents);
+  Object.assign(legacyBackup.matches[0], {
+    ownerUserId: 'former-user',
+    syncStatus: 'local_only',
+    syncToken: 'legacy-token',
+    remoteMatchId: 'remote-match',
+    pendingPointDeletes: ['removed-point'],
+    syncError: null,
+  });
+  legacyBackup.matches[0].points[0].syncStatus = 'pending';
+  legacyBackup.matches[0].completedSets[0].points[0].syncStatus = 'synced';
+
   storageValues.clear();
   loadLocalModules();
-  selectedBackupContents = savedDeviceBackup.contents;
+  selectedBackupContents = JSON.stringify(legacyBackup);
   const restoreResult = await loadBackupModule().loadLocalBackupFromDevice();
   assert.deepEqual(restoreResult, {
     cancelled: false,
@@ -327,9 +354,11 @@ test('backup save, share, and restore preserve all players and sets without netw
     winner: 'opponent',
   });
   assert.equal(restoredMatch.trackedPlayerId, restoredPlayer.id);
-  assert.equal(restoredMatch.syncStatus, 'local_only');
+  assert.equal('syncStatus' in restoredMatch, false);
   assert.equal(restoredMatch.completedSets.length, 1);
   assert.equal(restoredMatch.completedSets[0].points.length, 24);
+  assert.equal('syncStatus' in restoredMatch.points[0], false);
+  assert.equal('syncStatus' in restoredMatch.completedSets[0].points[0], false);
   assert.equal(
     restoredMatch.completedSets[0].points[0].strokes[0].note,
     'Wide serve',
@@ -342,6 +371,21 @@ test('backup save, share, and restore preserve all players and sets without netw
   assert.equal(restoredMatch.tiebreakTarget, 7);
   assert.equal(restoredMatch.points.length, 1);
   assert.equal(restoredMatch.points[0].isTiebreak, true);
+  const restoredRecord = JSON.parse(
+    storageValues.get(`@tennis-scoring/matches/record-v1/${match.id}`),
+  );
+  for (const field of [
+    'ownerUserId',
+    'syncStatus',
+    'syncToken',
+    'remoteMatchId',
+    'pendingPointDeletes',
+    'syncError',
+  ]) {
+    assert.equal(field in restoredRecord, false);
+  }
+  assert.equal('syncStatus' in restoredRecord.points[0], false);
+  assert.equal('syncStatus' in restoredRecord.completedSets[0].points[0], false);
 
   const repeatedImport = await loadBackupModule().loadLocalBackupFromDevice();
   assert.equal(repeatedImport.playersAdded, 0);
