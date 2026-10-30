@@ -65,6 +65,14 @@ Module._load = function (request, parent, isMain) {
       isMain,
     );
   }
+  if (request === '@/lib/report-review') {
+    return originalLoad.call(
+      this,
+      path.join(__dirname, '../lib/report-review.ts'),
+      parent,
+      isMain,
+    );
+  }
   if (request === '@/lib/player-report-html') {
     return playerReportExports;
   }
@@ -91,6 +99,11 @@ const {
   buildHeadToHeadReportHtml,
   buildHeadToHeadReportReviewVersion,
 } = require('../lib/head-to-head-report-html.ts');
+const {
+  buildReportReviewVersion,
+  getReportNameVisibilityVersion,
+  isReportReviewCurrent,
+} = require('../lib/report-review.ts');
 const { summarizePlayerPerformance } = playerInsightsExports;
 const { buildHeadToHeadReport, getHeadToHeadOpponentOptions } = headToHeadExports;
 Module._load = originalLoad;
@@ -2425,6 +2438,110 @@ test('selected benchmark edits and selection changes invalidate reviewed head-to
     ),
     reviewed,
   );
+});
+
+test('privacy changes invalidate reviewed PDFs for both report types', () => {
+  const labels = { trackedPlayer: 'Player A', opponent: 'Player B' };
+  const updatedLabels = {
+    trackedPlayer: 'Athlete One',
+    opponent: 'Athlete Two',
+  };
+  const visibleNames = getReportNameVisibilityVersion(false, labels);
+  const hiddenNames = getReportNameVisibilityVersion(true, labels);
+  const updatedHiddenNames = getReportNameVisibilityVersion(true, updatedLabels);
+
+  const singleNamedReview = buildReportReviewVersion(
+    'match-1:2026-10-30',
+    ['overview'],
+    '[]',
+    visibleNames,
+  );
+  const singleHiddenReview = buildReportReviewVersion(
+    'match-1:2026-10-30',
+    ['overview'],
+    '[]',
+    hiddenNames,
+  );
+  const singleUpdatedLabelsReview = buildReportReviewVersion(
+    'match-1:2026-10-30',
+    ['overview'],
+    '[]',
+    updatedHiddenNames,
+  );
+  assert.equal(isReportReviewCurrent(singleNamedReview, singleNamedReview), true);
+  assert.equal(isReportReviewCurrent(singleNamedReview, singleHiddenReview), false);
+  assert.equal(isReportReviewCurrent(singleHiddenReview, singleHiddenReview), true);
+  assert.equal(
+    isReportReviewCurrent(singleHiddenReview, singleUpdatedLabelsReview),
+    false,
+  );
+
+  const headToHeadNamedReview = buildHeadToHeadReportReviewVersion(
+    'meeting-1:2026-10-30',
+    ['overview'],
+    [],
+    visibleNames,
+  );
+  const headToHeadHiddenReview = buildHeadToHeadReportReviewVersion(
+    'meeting-1:2026-10-30',
+    ['overview'],
+    [],
+    hiddenNames,
+  );
+  const headToHeadUpdatedLabelsReview = buildHeadToHeadReportReviewVersion(
+    'meeting-1:2026-10-30',
+    ['overview'],
+    [],
+    updatedHiddenNames,
+  );
+  assert.equal(
+    isReportReviewCurrent(headToHeadNamedReview, headToHeadNamedReview),
+    true,
+  );
+  assert.equal(
+    isReportReviewCurrent(headToHeadNamedReview, headToHeadHiddenReview),
+    false,
+  );
+  assert.equal(
+    isReportReviewCurrent(headToHeadHiddenReview, headToHeadHiddenReview),
+    true,
+  );
+  assert.equal(
+    isReportReviewCurrent(headToHeadHiddenReview, headToHeadUpdatedLabelsReview),
+    false,
+  );
+
+  const match = performanceSampleMatch();
+  match.trackedPlayer = 'Alex';
+  match.opponent = 'Bailey';
+  match.event = 'Alex vs Bailey';
+  const insights = calculateLocalInsights(match);
+  const playerHtml = buildPlayerReportHtml(
+    match,
+    insights,
+    summarizePlayerPerformance(insights),
+    undefined,
+    [],
+    { hidePlayerNames: true, labels },
+  );
+  const meeting = breakPointMeeting(
+    'privacy-review-alex-bailey',
+    'Alex',
+    'Bailey',
+    { opportunities: 2, converted: 1, faced: 1, saved: 1 },
+    { opportunities: 1, converted: 0, faced: 2, saved: 1 },
+    '2026-10-30',
+  );
+  const headToHeadHtml = buildHeadToHeadReportHtml(
+    buildHeadToHeadReport('Alex', 'Bailey', [meeting], [meeting]),
+    undefined,
+    { hidePlayerNames: true, labels },
+  );
+  for (const html of [playerHtml, headToHeadHtml]) {
+    assert.match(html, /Player A/);
+    assert.match(html, /Player B/);
+    assert.doesNotMatch(html, /Alex|Bailey/i);
+  }
 });
 
 test('anonymized single-match reports replace names in headings and match notes', () => {

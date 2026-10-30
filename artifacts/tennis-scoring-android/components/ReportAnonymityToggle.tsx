@@ -8,6 +8,7 @@ import {
 
 export function ReportAnonymityToggle({
   hidePlayerNames,
+  disabled,
   onToggle,
   testID,
   labels,
@@ -19,6 +20,7 @@ export function ReportAnonymityToggle({
   onSaveLabels,
 }: {
   hidePlayerNames: boolean;
+  disabled: boolean;
   onToggle: () => void;
   testID: string;
   labels: LocalReportNameLabels;
@@ -50,8 +52,9 @@ export function ReportAnonymityToggle({
         accessibilityRole="checkbox"
         accessibilityLabel="Hide player names in the report"
         accessibilityState={{ checked: hidePlayerNames }}
+        disabled={disabled}
         onPress={onToggle}
-        style={styles.row}
+        style={[styles.row, disabled ? styles.disabled : null]}
       >
         <Ionicons
           name={hidePlayerNames ? 'checkbox' : 'square-outline'}
@@ -85,7 +88,7 @@ export function ReportAnonymityToggle({
                 onChangeText={(trackedPlayer) =>
                   onLabelsChange({ ...labels, trackedPlayer })
                 }
-                editable={labelsReady && !labelsSaving}
+                editable={labelsReady && !labelsSaving && !disabled}
                 maxLength={32}
                 autoCapitalize="words"
                 returnKeyType="next"
@@ -108,7 +111,7 @@ export function ReportAnonymityToggle({
                 accessibilityLabel="Neutral label for the opponent"
                 value={labels.opponent}
                 onChangeText={(opponent) => onLabelsChange({ ...labels, opponent })}
-                editable={labelsReady && !labelsSaving}
+                editable={labelsReady && !labelsSaving && !disabled}
                 maxLength={32}
                 autoCapitalize="words"
                 returnKeyType="done"
@@ -138,13 +141,13 @@ export function ReportAnonymityToggle({
             testID={`${testID}-save-labels`}
             accessibilityRole="button"
             accessibilityLabel="Save neutral report labels on this device"
-            disabled={!canSaveLabels}
+            disabled={!canSaveLabels || disabled}
             onPress={onSaveLabels}
             style={[
               styles.saveButton,
               {
                 backgroundColor: colors.primary,
-                opacity: canSaveLabels ? 1 : 0.5,
+                  opacity: canSaveLabels && !disabled ? 1 : 0.5,
               },
             ]}
           >
@@ -177,6 +180,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 9,
   },
+  disabled: { opacity: 0.6 },
   copy: { flex: 1, gap: 2 },
   title: { fontFamily: 'Manrope_700Bold', fontSize: 12 },
   hint: { fontFamily: 'DMSans_400Regular', fontSize: 9, lineHeight: 13 },

@@ -41,6 +41,10 @@ import {
   buildHeadToHeadReportHtml,
   buildHeadToHeadReportReviewVersion,
 } from '@/lib/head-to-head-report-html';
+import {
+  getReportNameVisibilityVersion,
+  isReportReviewCurrent,
+} from '@/lib/report-review';
 import { POINT_CODE_LABELS } from '@/lib/player-report-html';
 import type { ContextPerformanceInsight } from '@/lib/player-insights';
 import {
@@ -433,9 +437,10 @@ export default function HeadToHeadScreen() {
     report?.meetings
       .map(({ summary }) => `${summary.id}:${summary.updatedAt}`)
       .join('|') ?? '';
-  const reportLabelVersion = hidePlayerNames
-    ? JSON.stringify(reportNameLabels.labels)
-    : 'named';
+  const reportLabelVersion = getReportNameVisibilityVersion(
+    hidePlayerNames,
+    reportNameLabels.labels,
+  );
   const reportReviewVersion = buildHeadToHeadReportReviewVersion(
     reportVersion,
     selectedReportSections,
@@ -449,7 +454,7 @@ export default function HeadToHeadScreen() {
   const hasReviewedReport =
     Boolean(reportReviewVersion) &&
     reportBenchmarksReady &&
-    reviewedVersion === reportReviewVersion;
+    isReportReviewCurrent(reviewedVersion, reportReviewVersion);
   const reportHtml = report && reportBenchmarksQuery.data
     ? buildHeadToHeadReportHtml(report, selectedReportSections, {
         hidePlayerNames,
@@ -994,6 +999,7 @@ export default function HeadToHeadScreen() {
             <ReportAnonymityToggle
               testID="head-to-head-report-hide-names"
               hidePlayerNames={hidePlayerNames}
+              disabled={isReportBusy}
               onToggle={() => setHidePlayerNames((current) => !current)}
               labels={reportNameLabels.labels}
               labelsReady={reportNameLabels.isReady}

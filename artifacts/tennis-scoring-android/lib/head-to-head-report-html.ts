@@ -13,6 +13,7 @@ import {
   allHeadToHeadReportSections,
   type HeadToHeadReportSection,
 } from '@/lib/report-sections';
+import { buildReportReviewVersion } from '@/lib/report-review';
 
 type HeadToHeadBenchmarkMetrics = Pick<
   LocalReportBenchmarkPreset,
@@ -46,7 +47,14 @@ export function buildHeadToHeadReportReviewVersion(
       }),
     ),
   );
-  return `${reportVersion}:${selectedSections.join(',')}:${benchmarkVersion}:${reportLabelVersion}`;
+  return (
+    buildReportReviewVersion(
+      reportVersion,
+      selectedSections,
+      benchmarkVersion,
+      reportLabelVersion,
+    ) ?? ''
+  );
 }
 
 function formatDate(value: string): string {

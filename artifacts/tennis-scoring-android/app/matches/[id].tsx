@@ -75,6 +75,11 @@ import {
 } from '@/lib/local-benchmarks';
 import { createAndPreviewLocalPdf } from '@/lib/report-pdf';
 import {
+  buildReportReviewVersion,
+  getReportNameVisibilityVersion,
+  isReportReviewCurrent,
+} from '@/lib/report-review';
+import {
   getStandardPointProgress,
   getTiebreakPointProgress,
 } from '@/lib/score-progress';
@@ -594,16 +599,19 @@ export default function MatchScreen() {
       }),
     ),
   );
-  const reportLabelVersion = hidePlayerNames
-    ? JSON.stringify(reportNameLabels.labels)
-    : 'named';
-  const reportReviewVersion = reportVersion
-    ? `${reportVersion}:${selectedReportSections.join(',')}:${selectedBenchmarkVersion}:${reportLabelVersion}`
-    : null;
+  const reportLabelVersion = getReportNameVisibilityVersion(
+    hidePlayerNames,
+    reportNameLabels.labels,
+  );
+  const reportReviewVersion = buildReportReviewVersion(
+    reportVersion,
+    selectedReportSections,
+    selectedBenchmarkVersion,
+    reportLabelVersion,
+  );
   const hasReviewedReport =
-    reportReviewVersion !== null &&
-    reviewedReport?.version === reportReviewVersion &&
-    (Platform.OS === 'web' || Boolean(reviewedReport.uri));
+    isReportReviewCurrent(reviewedReport?.version, reportReviewVersion) &&
+    (Platform.OS === 'web' || Boolean(reviewedReport?.uri));
   const isReportBusy = reportAction !== null;
   const reportLabelsReady =
     !hidePlayerNames ||
@@ -2734,6 +2742,7 @@ export default function MatchScreen() {
         <ReportAnonymityToggle
           testID="player-report-hide-names"
           hidePlayerNames={hidePlayerNames}
+          disabled={isReportBusy}
           onToggle={() => setHidePlayerNames((current) => !current)}
           labels={reportNameLabels.labels}
           labelsReady={reportNameLabels.isReady}
