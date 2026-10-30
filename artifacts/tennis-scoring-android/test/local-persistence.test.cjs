@@ -87,12 +87,25 @@ test.after(() => {
   }
 });
 
-test('saved match points, player profile, and main player survive app restart', async () => {
+test('saved match points and editable player profiles survive offline app restart', async (t) => {
   storageValues.clear();
+  const originalFetch = global.fetch;
+  let networkRequestCount = 0;
+  global.fetch = async () => {
+    networkRequestCount += 1;
+    throw new Error('Offline local-storage flows must not make network requests.');
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
   const beforeRestart = loadStorageModulesAfterRestart();
   const player = await beforeRestart.localPlayers.addLocalPlayer('Sana Iyer', {
     dateOfBirth: '2005-07-09',
     atpPlayerId: 'ATP-12345',
+    itfPlayerId: 'ITF-54321',
+    atpRanking: 287,
+    itfRanking: 121,
     nationality: 'India',
     playingHand: 'right',
     phoneNumbers: ['+1 415 555 0123'],
@@ -142,6 +155,9 @@ test('saved match points, player profile, and main player survive app restart', 
   assert.ok(restoredPlayer);
   assert.equal(restoredPlayer.dateOfBirth, '2005-07-09');
   assert.equal(restoredPlayer.atpPlayerId, 'ATP-12345');
+  assert.equal(restoredPlayer.itfPlayerId, 'ITF-54321');
+  assert.equal(restoredPlayer.atpRanking, 287);
+  assert.equal(restoredPlayer.itfRanking, 121);
   assert.deepEqual(restoredPlayer.phoneNumbers, ['+1 415 555 0123']);
   assert.deepEqual(restoredPlayer.profileUrls, [
     'https://example.org/players/sana-iyer',
@@ -151,6 +167,56 @@ test('saved match points, player profile, and main player survive app restart', 
   assert.equal(matchSummaries.length, 1);
   assert.equal(matchSummaries[0].id, match.id);
   assert.equal(matchSummaries[0].pointCount, 1);
+
+  await afterRestart.localMatches.updateLocalMatchDetails(match.id, {
+    matchDate: restoredMatch.matchDate,
+    event: 'City Open - Updated',
+    round: restoredMatch.round,
+    trackedPlayer: restoredMatch.trackedPlayer,
+    opponent: restoredMatch.opponent,
+    chairCoach: restoredMatch.chairCoach,
+    surface: restoredMatch.surface,
+    firstServer: restoredMatch.firstServer,
+  });
+  await afterRestart.localPlayers.updateLocalPlayer(player.id, restoredPlayer.name, {
+    dateOfBirth: restoredPlayer.dateOfBirth,
+    atpPlayerId: restoredPlayer.atpPlayerId,
+    itfPlayerId: restoredPlayer.itfPlayerId,
+    atpRanking: 285,
+    itfRanking: restoredPlayer.itfRanking,
+    nationality: restoredPlayer.nationality,
+    playingHand: restoredPlayer.playingHand,
+    heightCm: restoredPlayer.heightCm,
+    weightKg: restoredPlayer.weightKg,
+    phoneNumbers: restoredPlayer.phoneNumbers,
+    profileUrls: restoredPlayer.profileUrls,
+  });
+
+  const afterEditRestart = loadStorageModulesAfterRestart();
+  const [editedMatch, editedPlayers] = await Promise.all([
+    afterEditRestart.localMatches.getLocalMatch(match.id),
+    afterEditRestart.localPlayers.listLocalPlayers(),
+  ]);
+  const editedPlayer = editedPlayers.find((item) => item.id === player.id);
+  assert.ok(editedMatch);
+  assert.equal(editedMatch.event, 'City Open - Updated');
+  assert.equal(editedMatch.trackedPlayerId, player.id);
+  assert.equal(editedMatch.points.length, 1);
+  assert.equal(editedMatch.points[0].winner, 'tracked');
+  assert.equal(editedMatch.points[0].endingCode, 'A');
+  assert.ok(editedPlayer);
+  assert.equal(editedPlayer.dateOfBirth, '2005-07-09');
+  assert.equal(editedPlayer.atpPlayerId, 'ATP-12345');
+  assert.equal(editedPlayer.atpRanking, 285);
+  assert.equal(editedPlayer.itfPlayerId, 'ITF-54321');
+  assert.equal(editedPlayer.itfRanking, 121);
+  assert.equal(editedPlayer.nationality, 'India');
+  assert.equal(editedPlayer.playingHand, 'right');
+  assert.deepEqual(editedPlayer.phoneNumbers, ['+1 415 555 0123']);
+  assert.deepEqual(editedPlayer.profileUrls, [
+    'https://example.org/players/sana-iyer',
+  ]);
+  assert.equal(networkRequestCount, 0);
 });
 
 test('legacy match links preserve names and trend metrics count points from every set', async () => {

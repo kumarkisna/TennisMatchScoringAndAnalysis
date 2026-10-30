@@ -235,6 +235,7 @@ export default function MatchScreen() {
   const [strokeResultDraft, setStrokeResultDraft] = useState<StrokeResult>('in_play');
   const [strokeNoteDraft, setStrokeNoteDraft] = useState('');
   const [strokeDrafts, setStrokeDrafts] = useState<NewLocalStroke[]>([]);
+  const [isGameNotesExpanded, setIsGameNotesExpanded] = useState(false);
   const [isSetReviewExpanded, setIsSetReviewExpanded] = useState(false);
   const [noteEditorTarget, setNoteEditorTarget] = useState<NoteEditorTarget | null>(null);
   const [noteEditorDraft, setNoteEditorDraft] = useState('');
@@ -271,6 +272,7 @@ export default function MatchScreen() {
     setIsStrokeEntryExpanded(false);
     setStrokeDrafts([]);
     setStrokeNoteDraft('');
+    setIsGameNotesExpanded(false);
     setIsSetReviewExpanded(false);
     setNoteEditorTarget(null);
   }, [matchId, matchQuery.data?.setNumber]);
@@ -1762,7 +1764,14 @@ export default function MatchScreen() {
             { backgroundColor: colors.card, borderColor: colors.border },
           ]}
         >
-          <View style={styles.observationHeader}>
+          <Pressable
+            testID="toggle-game-notes"
+            accessibilityRole="button"
+            accessibilityLabel={`Set ${viewedSet.setNumber} game notes`}
+            accessibilityState={{ expanded: isGameNotesExpanded }}
+            onPress={() => setIsGameNotesExpanded((current) => !current)}
+            style={styles.observationHeader}
+          >
             <View style={styles.contextToggleCopy}>
               <Text style={[styles.contextToggleTitle, { color: colors.foreground }]}>
                 Set {viewedSet.setNumber} · game notes
@@ -1771,39 +1780,46 @@ export default function MatchScreen() {
                 Notes stay with their game and set
               </Text>
             </View>
-          </View>
-          {reviewGameNumbers.length ? (
-            reviewGameNumbers.map((gameNumber) => {
-              const note = viewedSet.gameNotes.find(
-                (item) => item.gameNumber === gameNumber,
-              )?.note;
-              return (
-                <Pressable
-                  key={gameNumber}
-                  testID={`edit-game-note-${viewedSet.setNumber}-${gameNumber}`}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Edit note for set ${viewedSet.setNumber}, game ${gameNumber}`}
-                  onPress={() => openGameNoteEditor(viewedSet.setNumber, gameNumber)}
-                  style={[styles.observationRow, { borderTopColor: colors.border }]}
-                >
-                  <Text style={[styles.observationLabel, { color: colors.foreground }]}>
-                    Game {gameNumber}
-                  </Text>
-                  <Text
-                    numberOfLines={2}
-                    style={[styles.observationValue, { color: colors.mutedForeground }]}
+            <Ionicons
+              name={isGameNotesExpanded ? 'chevron-up' : 'chevron-down'}
+              size={16}
+              color={colors.mutedForeground}
+            />
+          </Pressable>
+          {isGameNotesExpanded ? (
+            reviewGameNumbers.length ? (
+              reviewGameNumbers.map((gameNumber) => {
+                const note = viewedSet.gameNotes.find(
+                  (item) => item.gameNumber === gameNumber,
+                )?.note;
+                return (
+                  <Pressable
+                    key={gameNumber}
+                    testID={`edit-game-note-${viewedSet.setNumber}-${gameNumber}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Edit note for set ${viewedSet.setNumber}, game ${gameNumber}`}
+                    onPress={() => openGameNoteEditor(viewedSet.setNumber, gameNumber)}
+                    style={[styles.observationRow, { borderTopColor: colors.border }]}
                   >
-                    {note || 'Add a note'}
-                  </Text>
-                  <Ionicons name="create-outline" size={16} color={colors.primary} />
-                </Pressable>
-              );
-            })
-          ) : (
-            <Text style={[styles.contextHelp, { color: colors.mutedForeground }]}>
-              Game notes are available after a game starts.
-            </Text>
-          )}
+                    <Text style={[styles.observationLabel, { color: colors.foreground }]}>
+                      Game {gameNumber}
+                    </Text>
+                    <Text
+                      numberOfLines={2}
+                      style={[styles.observationValue, { color: colors.mutedForeground }]}
+                    >
+                      {note || 'Add a note'}
+                    </Text>
+                    <Ionicons name="create-outline" size={16} color={colors.primary} />
+                  </Pressable>
+                );
+              })
+            ) : (
+              <Text style={[styles.contextHelp, { color: colors.mutedForeground }]}>
+                Game notes are available after a game starts.
+              </Text>
+            )
+          ) : null}
         </View>
 
         <View
