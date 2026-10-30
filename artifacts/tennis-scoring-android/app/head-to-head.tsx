@@ -129,6 +129,11 @@ function formatSetScore(set: LocalMatchSummary['setScores'][number]): string {
 
 function matchResult(summary: LocalMatchSummary, report: HeadToHeadReport): string {
   if (summary.status !== 'complete') return 'In progress';
+  if (summary.matchOutcome) {
+    const awardedWinner =
+      summary.matchOutcome.winner === 'tracked' ? report.trackedPlayer : report.opponent;
+    return `Winner by ${summary.matchOutcome.reason}: ${awardedWinner}`;
+  }
   if (!summary.winner) return 'Result not determined';
   return summary.winner === 'tracked'
     ? `${report.trackedPlayer} won`

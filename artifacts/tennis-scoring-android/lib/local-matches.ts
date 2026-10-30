@@ -119,6 +119,13 @@ export interface LocalPoint {
   createdAt: string;
 }
 
+export type LocalMatchOutcomeReason = 'retirement' | 'walkover';
+
+export interface LocalMatchOutcome {
+  reason: LocalMatchOutcomeReason;
+  winner: PlayerSide;
+}
+
 export interface LocalMatch {
   id: string;
   ownerUserId: string | null;
@@ -137,6 +144,7 @@ export interface LocalMatch {
   tiebreakTarget: number;
   completedSets: LocalSetRecord[];
   matchStatus: 'in_progress' | 'complete';
+  matchOutcome: LocalMatchOutcome | null;
   status: 'in_progress' | 'complete';
   syncStatus: LocalSyncStatus;
   syncToken: string | null;
@@ -236,6 +244,7 @@ export interface LocalMatchSummary {
   opponent: string;
   surface: CourtSurface;
   status: 'in_progress' | 'complete';
+  matchOutcome: LocalMatchOutcome | null;
   syncStatus: LocalSyncStatus;
   pendingPointCount: number;
   trackedGames: number;
@@ -258,10 +267,17 @@ export interface LocalMatchSummary {
 export function getLocalMatchSummaryResultLabel(
   summary: Pick<
     LocalMatchSummary,
-    'status' | 'winner' | 'trackedPlayer' | 'opponent'
+    'status' | 'winner' | 'trackedPlayer' | 'opponent' | 'matchOutcome'
   >,
 ): string | null {
   if (summary.status !== 'complete') return null;
+  if (summary.matchOutcome) {
+    const winnerName =
+      summary.matchOutcome.winner === 'tracked'
+        ? summary.trackedPlayer
+        : summary.opponent;
+    return `Winner: ${winnerName} · ${summary.matchOutcome.reason}`;
+  }
   if (summary.winner === null) return 'Complete · no set majority';
   const winnerName =
     summary.winner === 'tracked' ? summary.trackedPlayer : summary.opponent;
@@ -460,6 +476,21 @@ async function readMatch(id: string): Promise<LocalMatch | null> {
   return normalizeLocalMatch(value as Record<string, unknown>);
 }
 
+function normalizeLocalMatchOutcome(value: unknown): LocalMatchOutcome | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const candidate = value as Record<string, unknown>;
+  if (
+    (candidate.reason !== 'retirement' && candidate.reason !== 'walkover') ||
+    (candidate.winner !== 'tracked' && candidate.winner !== 'opponent')
+  ) {
+    return null;
+  }
+  return {
+    reason: candidate.reason,
+    winner: candidate.winner,
+  };
+}
+
 function normalizeLocalMatch(value: Record<string, unknown>): LocalMatch {
   const legacyStatus = value.status === 'complete' ? 'complete' : 'in_progress';
   const syncStatus: LocalSyncStatus =
@@ -469,6 +500,10 @@ function normalizeLocalMatch(value: Record<string, unknown>): LocalMatch {
     value.syncStatus === 'local_only'
       ? value.syncStatus
       : 'local_only';
+  const matchStatus =
+    value.matchStatus === 'complete' || value.matchStatus === 'in_progress'
+      ? value.matchStatus
+      : legacyStatus;
   const normalizePoint = (point: LocalPoint): LocalPoint => ({
     ...point,
     strokes: Array.isArray(point.strokes)
@@ -567,10 +602,11 @@ function normalizeLocalMatch(value: Record<string, unknown>): LocalMatch {
       : [],
     gameNotes: normalizeGameNotes(value.gameNotes),
     review: normalizeReview(value.review),
-    matchStatus:
-      value.matchStatus === 'complete' || value.matchStatus === 'in_progress'
-        ? value.matchStatus
-        : legacyStatus,
+    matchStatus,
+    matchOutcome:
+      matchStatus === 'complete'
+        ? normalizeLocalMatchOutcome(value.matchOutcome)
+        : null,
     syncStatus,
     syncToken: typeof value.syncToken === 'string' ? value.syncToken : null,
     remoteMatchId: typeof value.remoteMatchId === 'string' ? value.remoteMatchId : null,
@@ -855,6 +891,10 @@ function summarize(match: LocalMatch): LocalMatchSummary {
   const trackedSetsWon = setHistory.filter((set) => set.score.winner === 'tracked').length;
   const opponentSetsWon = setHistory.filter((set) => set.score.winner === 'opponent').length;
   const allPoints = setHistory.flatMap((set) => set.points);
+  const summarySetHistory =
+    match.matchOutcome && match.points.length === 0 && !match.score.isComplete
+      ? setHistory.filter((set) => !set.isCurrent)
+      : setHistory;
   return {
     id: match.id,
     remoteMatchId: match.remoteMatchId,
@@ -866,11 +906,12 @@ function summarize(match: LocalMatch): LocalMatchSummary {
     opponent: match.opponent,
     surface: match.surface,
     status: match.matchStatus,
+    matchOutcome: match.matchStatus === 'complete' ? match.matchOutcome : null,
     syncStatus: match.syncStatus,
     pendingPointCount: allPoints.filter((point) => point.syncStatus === 'pending').length,
     trackedGames: match.score.trackedGames,
     opponentGames: match.score.opponentGames,
-    setScores: setHistory.map((set) => ({
+    setScores: summarySetHistory.map((set) => ({
       setNumber: set.setNumber,
       format: set.format,
       tiebreakTarget: set.tiebreakTarget,
@@ -882,11 +923,14 @@ function summarize(match: LocalMatch): LocalMatchSummary {
     })),
     pointCount: allPoints.length,
     winner:
-      match.matchStatus === 'complete' && trackedSetsWon !== opponentSetsWon
-        ? trackedSetsWon > opponentSetsWon
-          ? 'tracked'
-          : 'opponent'
-        : null,
+      match.matchStatus !== 'complete'
+        ? null
+        : match.matchOutcome?.winner ??
+          (trackedSetsWon !== opponentSetsWon
+            ? trackedSetsWon > opponentSetsWon
+              ? 'tracked'
+              : 'opponent'
+            : null),
     updatedAt: match.updatedAt,
   };
 }
@@ -1021,6 +1065,7 @@ export async function createLocalMatch(input: NewLocalMatch): Promise<LocalMatch
       tiebreakTarget: 10,
       completedSets: [] as LocalSetRecord[],
       matchStatus: 'in_progress' as const,
+      matchOutcome: null,
       syncStatus: 'local_only' as const,
       syncToken: null,
       remoteMatchId: null,
@@ -1092,6 +1137,9 @@ export async function recordLocalPoint(
   return withWriteLock(async () => {
     const match = await readMatch(id);
     if (!match) throw new Error('This match is not saved on this device.');
+    if (match.matchStatus === 'complete') {
+      throw new Error('This match is final. Resume scoring before recording another point.');
+    }
 
     const score = calculateLocalScore(match, match.points);
     if (score.isComplete) throw new Error('This set is already complete.');
@@ -1148,6 +1196,9 @@ export async function undoLocalPoint(id: string): Promise<LocalMatch> {
   return withWriteLock(async () => {
     const match = await readMatch(id);
     if (!match) throw new Error('This match is not saved on this device.');
+    if (match.matchOutcome) {
+      throw new Error('Resume scoring before changing points in this match.');
+    }
     if (match.points.length === 0) throw new Error('There is no point to undo.');
 
     const removedPoint = match.points[match.points.length - 1]!;
@@ -1195,6 +1246,9 @@ export async function addLocalSet(
   return withWriteLock(async () => {
     const match = await readMatch(id);
     if (!match) throw new Error('This match is not saved on this device.');
+    if (match.matchOutcome) {
+      throw new Error('Clear the recorded match outcome before adding another set.');
+    }
     if (!match.score.isComplete) {
       throw new Error('Finish the current set before adding another set.');
     }
@@ -1223,6 +1277,7 @@ export async function addLocalSet(
       tiebreakTarget: format === 'match_tiebreak' ? tiebreakTarget : 10,
       completedSets: [...match.completedSets, completedSet],
       matchStatus: 'in_progress' as const,
+      matchOutcome: null,
       points: [] as LocalPoint[],
       gameNotes: [] as LocalGameNote[],
       review: { ...EMPTY_LOCAL_SET_REVIEW },
@@ -1344,12 +1399,62 @@ export async function finishLocalMatch(id: string): Promise<LocalMatch> {
   return withWriteLock(async () => {
     const match = await readMatch(id);
     if (!match) throw new Error('This match is not saved on this device.');
+    if (match.matchOutcome) {
+      throw new Error('Clear the retirement or walkover result before finishing normally.');
+    }
     if (!match.score.isComplete) {
       throw new Error('Finish the current set before finishing the match.');
     }
     const updated: LocalMatch = {
       ...match,
       matchStatus: 'complete',
+      matchOutcome: null,
+      syncStatus: 'local_only',
+      syncError: null,
+      updatedAt: new Date().toISOString(),
+    };
+    await writeMatch(updated);
+    return updated;
+  });
+}
+
+export async function recordLocalMatchOutcome(
+  id: string,
+  outcome: LocalMatchOutcome,
+): Promise<LocalMatch> {
+  if (
+    (outcome.reason !== 'retirement' && outcome.reason !== 'walkover') ||
+    (outcome.winner !== 'tracked' && outcome.winner !== 'opponent')
+  ) {
+    throw new Error('Choose a valid match outcome and awarded winner.');
+  }
+  return withWriteLock(async () => {
+    const match = await readMatch(id);
+    if (!match) throw new Error('This match is not saved on this device.');
+    const updated: LocalMatch = {
+      ...match,
+      matchStatus: 'complete',
+      matchOutcome: { ...outcome },
+      syncStatus: 'local_only',
+      syncError: null,
+      updatedAt: new Date().toISOString(),
+    };
+    await writeMatch(updated);
+    return updated;
+  });
+}
+
+export async function clearLocalMatchOutcome(id: string): Promise<LocalMatch> {
+  return withWriteLock(async () => {
+    const match = await readMatch(id);
+    if (!match) throw new Error('This match is not saved on this device.');
+    if (!match.matchOutcome) {
+      throw new Error('This match has no retirement or walkover result to clear.');
+    }
+    const updated: LocalMatch = {
+      ...match,
+      matchStatus: 'in_progress',
+      matchOutcome: null,
       syncStatus: 'local_only',
       syncError: null,
       updatedAt: new Date().toISOString(),

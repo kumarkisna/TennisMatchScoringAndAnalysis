@@ -92,8 +92,17 @@ function setResult(
   return winner === 'tracked' ? trackedPlayer : opponent;
 }
 
-function matchResult(report: HeadToHeadReport, winner: 'tracked' | 'opponent' | null, status: 'in_progress' | 'complete'): string {
+function matchResult(
+  report: HeadToHeadReport,
+  winner: 'tracked' | 'opponent' | null,
+  status: 'in_progress' | 'complete',
+  outcome: { reason: 'retirement' | 'walkover'; winner: 'tracked' | 'opponent' } | null,
+): string {
   if (status !== 'complete') return 'In progress';
+  if (outcome) {
+    const awardedWinner = outcome.winner === 'tracked' ? report.trackedPlayer : report.opponent;
+    return `Winner by ${outcome.reason}: ${awardedWinner}`;
+  }
   if (!winner) return 'Result not determined';
   return winner === 'tracked' ? report.trackedPlayer : report.opponent;
 }
@@ -402,7 +411,7 @@ export function buildHeadToHeadReportHtml(
       return `
         <tr>
           <td>${escapeHtml(formatDate(summary.matchDate))}</td>
-          <td>${escapeHtml(matchResult(displayReport, summary.winner, summary.status))}</td>
+          <td>${escapeHtml(matchResult(displayReport, summary.winner, summary.status, summary.matchOutcome))}</td>
           <td>${scores}</td>
           <td>${meeting.insights.pointCount}</td>
         </tr>`;

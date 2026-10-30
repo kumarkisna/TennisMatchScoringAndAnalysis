@@ -34,12 +34,14 @@ import {
   getLocalSetHistory,
   LOCAL_MATCH_LIST_KEY,
   addLocalSet,
+  clearLocalMatchOutcome,
   updateLocalGameNote,
   updateLocalSetReview,
   finishLocalMatch,
   localInsightsKey,
   localMatchKey,
   recordLocalPoint,
+  recordLocalMatchOutcome,
   RALLY_LENGTH_OPTIONS,
   SHOT_DIRECTION_OPTIONS,
   STROKE_TYPE_OPTIONS,
@@ -48,6 +50,7 @@ import {
   validateLocalMatchDetails,
   type CourtSurface,
   type LocalMatch,
+  type LocalMatchOutcomeReason,
   type LocalMatchDetails,
   type LocalMatchDetailsUpdate,
   type LocalSetResult,
@@ -495,6 +498,15 @@ export default function MatchScreen() {
     mutationFn: () => finishLocalMatch(matchId),
     onSuccess: onUpdated,
   });
+  const recordMatchOutcome = useMutation({
+    mutationFn: (outcome: { reason: LocalMatchOutcomeReason; winner: PlayerSide }) =>
+      recordLocalMatchOutcome(matchId, outcome),
+    onSuccess: onUpdated,
+  });
+  const clearMatchOutcome = useMutation({
+    mutationFn: () => clearLocalMatchOutcome(matchId),
+    onSuccess: onUpdated,
+  });
   const updateDetails = useMutation({
     mutationFn: (details: LocalMatchDetailsUpdate) =>
       updateLocalMatchDetails(matchId, details),
@@ -569,6 +581,8 @@ export default function MatchScreen() {
     undoPoint.isPending ||
     addSet.isPending ||
     finishMatch.isPending ||
+    recordMatchOutcome.isPending ||
+    clearMatchOutcome.isPending ||
     updateDetails.isPending ||
     updateGameNote.isPending ||
     updateSetReview.isPending;
@@ -660,7 +674,15 @@ export default function MatchScreen() {
   }
 
   function addPoint(winner: Side) {
-    if (!match || isReviewingHistoricalSet || match.score.isComplete || isBusy) return;
+    if (
+      !match ||
+      isReviewingHistoricalSet ||
+      match.score.isComplete ||
+      match.matchStatus === 'complete' ||
+      isBusy
+    ) {
+      return;
+    }
     recordPoint.mutate({
       winner,
       endingCode,
@@ -751,17 +773,92 @@ export default function MatchScreen() {
   }
 
   function addNextSet(format: SetFormat, tiebreakTarget = 10) {
-    if (!match || isReviewingHistoricalSet || !match.score.isComplete || isBusy) return;
+    if (
+      !match ||
+      isReviewingHistoricalSet ||
+      !match.score.isComplete ||
+      Boolean(match.matchOutcome) ||
+      isBusy
+    ) {
+      return;
+    }
     addSet.mutate({ format, tiebreakTarget });
   }
 
   function finishCurrentMatch() {
-    if (!match || isReviewingHistoricalSet || !match.score.isComplete || isBusy) return;
+    if (
+      !match ||
+      isReviewingHistoricalSet ||
+      !match.score.isComplete ||
+      Boolean(match.matchOutcome) ||
+      isBusy
+    ) {
+      return;
+    }
     finishMatch.mutate();
+  }
+
+  function selectOutcomeWinner(reason: LocalMatchOutcomeReason) {
+    Alert.alert(
+      'Select the awarded winner',
+      'The recorded points and set scores will stay unchanged.',
+      [
+        {
+          text: `${trackedName} (T)`,
+          onPress: () => recordMatchOutcome.mutate({ reason, winner: 'tracked' }),
+        },
+        {
+          text: `${opponentName} (O)`,
+          onPress: () => recordMatchOutcome.mutate({ reason, winner: 'opponent' }),
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
+  }
+
+  function openMatchOutcomePicker() {
+    if (!match || isReviewingHistoricalSet || isBusy) return;
+    Alert.alert(
+      'Record match outcome',
+      'Retirement means play stopped early. Walkover means the match was awarded without play.',
+      [
+        {
+          text: 'Retirement',
+          onPress: () => selectOutcomeWinner('retirement'),
+        },
+        {
+          text: 'Walkover',
+          onPress: () => selectOutcomeWinner('walkover'),
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
+  }
+
+  function confirmResumeScoring() {
+    if (!match?.matchOutcome || isBusy) return;
+    Alert.alert(
+      'Resume scoring?',
+      'This clears the retirement or walkover result and returns the match to in progress. Existing points and set scores stay unchanged.',
+      [
+        { text: 'Keep result', style: 'cancel' },
+        {
+          text: 'Resume match',
+          onPress: () => clearMatchOutcome.mutate(),
+        },
+      ],
+    );
   }
 
   function confirmUndo() {
     if (!match || isReviewingHistoricalSet || match.points.length === 0 || isBusy) return;
+    if (match.matchOutcome) {
+      Alert.alert(
+        'Resume scoring first',
+        'Clear the retirement or walkover result before changing recorded points.',
+      );
+      return;
+    }
     Alert.alert(
       'Undo last point?',
       'This removes the latest point from the set and recalculates the score.',
@@ -1133,14 +1230,22 @@ export default function MatchScreen() {
             testID="button-undo-point"
             accessibilityRole="button"
             accessibilityLabel="Undo last point"
-            disabled={isReviewingHistoricalSet || match.points.length === 0 || isBusy}
+            disabled={
+              isReviewingHistoricalSet ||
+              match.points.length === 0 ||
+              Boolean(match.matchOutcome) ||
+              isBusy
+            }
             onPress={confirmUndo}
             style={({ pressed }) => [
               styles.undoButton,
               {
                 borderColor: colors.border,
                 opacity:
-                  isReviewingHistoricalSet || match.points.length === 0 || isBusy
+                  isReviewingHistoricalSet ||
+                  match.points.length === 0 ||
+                  Boolean(match.matchOutcome) ||
+                  isBusy
                     ? 0.35
                     : pressed
                       ? 0.65
@@ -1155,7 +1260,11 @@ export default function MatchScreen() {
         <View style={[styles.scoreboard, { backgroundColor: colors.primary }]}>
           <View style={styles.scoreboardTop}>
             <Text style={[styles.scoreboardLabel, { color: colors.primaryForeground }]}>
-              {match.score.isComplete
+              {match.matchOutcome
+                ? match.matchOutcome.reason === 'retirement'
+                  ? 'RETIREMENT'
+                  : 'WALKOVER'
+                : match.score.isComplete
                 ? `SET ${match.setNumber} COMPLETE`
                 : match.setFormat === 'match_tiebreak'
                   ? `MATCH TIE-BREAK · FIRST TO ${match.tiebreakTarget}`
@@ -1166,7 +1275,9 @@ export default function MatchScreen() {
             <View style={styles.serverPill}>
               <Ionicons name="tennisball-outline" size={12} color={colors.primaryForeground} />
               <Text style={[styles.serverText, { color: colors.primaryForeground }]}>
-                {match.score.isComplete
+                {match.matchOutcome
+                  ? 'MATCH FINAL'
+                  : match.score.isComplete
                   ? match.matchStatus === 'complete'
                     ? 'MATCH FINAL'
                     : `NEXT SET · ${serverName} SERVES`
@@ -1222,7 +1333,11 @@ export default function MatchScreen() {
               {formatDate(match.matchDate)}
               {match.chairCoach ? ` · ${match.chairCoach}` : ''}
             </Text>
-            {match.score.isComplete && match.score.winner ? (
+          {match.matchOutcome ? (
+            <Text style={[styles.winnerText, { color: colors.primaryForeground }]}>
+              Winner by {match.matchOutcome.reason}: {pointWinnerName(match.matchOutcome.winner)}
+            </Text>
+          ) : match.score.isComplete && match.score.winner ? (
               <Text style={[styles.winnerText, { color: colors.primaryForeground }]}>
                 {pointWinnerName(match.score.winner)} wins Set {match.setNumber}
               </Text>
@@ -1241,6 +1356,92 @@ export default function MatchScreen() {
             )}
           </View>
         </View>
+
+        {!isReviewingHistoricalSet ? (
+          <View
+            testID="match-outcome-card"
+            style={[styles.setHistoryCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+          >
+            {match.matchOutcome ? (
+              <>
+                <View>
+                  <Text style={[styles.setActionTitle, { color: colors.foreground }]}>
+                    {match.matchOutcome.reason === 'retirement'
+                      ? 'Match ended by retirement'
+                      : 'Match awarded by walkover'}
+                  </Text>
+                  <Text style={[styles.setActionHint, { color: colors.mutedForeground }]}>
+                    Awarded winner: {pointWinnerName(match.matchOutcome.winner)}. Recorded points and set scores are unchanged.
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <Pressable
+                    testID="button-change-match-outcome"
+                    accessibilityRole="button"
+                    disabled={isBusy}
+                    onPress={openMatchOutcomePicker}
+                    style={({ pressed }) => [
+                      styles.finishMatchButton,
+                      {
+                        flex: 1,
+                        borderColor: colors.border,
+                        opacity: isBusy ? 0.55 : pressed ? 0.7 : 1,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.finishMatchText, { color: colors.foreground }]}>
+                      Change outcome
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    testID="button-resume-match-scoring"
+                    accessibilityRole="button"
+                    disabled={isBusy}
+                    onPress={confirmResumeScoring}
+                    style={({ pressed }) => [
+                      styles.finishMatchButton,
+                      {
+                        flex: 1,
+                        borderColor: colors.primary,
+                        opacity: isBusy ? 0.55 : pressed ? 0.7 : 1,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.finishMatchText, { color: colors.primary }]}>
+                      Resume scoring
+                    </Text>
+                  </Pressable>
+                </View>
+              </>
+            ) : (
+              <Pressable
+                testID="button-record-match-outcome"
+                accessibilityRole="button"
+                disabled={isBusy}
+                onPress={openMatchOutcomePicker}
+                style={({ pressed }) => [
+                  styles.finishMatchButton,
+                  {
+                    borderColor: colors.border,
+                    opacity: isBusy ? 0.55 : pressed ? 0.7 : 1,
+                  },
+                ]}
+              >
+                <Text style={[styles.finishMatchText, { color: colors.mutedForeground }]}>
+                  Record retirement or walkover
+                </Text>
+              </Pressable>
+            )}
+            {recordMatchOutcome.error || clearMatchOutcome.error ? (
+              <View accessibilityRole="alert" style={styles.mutationError}>
+                <Ionicons name="alert-circle-outline" size={16} color={colors.destructive} />
+                <Text style={[styles.mutationErrorText, { color: colors.destructive }]}>
+                  {recordMatchOutcome.error?.message || clearMatchOutcome.error?.message}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
 
         <View style={[styles.setHistoryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.setHistoryTop}>
@@ -1331,7 +1532,9 @@ export default function MatchScreen() {
           </View>
         ) : null}
 
-        {!isReviewingHistoricalSet && !match.score.isComplete ? (
+        {!isReviewingHistoricalSet &&
+        !match.score.isComplete &&
+        match.matchStatus !== 'complete' ? (
           <View style={[styles.liveGameCard, { backgroundColor: colors.card, borderColor: colors.primary }]}>
             <View style={styles.liveGameHeader}>
               <View style={styles.liveGameCopy}>
@@ -1375,7 +1578,9 @@ export default function MatchScreen() {
           </View>
         ) : null}
 
-        {!isReviewingHistoricalSet && match.score.isComplete ? (
+        {!isReviewingHistoricalSet &&
+        match.score.isComplete &&
+        !match.matchOutcome ? (
           <>
             <View style={[styles.completeBanner, { backgroundColor: colors.secondary }]}>
               <Ionicons name="checkmark-circle" size={19} color={colors.primary} />
@@ -1506,7 +1711,7 @@ export default function MatchScreen() {
               ) : null}
             </View>
           </>
-        ) : !isReviewingHistoricalSet ? (
+        ) : !isReviewingHistoricalSet && match.matchStatus !== 'complete' ? (
           <View style={[styles.scoringPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={styles.panelHeading}>
               <Text style={[styles.panelTitle, { color: colors.foreground }]}>Record a point</Text>

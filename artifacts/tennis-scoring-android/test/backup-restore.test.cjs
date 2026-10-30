@@ -231,6 +231,10 @@ test('backup save, share, and restore preserve all players and sets without netw
   networkRequestCount = 0;
   loadLocalModules();
   const { player, match } = await createSampleRecords();
+  await activeModules.localMatches.recordLocalMatchOutcome(match.id, {
+    reason: 'retirement',
+    winner: 'opponent',
+  });
   const backup = loadBackupModule();
 
   const saveResult = await backup.saveLocalBackupToDevice();
@@ -258,6 +262,10 @@ test('backup save, share, and restore preserve all players and sets without netw
     'ITF profile',
   ]);
   assert.equal(exported.matches[0].id, match.id);
+  assert.deepEqual(exported.matches[0].matchOutcome, {
+    reason: 'retirement',
+    winner: 'opponent',
+  });
   assert.equal(exported.matches[0].completedSets.length, 1);
   assert.equal(exported.matches[0].completedSets[0].points.length, 24);
   assert.equal(
@@ -314,6 +322,10 @@ test('backup save, share, and restore preserve all players and sets without netw
     restoredPlayer.id,
   );
   assert.ok(restoredMatch);
+  assert.deepEqual(restoredMatch.matchOutcome, {
+    reason: 'retirement',
+    winner: 'opponent',
+  });
   assert.equal(restoredMatch.trackedPlayerId, restoredPlayer.id);
   assert.equal(restoredMatch.syncStatus, 'local_only');
   assert.equal(restoredMatch.completedSets.length, 1);
@@ -381,6 +393,31 @@ test('backup save, share, and restore preserve all players and sets without netw
     /invalid match or point history/,
   );
   assert.deepEqual([...storageValues.entries()], beforeInvalidImport);
+  assert.equal(networkRequestCount, 0);
+});
+
+test('backups written before match outcomes still restore offline', async () => {
+  storageValues.clear();
+  savedDeviceBackup = null;
+  networkRequestCount = 0;
+  loadLocalModules();
+  const { match } = await createSampleRecords();
+  await activeModules.localMatches.recordLocalMatchOutcome(match.id, {
+    reason: 'walkover',
+    winner: 'tracked',
+  });
+  await loadBackupModule().saveLocalBackupToDevice();
+  const legacyBackup = JSON.parse(savedDeviceBackup.contents);
+  delete legacyBackup.matches[0].matchOutcome;
+
+  storageValues.clear();
+  loadLocalModules();
+  selectedBackupContents = JSON.stringify(legacyBackup);
+  const restoreResult = await loadBackupModule().loadLocalBackupFromDevice();
+  const restoredMatch = await activeModules.localMatches.getLocalMatch(match.id);
+
+  assert.equal(restoreResult.cancelled, false);
+  assert.equal(restoredMatch.matchOutcome, null);
   assert.equal(networkRequestCount, 0);
 });
 

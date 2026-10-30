@@ -67,6 +67,7 @@ function portableMatch(match: LocalMatch): LocalMatchBackupRecord {
     tiebreakTarget: match.tiebreakTarget,
     completedSets: match.completedSets,
     matchStatus: match.matchStatus,
+    matchOutcome: match.matchOutcome,
     status: match.status,
     score: match.score,
     points: match.points,
@@ -89,6 +90,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNullableString(value: unknown) {
   return value === null || typeof value === 'string';
+}
+
+function isBackupMatchOutcome(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    (value.reason === 'retirement' || value.reason === 'walkover') &&
+    sides.includes(value.winner as (typeof sides)[number])
+  );
 }
 
 function isNullableNumber(value: unknown) {
@@ -320,6 +329,9 @@ function isBackupMatch(value: unknown): value is LocalMatchBackupRecord {
     Array.isArray(value.completedSets) &&
     value.completedSets.every(isBackupSet) &&
     (value.matchStatus === 'in_progress' || value.matchStatus === 'complete') &&
+    (value.matchOutcome === undefined ||
+      value.matchOutcome === null ||
+      isBackupMatchOutcome(value.matchOutcome)) &&
     (value.status === 'in_progress' || value.status === 'complete') &&
     isScore(value.score) &&
     Array.isArray(value.points) &&

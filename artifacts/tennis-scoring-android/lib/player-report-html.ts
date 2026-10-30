@@ -1,4 +1,9 @@
-import { STROKE_TYPE_OPTIONS, type PointCode, type StrokeType } from '@/lib/local-matches';
+import {
+  STROKE_TYPE_OPTIONS,
+  type LocalMatchOutcome,
+  type PointCode,
+  type StrokeType,
+} from '@/lib/local-matches';
 import type {
   ContextPerformanceInsight,
   PlayerPerformanceSummary,
@@ -24,6 +29,7 @@ interface ReportMatch {
   opponent: string;
   surface: string;
   matchStatus: 'in_progress' | 'complete';
+  matchOutcome?: LocalMatchOutcome | null;
 }
 
 export const POINT_CODE_LABELS: Record<PointCode, string> = {
@@ -128,6 +134,11 @@ function matchWinnerLabel(
   sets: PlayerReportInsights['sets'],
 ): string {
   if (match.matchStatus !== 'complete') return 'In progress';
+  if (match.matchOutcome) {
+    const winner =
+      match.matchOutcome.winner === 'tracked' ? match.trackedPlayer : match.opponent;
+    return `Winner by ${match.matchOutcome.reason}: ${winner}`;
+  }
   const setWins = { tracked: 0, opponent: 0 };
   for (const set of sets) {
     const winner = setWinnerSide(set);
@@ -433,8 +444,11 @@ export function buildPlayerReportHtml(
         </tr>`,
     )
     .join('');
-  const setRows = insights.sets.length
-    ? insights.sets
+  const reportSets = match.matchOutcome
+    ? insights.sets.filter((set) => set.isComplete || set.pointCount > 0)
+    : insights.sets;
+  const setRows = reportSets.length
+    ? reportSets
         .map(
           (set) => `
             <tr>
@@ -445,8 +459,8 @@ export function buildPlayerReportHtml(
         )
         .join('')
     : '<tr><td colspan="3">No set data recorded.</td></tr>';
-  const breakPointConversionRows = insights.sets.length
-    ? insights.sets
+  const breakPointConversionRows = reportSets.length
+    ? reportSets
         .map(
           (set) => `
             <tr>
@@ -459,8 +473,8 @@ export function buildPlayerReportHtml(
         )
         .join('')
     : '';
-  const breakPointDefenseRows = insights.sets.length
-    ? insights.sets
+  const breakPointDefenseRows = reportSets.length
+    ? reportSets
         .map(
           (set) => `
             <tr>
@@ -641,10 +655,11 @@ export function buildPlayerReportHtml(
     <div class="meta">
       <div><strong>Event:</strong> ${escape(event)}</div>
       <div><strong>Round:</strong> ${escape(round)}</div>
-      <div><strong>Sets recorded:</strong> ${insights.sets.length}</div>
+      <div><strong>Sets recorded:</strong> ${reportSets.length}</div>
       <div><strong>Surface:</strong> ${escape(match.surface)}</div>
       <div><strong>Chair / coach:</strong> ${escape(coach)}</div>
       <div><strong>Status:</strong> ${match.matchStatus === 'complete' ? 'Complete' : 'In progress'}</div>
+      ${displayMatch.matchOutcome ? `<div><strong>Outcome reason:</strong> ${displayMatch.matchOutcome.reason === 'retirement' ? 'Retirement' : 'Walkover'}</div>` : ''}
       <div><strong>Points logged:</strong> ${insights.pointCount}</div>
     </div>
     <p class="note">

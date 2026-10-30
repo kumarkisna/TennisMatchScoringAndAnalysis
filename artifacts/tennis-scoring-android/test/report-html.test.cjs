@@ -852,6 +852,7 @@ function reportSetFixture({
   opponentTiebreakPoints = 0,
   tiebreakTarget = 10,
   isComplete = true,
+  pointCount = 1,
 } = {}) {
   return {
     setNumber,
@@ -862,7 +863,7 @@ function reportSetFixture({
     opponentTiebreakPoints,
     tiebreakTarget,
     isComplete,
-    pointCount: 1,
+    pointCount,
     breakPoints: {
       tracked: { ...emptyBreakPoints },
       opponent: { ...emptyBreakPoints },
@@ -878,7 +879,7 @@ function reportSetFixture({
   };
 }
 
-function winnerReportHtml(sets, matchStatus = 'complete') {
+function winnerReportHtml(sets, matchStatus = 'complete', matchOutcome = null) {
   return buildPlayerReportHtml(
     {
       matchDate: '2026-10-30',
@@ -886,6 +887,7 @@ function winnerReportHtml(sets, matchStatus = 'complete') {
       opponent: 'Opponent',
       surface: 'Hard',
       matchStatus,
+      matchOutcome,
     },
     { ...emptyInsight, sets },
     { ...emptyPerformance, feedback: [] },
@@ -1114,6 +1116,54 @@ test('in-progress reports do not label the match won or lost', () => {
   assert.equal(matchResultFrom(html), 'In progress');
   assert.equal(setWinnerFrom(html, 1).winner, 'Tracked');
   assert.equal(setWinnerFrom(html, 2).winner, 'In progress');
+});
+
+test('retirement and walkover reports name the awarded winner without inventing set results', () => {
+  const retirementHtml = winnerReportHtml(
+    [
+      reportSetFixture({
+        setNumber: 1,
+        trackedGames: 3,
+        opponentGames: 4,
+        isComplete: false,
+      }),
+    ],
+    'complete',
+    { reason: 'retirement', winner: 'opponent' },
+  );
+  assert.equal(matchResultFrom(retirementHtml), 'Winner by retirement: Opponent');
+  assert.equal(setWinnerFrom(retirementHtml, 1).winner, 'In progress');
+  assert.match(retirementHtml, /<strong>Outcome reason:<\/strong> Retirement/);
+
+  const walkoverAfterCompletedSetHtml = winnerReportHtml(
+    [
+      reportSetFixture({
+        setNumber: 1,
+        trackedGames: 6,
+        opponentGames: 2,
+        pointCount: 24,
+      }),
+      reportSetFixture({
+        setNumber: 2,
+        trackedGames: 0,
+        opponentGames: 0,
+        isComplete: false,
+        pointCount: 0,
+      }),
+    ],
+    'complete',
+    { reason: 'walkover', winner: 'tracked' },
+  );
+  assert.equal(setWinnerFrom(walkoverAfterCompletedSetHtml, 1).winner, 'Tracked');
+  assert.doesNotMatch(walkoverAfterCompletedSetHtml, /Set 2<span class="sub">In progress/);
+
+  const walkoverHtml = winnerReportHtml([], 'complete', {
+    reason: 'walkover',
+    winner: 'tracked',
+  });
+  assert.equal(matchResultFrom(walkoverHtml), 'Winner by walkover: Tracked');
+  assert.match(walkoverHtml, /<strong>Outcome reason:<\/strong> Walkover/);
+  assert.match(walkoverHtml, /No set data recorded\./);
 });
 
 test('match detail does not default an undetermined set winner to the tracked player', () => {
@@ -1438,6 +1488,31 @@ test('head-to-head report removes URL-like text and keeps names and statistics',
   assert.match(html, />Return and points</);
   assert.match(html, /HEAD-TO-HEAD · MATCH ANALYSIS/);
   assert.doesNotMatch(html, /TENNISSCORING|LOCAL MATCH ANALYSIS/i);
+});
+
+test('head-to-head match rows identify retirement and walkover winners', () => {
+  const retirementMeeting = breakPointMeeting(
+    'alex-bailey-retirement',
+    'Alex',
+    'Bailey',
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    '2026-10-30',
+  );
+  retirementMeeting.summary.winner = 'opponent';
+  retirementMeeting.summary.matchOutcome = {
+    reason: 'retirement',
+    winner: 'opponent',
+  };
+  const retirementReport = buildHeadToHeadReport(
+    'Alex',
+    'Bailey',
+    [retirementMeeting],
+    [retirementMeeting],
+  );
+  const retirementHtml = buildHeadToHeadReportHtml(retirementReport);
+
+  assert.match(retirementHtml, /Winner by retirement: Bailey/);
 });
 
 test('head-to-head reports compare selected local benchmarks without exposing preset names', () => {

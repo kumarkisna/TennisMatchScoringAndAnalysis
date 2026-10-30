@@ -1589,6 +1589,77 @@ test('match book results use completed-set majorities and keep ties and live mat
   assert.match(homeScreen, /testID=\{`match-result-\$\{item\.id\}`\}/);
 });
 
+test('retirement and walkover outcomes stay separate from local set scores', async () => {
+  storageValues.clear();
+  const { localMatches } = loadStorageModulesAfterRestart();
+  const retiredMatch = await localMatches.createLocalMatch({
+    matchDate: '2026-10-30',
+    event: null,
+    round: null,
+    trackedPlayer: 'Tracked Player',
+    opponent: 'Opponent Player',
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+  await localMatches.recordLocalPoint(retiredMatch.id, { winner: 'tracked' });
+  await localMatches.recordLocalPoint(retiredMatch.id, { winner: 'opponent' });
+  const pointsBeforeOutcome = (await localMatches.getLocalMatch(retiredMatch.id)).points;
+  const retired = await localMatches.recordLocalMatchOutcome(retiredMatch.id, {
+    reason: 'retirement',
+    winner: 'opponent',
+  });
+
+  assert.equal(retired.matchStatus, 'complete');
+  assert.equal(retired.status, 'in_progress');
+  assert.deepEqual(retired.points, pointsBeforeOutcome);
+  assert.equal(retired.score.isComplete, false);
+  await assert.rejects(
+    localMatches.recordLocalPoint(retiredMatch.id, { winner: 'tracked' }),
+    /match is final/i,
+  );
+  const retiredSummary = (await localMatches.listLocalMatches()).find(
+    (summary) => summary.id === retiredMatch.id,
+  );
+  assert.equal(retiredSummary.winner, 'opponent');
+  assert.equal(retiredSummary.matchOutcome.reason, 'retirement');
+  assert.equal(retiredSummary.setScores[0].isComplete, false);
+  assert.equal(
+    localMatches.getLocalMatchSummaryResultLabel(retiredSummary),
+    'Winner: Opponent Player · retirement',
+  );
+
+  const resumed = await localMatches.clearLocalMatchOutcome(retiredMatch.id);
+  assert.equal(resumed.matchStatus, 'in_progress');
+  assert.equal(resumed.matchOutcome, null);
+  assert.deepEqual(resumed.points, pointsBeforeOutcome);
+
+  const walkoverMatch = await localMatches.createLocalMatch({
+    matchDate: '2026-10-30',
+    event: null,
+    round: null,
+    trackedPlayer: 'Tracked Player',
+    opponent: 'Opponent Player',
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+  const walkover = await localMatches.recordLocalMatchOutcome(walkoverMatch.id, {
+    reason: 'walkover',
+    winner: 'tracked',
+  });
+  const walkoverSummary = (await localMatches.listLocalMatches()).find(
+    (summary) => summary.id === walkoverMatch.id,
+  );
+  assert.equal(walkover.matchStatus, 'complete');
+  assert.equal(walkoverSummary.winner, 'tracked');
+  assert.equal(walkoverSummary.setScores.length, 0);
+  assert.equal(
+    localMatches.getLocalMatchSummaryResultLabel(walkoverSummary),
+    'Winner: Tracked Player · walkover',
+  );
+});
+
 test('report benchmark presets can be managed offline and survive app restart', async (t) => {
   storageValues.clear();
   const originalFetch = global.fetch;
