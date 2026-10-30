@@ -242,12 +242,31 @@ export function buildPlayerReportHtml(
         <td>${escape(displayText(item.note))}</td>
       </tr>`)
     .join('');
+  const gameNoteSections = insights.sets
+    .map((set) => {
+      const notes = [...set.gameNotes]
+        .filter((item) => item.note.trim())
+        .sort((left, right) => left.gameNumber - right.gameNumber);
+      if (!notes.length) return '';
+      return `<section class="game-note-group"><h3>Set ${set.setNumber}</h3><ul class="game-note-list">${notes
+        .map(
+          (item) =>
+            `<li><strong>Game ${item.gameNumber}:</strong> ${escape(displayText(item.note.trim()))}</li>`,
+        )
+        .join('')}</ul></section>`;
+    })
+    .filter(Boolean)
+    .join('');
+  const includeLegacyGameNotesInObservations =
+    includes('observations') && !includes('game-notes');
   const setObservationSections = insights.sets
     .map((set) => {
       const notes = [
-        ...set.gameNotes
-          .filter((item) => item.note.trim())
-          .map((item) => `Game ${item.gameNumber}: ${item.note.trim()}`),
+        ...(includeLegacyGameNotesInObservations
+          ? set.gameNotes
+              .filter((item) => item.note.trim())
+              .map((item) => `Game ${item.gameNumber}: ${item.note.trim()}`)
+          : []),
         ...Object.entries(set.review.strokeRatings).map(([type, rating]) => {
           const note = set.review.strokeNotes[type as keyof typeof set.review.strokeNotes];
           return `${STROKE_LABELS[type as keyof typeof STROKE_LABELS]} · rating ${rating}/5${note?.trim() ? ` · ${note.trim()}` : ''}`;
@@ -271,7 +290,7 @@ export function buildPlayerReportHtml(
     .filter(Boolean)
     .join('');
   const setObservations =
-    setObservationSections || '<p class="context-coverage">No game or set observations recorded.</p>';
+    setObservationSections || '<p class="context-coverage">No set-level observations recorded.</p>';
   const trackedServe = insights.serveStats.tracked;
   const opponentServe = insights.serveStats.opponent;
   const recordedSetCount = insights.sets.filter((set) => set.pointCount > 0).length;
@@ -678,6 +697,9 @@ export function buildPlayerReportHtml(
       .observation-group { break-inside: avoid; page-break-inside: avoid; }
       .observation-list { break-inside: auto; font-size: 9px; line-height: 1.5; margin: 5px 0 8px; page-break-inside: auto; padding-left: 18px; }
       .observation-list li { break-inside: avoid; page-break-inside: avoid; }
+      .game-note-group { break-inside: auto; page-break-inside: auto; }
+      .game-note-list { break-inside: auto; font-size: 9px; line-height: 1.5; margin: 5px 0 10px; page-break-inside: auto; padding-left: 18px; }
+      .game-note-list li { break-inside: avoid; margin-bottom: 4px; page-break-inside: avoid; }
       @media print { html, body { margin: 0; } .report-page { padding: 14mm; -webkit-box-decoration-break: clone; box-decoration-break: clone; } }
     </style>
   </head>
@@ -811,6 +833,11 @@ export function buildPlayerReportHtml(
       <tbody>${setPerformanceRows}</tbody>
     </table>` : ''}
 
+    ${includes('game-notes') && gameNoteSections ? `
+    <h2>Game notes</h2>
+    ${gameNoteSections}
+    ` : ''}
+
     ${includes('break-points') ? `
     <h2>Break-point pressure</h2>
     <h3>Returning · opportunities created</h3>
@@ -866,7 +893,7 @@ export function buildPlayerReportHtml(
       </table>` : ''}
     ` : ''}
     ${includes('observations') ? `
-    <h2>Game and set observations</h2>
+    <h2>Set-level observations</h2>
     ${setObservations}
     ` : ''}
     ${includes('tactical-context') ? `

@@ -3,11 +3,12 @@ export const PLAYER_REPORT_SECTIONS = [
   { id: 'serve', label: 'Serve' },
   { id: 'return', label: 'Return' },
   { id: 'sets', label: 'Set scores' },
+  { id: 'game-notes', label: 'Game notes' },
   { id: 'break-points', label: 'Break-point pressure' },
   { id: 'coaching', label: 'Coaching notes' },
   { id: 'point-ending', label: 'Point-ending analysis' },
   { id: 'strokes', label: 'Recorded strokes' },
-  { id: 'observations', label: 'Game and set observations' },
+  { id: 'observations', label: 'Set-level observations' },
   { id: 'tactical-context', label: 'Tactical context' },
 ] as const;
 
@@ -28,7 +29,7 @@ export const PLAYER_REPORT_SECTION_PRESETS = [
   {
     id: 'statistics',
     label: 'Statistics',
-    sections: ['overview', 'serve', 'return', 'sets', 'break-points'],
+    sections: ['overview', 'serve', 'return', 'sets', 'game-notes', 'break-points'],
   },
   {
     id: 'full',

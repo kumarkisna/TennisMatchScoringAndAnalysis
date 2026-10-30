@@ -165,6 +165,7 @@ test('report layouts provide overview, statistics, and full presets for both rep
     'serve',
     'return',
     'sets',
+    'game-notes',
     'break-points',
   ]);
   assert.deepEqual(
@@ -1755,6 +1756,7 @@ function reportSetFixture({
   pointCount = 1,
   serveStats = null,
   codes = [],
+  gameNotes = [],
 } = {}) {
   return {
     setNumber,
@@ -1772,7 +1774,7 @@ function reportSetFixture({
       tracked: { ...emptyBreakPoints },
       opponent: { ...emptyBreakPoints },
     },
-    gameNotes: [],
+    gameNotes,
     review: {
       strokeRatings: {},
       strokeNotes: {},
@@ -1783,7 +1785,12 @@ function reportSetFixture({
   };
 }
 
-function winnerReportHtml(sets, matchStatus = 'complete', matchOutcome = null) {
+function winnerReportHtml(
+  sets,
+  matchStatus = 'complete',
+  matchOutcome = null,
+  selectedSections = ['sets'],
+) {
   const insights = { ...emptyInsight, sets };
   return buildPlayerReportHtml(
     {
@@ -1796,7 +1803,7 @@ function winnerReportHtml(sets, matchStatus = 'complete', matchOutcome = null) {
     },
     insights,
     { ...summarizePlayerPerformance(insights), feedback: [] },
-    ['sets'],
+    selectedSections,
     [],
   );
 }
@@ -1818,6 +1825,90 @@ function setWinnerFrom(html, setNumber) {
   assert.ok(row, `Expected the report to include Set ${setNumber}`);
   return { status: row[1], score: row[2], winner: row[3] };
 }
+
+test('game notes print under the correct set and game without a point matrix', () => {
+  const sets = [
+    reportSetFixture({
+      setNumber: 1,
+      gameNotes: [
+        { gameNumber: 3, note: 'Adjusted after a deep return.' },
+        { gameNumber: 1, note: 'Opened the court with a wide serve.' },
+        { gameNumber: 2, note: '   ' },
+      ],
+    }),
+    reportSetFixture({
+      setNumber: 2,
+      gameNotes: [{ gameNumber: 1, note: 'Stayed patient in the rally.' }],
+    }),
+  ];
+  const html = winnerReportHtml(sets, 'complete', null, [
+    'sets',
+    'game-notes',
+  ]);
+  const orderedNoteMarkers = [
+    'Set 1</h3>',
+    'Game 1:</strong> Opened the court with a wide serve.',
+    'Game 3:</strong> Adjusted after a deep return.',
+    'Set 2</h3>',
+    'Game 1:</strong> Stayed patient in the rally.',
+  ];
+  const positions = orderedNoteMarkers.map((marker) => html.indexOf(marker));
+
+  assert.match(html, /<h2>Game notes<\/h2>/);
+  assert.ok(positions.every((position) => position >= 0));
+  assert.deepEqual([...positions].sort((left, right) => left - right), positions);
+  assert.doesNotMatch(html, /GAME\s*\/\s*SERVER/i);
+  assert.doesNotMatch(html, /<table[^>]*point-matrix/i);
+
+  const statisticsPresetHtml = winnerReportHtml(
+    sets,
+    'complete',
+    null,
+    PLAYER_REPORT_SECTION_PRESETS[1].sections,
+  );
+  assert.match(statisticsPresetHtml, /<h2>Game notes<\/h2>/);
+  assert.match(
+    statisticsPresetHtml,
+    /Game 1:<\/strong> Opened the court with a wide serve\./,
+  );
+
+  const fullReportHtml = winnerReportHtml(
+    sets,
+    'complete',
+    null,
+    allPlayerReportSections(),
+  );
+  assert.equal(
+    fullReportHtml.split('Opened the court with a wide serve.').length - 1,
+    1,
+  );
+
+  const legacyLayoutHtml = winnerReportHtml(
+    [
+      reportSetFixture({
+        gameNotes: [{ gameNumber: 2, note: 'Older saved layout note.' }],
+      }),
+    ],
+    'complete',
+    null,
+    ['observations'],
+  );
+  assert.match(legacyLayoutHtml, /Game 2: Older saved layout note\./);
+  assert.doesNotMatch(legacyLayoutHtml, /<h2>Game notes<\/h2>/);
+
+  const emptyNotesHtml = winnerReportHtml(
+    [
+      reportSetFixture({
+        gameNotes: [{ gameNumber: 1, note: ' \n  ' }],
+      }),
+    ],
+    'complete',
+    null,
+    ['game-notes'],
+  );
+  assert.doesNotMatch(emptyNotesHtml, /<h2>Game notes<\/h2>/);
+  assert.doesNotMatch(emptyNotesHtml, /<section class="game-note-group">/);
+});
 
 test('single-match report removes URL-like text and keeps match details and analysis', () => {
   const insights = {
@@ -3188,7 +3279,7 @@ test('long match reports keep all set, feedback, observation, and shot details p
   assert.match(html, /Match tie-break 10–8 \(target 10, win by 2\)/);
   assert.match(html, /Set 18 observations/);
   assert.match(html, /class="observation-group"/);
-  assert.match(html, /Game 8: Set 18 observation 8/);
+  assert.match(html, /Game 8:<\/strong> Set 18 observation 8/);
   assert.match(html, /Cross-court/);
   assert.match(html, /5–8 shots/);
   assert.match(html, /Forehand winner/);
@@ -3203,6 +3294,8 @@ test('long match reports keep all set, feedback, observation, and shot details p
   assert.match(html, /\.feedback li\s*\{[^}]*page-break-inside:\s*avoid/);
   assert.match(html, /\.observation-group\s*\{[^}]*page-break-inside:\s*avoid/);
   assert.match(html, /\.observation-list li\s*\{[^}]*page-break-inside:\s*avoid/);
+  assert.match(html, /\.game-note-group\s*\{[^}]*page-break-inside:\s*auto/);
+  assert.match(html, /\.game-note-list li\s*\{[^}]*page-break-inside:\s*avoid/);
 });
 
 test('native report preview creates a local PDF before opening that same file', async () => {
