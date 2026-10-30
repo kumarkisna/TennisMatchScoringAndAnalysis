@@ -260,6 +260,83 @@ test('older saved players without profile labels stay readable', async () => {
   assert.deepEqual(player.profileUrlLabels, ['']);
 });
 
+test('profile links accept HTTP(S), normalize bare domains, and ignore blank rows', async () => {
+  storageValues.clear();
+  const { localPlayers } = loadStorageModulesAfterRestart();
+  const player = await localPlayers.addLocalPlayer('Link validation player', {
+    profileUrls: [
+      '',
+      'https://atp.example.org/player/one',
+      'http://itf.example.org/player/one',
+      'club.example.org/player/one',
+      '   ',
+    ],
+    profileUrlLabels: ['', '', '', 'Club page', ''],
+  });
+
+  assert.deepEqual(player.profileUrls, [
+    'https://atp.example.org/player/one',
+    'http://itf.example.org/player/one',
+    'https://club.example.org/player/one',
+  ]);
+  assert.deepEqual(player.profileUrlLabels, ['', '', 'Club page']);
+  assert.equal(
+    localPlayers.validateLocalPlayerDetails({
+      profileUrls: ['', '   '],
+    }),
+    null,
+  );
+});
+
+test('profile links reject unsupported, malformed, credentialed, spaced, and duplicate URLs', async () => {
+  storageValues.clear();
+  const { localPlayers } = loadStorageModulesAfterRestart();
+  const invalidLinks = [
+    ['unsupported protocol', 'ftp://example.org/player', /must use http:\/\/ or https:\/\//],
+    ['embedded credentials', 'https://player:secret@example.org/profile', /must use http:\/\/ or https:\/\//],
+    ['malformed address', 'https://[broken', /valid http:\/\/ or https:\/\//],
+    ['whitespace', 'https://example.org/player name', /valid http:\/\/ or https:\/\//],
+  ];
+
+  for (const [caseName, url, expectedError] of invalidLinks) {
+    await assert.rejects(
+      localPlayers.addLocalPlayer(`Invalid ${caseName}`, { profileUrls: [url] }),
+      expectedError,
+    );
+  }
+  await assert.rejects(
+    localPlayers.addLocalPlayer('Duplicate profile links', {
+      profileUrls: [
+        'https://example.org/player',
+        'example.org/player',
+      ],
+    }),
+    /must be unique/,
+  );
+  assert.deepEqual(await localPlayers.listLocalPlayers(), []);
+});
+
+test('older saved player records without profile URL fields remain readable', async () => {
+  storageValues.clear();
+  storageValues.set(
+    '@tennis-scoring/players/record-v1',
+    JSON.stringify([
+      {
+        id: 'legacy-player-no-links',
+        name: 'Legacy Player Without Links',
+        createdAt: '2026-10-30T00:00:00.000Z',
+      },
+    ]),
+  );
+
+  const { localPlayers } = loadStorageModulesAfterRestart();
+  const [player] = await localPlayers.listLocalPlayers();
+
+  assert.equal(player.id, 'legacy-player-no-links');
+  assert.deepEqual(player.profileUrls, []);
+  assert.deepEqual(player.profileUrlLabels, []);
+});
+
 test('match detail edits preserve multi-set point history, score totals, and analytics', async () => {
   storageValues.clear();
   const { localMatches } = loadStorageModulesAfterRestart();
