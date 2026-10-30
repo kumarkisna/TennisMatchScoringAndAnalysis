@@ -10,12 +10,14 @@ const strokeOptions = [
 ];
 const originalLoad = Module._load;
 let playerReportExports;
+let localMatchExports;
 
 Module._load = function (request, parent, isMain) {
   if (request === '@/lib/local-matches') {
-    return {
-      STROKE_TYPE_OPTIONS: strokeOptions,
-    };
+    return localMatchExports ?? { STROKE_TYPE_OPTIONS: strokeOptions };
+  }
+  if (request === '@react-native-async-storage/async-storage') {
+    return { __esModule: true, default: {} };
   }
   if (request === '@/lib/head-to-head') {
     return { getSetWinner: () => null };
@@ -53,11 +55,13 @@ require.extensions['.ts'] = function (module, filename) {
   module._compile(outputText, filename);
 };
 
+localMatchExports = require('../lib/local-matches.ts');
 const { buildPlayerReportHtml } = require('../lib/player-report-html.ts');
 playerReportExports = { buildPlayerReportHtml };
 const { buildHeadToHeadReportHtml } = require('../lib/head-to-head-report-html.ts');
 Module._load = originalLoad;
 const { createAndPreviewLocalPdf } = require('../lib/report-pdf.ts');
+const { calculateBreakPointStats, calculateLocalInsights } = localMatchExports;
 
 const emptySide = {
   servicePoints: 4,
@@ -126,6 +130,170 @@ function assertCleanReport(html) {
   assert.match(html, /break-inside:\s*avoid/);
 }
 
+function pointFixture(
+  setNumber,
+  gameNumber,
+  server,
+  winner,
+  isTiebreak,
+  sequenceNumber,
+) {
+  return {
+    id: `set-${setNumber}-point-${sequenceNumber}`,
+    sequenceNumber,
+    setNumber,
+    gameNumber,
+    server,
+    isTiebreak,
+    winner,
+    endingCode: null,
+    firstServeFault: false,
+    syncStatus: 'synced',
+    createdAt: '2026-10-30T00:00:00.000Z',
+  };
+}
+
+function gamePoints(setNumber, gameNumber, server, winners, isTiebreak = false, startAt = 1) {
+  return winners.map((winner, index) =>
+    pointFixture(
+      setNumber,
+      gameNumber,
+      server,
+      winner,
+      isTiebreak,
+      startAt + index,
+    ),
+  );
+}
+
+function setFixture(setNumber, format, points) {
+  const score = {
+    trackedGames: format === 'standard' ? 6 : 0,
+    opponentGames: format === 'standard' ? 4 : 0,
+    trackedPoints: '0',
+    opponentPoints: '0',
+    trackedTiebreakPoints: 0,
+    opponentTiebreakPoints: 0,
+    nextServer: 'tracked',
+    isTiebreak: false,
+    isComplete: true,
+    winner: 'tracked',
+  };
+  const review = {
+    strokeRatings: {},
+    strokeNotes: {},
+    footworkNote: '',
+    tacticalNote: '',
+    mentalNote: '',
+  };
+  return {
+    setNumber,
+    firstServer: 'tracked',
+    format,
+    tiebreakTarget: format === 'match_tiebreak' ? 7 : 10,
+    score,
+    points,
+    gameNotes: [],
+    review,
+  };
+}
+
+function breakPointSampleMatch() {
+  const savedZeroForty = gamePoints(
+    1,
+    1,
+    'tracked',
+    ['opponent', 'opponent', 'opponent', 'tracked', 'tracked', 'tracked', 'tracked', 'tracked'],
+  );
+  const repeatedAdvantageChances = gamePoints(
+    1,
+    2,
+    'opponent',
+    [
+      'opponent',
+      'tracked',
+      'opponent',
+      'tracked',
+      'opponent',
+      'tracked',
+      'tracked',
+      'opponent',
+      'tracked',
+      'tracked',
+    ],
+    false,
+    9,
+  );
+  const standardTiebreakPoints = gamePoints(
+    1,
+    7,
+    'tracked',
+    ['opponent', 'opponent', 'opponent', 'opponent'],
+    true,
+    19,
+  );
+  const setOne = setFixture(1, 'standard', [
+    ...savedZeroForty,
+    ...standardTiebreakPoints,
+    ...repeatedAdvantageChances,
+  ]);
+  const setTwo = setFixture(
+    2,
+    'standard',
+    gamePoints(2, 1, 'opponent', ['tracked', 'tracked', 'tracked', 'tracked']),
+  );
+  const matchTiebreakSet = setFixture(
+    3,
+    'match_tiebreak',
+    gamePoints(3, 1, 'opponent', ['tracked', 'tracked', 'tracked', 'tracked'], true),
+  );
+
+  return {
+    match: {
+      id: 'break-point-sample',
+      ownerUserId: null,
+      matchDate: '2026-10-30',
+      event: 'Test match',
+      round: 'Final',
+      setNumber: matchTiebreakSet.setNumber,
+      trackedPlayer: 'Tracked',
+      trackedPlayerId: null,
+      opponent: 'Opponent',
+      opponentPlayerId: null,
+      chairCoach: null,
+      surface: 'Hard',
+      firstServer: matchTiebreakSet.firstServer,
+      setFormat: matchTiebreakSet.format,
+      tiebreakTarget: matchTiebreakSet.tiebreakTarget,
+      completedSets: [setOne, setTwo],
+      matchStatus: 'complete',
+      status: 'complete',
+      syncStatus: 'local_only',
+      syncToken: null,
+      remoteMatchId: null,
+      pendingPointDeletes: [],
+      syncError: null,
+      score: matchTiebreakSet.score,
+      points: matchTiebreakSet.points,
+      gameNotes: [],
+      review: matchTiebreakSet.review,
+      createdAt: '2026-10-30T00:00:00.000Z',
+      updatedAt: '2026-10-30T00:00:00.000Z',
+    },
+    savedZeroForty,
+    repeatedAdvantageChances,
+  };
+}
+
+function reportRows(html, heading) {
+  const start = html.indexOf(`<h3>${heading}</h3>`);
+  assert.notEqual(start, -1, `Missing report subsection: ${heading}`);
+  const tableStart = html.indexOf('<tbody>', start) + '<tbody>'.length;
+  const tableEnd = html.indexOf('</tbody>', tableStart);
+  return [...html.slice(tableStart, tableEnd).matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/g)]
+    .map((match) => match[1].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim());
+}
+
 test('single-match report removes URL-like text and keeps match details and analysis', () => {
   const insights = {
     ...emptyInsight,
@@ -163,6 +331,69 @@ test('single-match report removes URL-like text and keeps match details and anal
   assert.match(html, />Return</);
   assert.match(html, /Reference 1/);
   assert.doesNotMatch(html, /Cincinnati/i);
+});
+
+test('break-point counts, set aggregation, exclusions, and report rates match scored sequences', () => {
+  const { match, savedZeroForty, repeatedAdvantageChances } =
+    breakPointSampleMatch();
+
+  assert.deepEqual(calculateBreakPointStats(savedZeroForty, 'standard'), {
+    tracked: { opportunities: 0, converted: 0, faced: 3, saved: 3 },
+    opponent: { opportunities: 3, converted: 0, faced: 0, saved: 0 },
+  });
+  assert.deepEqual(
+    calculateBreakPointStats(repeatedAdvantageChances, 'standard'),
+    {
+      tracked: { opportunities: 2, converted: 1, faced: 0, saved: 0 },
+      opponent: { opportunities: 0, converted: 0, faced: 2, saved: 1 },
+    },
+  );
+
+  const insights = calculateLocalInsights(match);
+  assert.deepEqual(insights.sets.map((set) => set.breakPoints), [
+    {
+      tracked: { opportunities: 2, converted: 1, faced: 3, saved: 3 },
+      opponent: { opportunities: 3, converted: 0, faced: 2, saved: 1 },
+    },
+    {
+      tracked: { opportunities: 1, converted: 1, faced: 0, saved: 0 },
+      opponent: { opportunities: 0, converted: 0, faced: 1, saved: 0 },
+    },
+    {
+      tracked: { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+      opponent: { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    },
+  ]);
+  assert.deepEqual(insights.breakPoints, {
+    tracked: { opportunities: 3, converted: 2, faced: 3, saved: 3 },
+    opponent: { opportunities: 3, converted: 0, faced: 3, saved: 1 },
+  });
+
+  const html = buildPlayerReportHtml(
+    {
+      matchDate: '2026-10-30',
+      event: 'Test match',
+      round: 'Final',
+      trackedPlayer: 'Tracked',
+      opponent: 'Opponent',
+      surface: 'Hard',
+      matchStatus: 'complete',
+    },
+    { ...emptyInsight, ...insights },
+    emptyPerformance,
+    ['break-points'],
+  );
+  const conversionRows = reportRows(html, 'Returning · opportunities created');
+  const defenseRows = reportRows(html, 'Serving · break points faced');
+
+  assert.match(conversionRows[0], /Set 1.*1\/2 \(50\.0%\).*1\/2 \(50\.0%\).*0\/3 \(0\.0%\).*3\/3 \(100\.0%\)/);
+  assert.match(conversionRows[1], /Set 2.*1\/1 \(100\.0%\).*0\/1 \(0\.0%\)/);
+  assert.match(conversionRows[2], /Set 3 Excluded · match tie-break/);
+  assert.match(conversionRows[3], /Match total.*2\/3 \(66\.7%\).*1\/3 \(33\.3%\).*0\/3 \(0\.0%\).*3\/3 \(100\.0%\)/);
+  assert.match(defenseRows[0], /Set 1.*3\/3 \(100\.0%\).*0\/3 \(0\.0%\).*1\/2 \(50\.0%\).*1\/2 \(50\.0%\)/);
+  assert.match(defenseRows[1], /Set 2.*—.*—.*0\/1 \(0\.0%\).*1\/1 \(100\.0%\)/);
+  assert.match(defenseRows[2], /Set 3 Excluded · match tie-break/);
+  assert.match(defenseRows[3], /Match total.*3\/3 \(100\.0%\).*0\/3 \(0\.0%\).*1\/3 \(33\.3%\).*2\/3 \(66\.7%\)/);
 });
 
 test('head-to-head report removes URL-like text and keeps names and statistics', () => {
