@@ -42,6 +42,7 @@ import {
   saveLocalBackupToDevice,
   shareLocalBackup,
 } from '@/lib/local-backup';
+import { LOCAL_REPORT_BENCHMARKS_KEY } from '@/lib/local-benchmarks';
 
 function formatMatchDate(date: string) {
   const normalizedDate = date.slice(0, 10);
@@ -127,10 +128,13 @@ export default function HomeScreen() {
         queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY }),
         queryClient.invalidateQueries({ queryKey: LOCAL_PLAYERS_KEY }),
         queryClient.invalidateQueries({ queryKey: ACTIVE_LOCAL_PLAYER_KEY }),
+        queryClient.invalidateQueries({
+          queryKey: LOCAL_REPORT_BENCHMARKS_KEY,
+        }),
       ]);
       Alert.alert(
         'Backup loaded',
-        `Added ${result.matchesAdded} matches and ${result.playersAdded} players. Skipped ${result.matchesSkipped} existing matches and ${result.playersSkipped} saved players; existing records were left unchanged.`,
+        `Added ${result.matchesAdded} matches and ${result.playersAdded} players. Skipped ${result.matchesSkipped} existing matches and ${result.playersSkipped} saved players. Report benchmarks and their selected order were restored if the backup includes them; older backups leave your current benchmarks unchanged.`,
       );
     },
     onError: (error) => Alert.alert('Could not load backup', error.message),

@@ -31,6 +31,12 @@ import {
   saveLocalReportNameLabels,
   type LocalReportNameLabels,
 } from '@/lib/local-report-labels';
+import {
+  getLocalReportBenchmarkSettings,
+  isLocalReportBenchmarkSettings,
+  restoreLocalReportBenchmarkSettings,
+  type LocalReportBenchmarkSettings,
+} from '@/lib/local-benchmarks';
 
 const CURRENT_LOCAL_BACKUP_VERSION = 1 as const;
 
@@ -40,6 +46,7 @@ interface LocalBackup {
   exportedAt: string;
   activePlayerId: string | null;
   reportNameLabels?: LocalReportNameLabels;
+  reportBenchmarks?: LocalReportBenchmarkSettings;
   players: LocalPlayer[];
   matches: LocalMatchBackupRecord[];
 }
@@ -395,6 +402,12 @@ function parseLocalBackup(contents: string): LocalBackup {
   ) {
     throw new Error('The backup contains invalid report labels. No data was imported.');
   }
+  if (
+    parsed.reportBenchmarks !== undefined &&
+    !isLocalReportBenchmarkSettings(parsed.reportBenchmarks)
+  ) {
+    throw new Error('The backup contains invalid report benchmarks. No data was imported.');
+  }
   if (!parsed.players.every(isBackupPlayer)) {
     throw new Error('The backup contains invalid player details. No data was imported.');
   }
@@ -418,11 +431,18 @@ function parseLocalBackup(contents: string): LocalBackup {
 }
 
 export async function createLocalBackupJson(): Promise<string> {
-  const [players, summaries, activePlayerId, reportNameLabels] = await Promise.all([
+  const [
+    players,
+    summaries,
+    activePlayerId,
+    reportNameLabels,
+    reportBenchmarks,
+  ] = await Promise.all([
     listLocalPlayers(),
     listLocalMatches(),
     getActiveLocalPlayerId(),
     getLocalReportNameLabels(),
+    getLocalReportBenchmarkSettings(),
   ]);
   const matches = await Promise.all(
     summaries.map(async (summary) => {
@@ -439,6 +459,7 @@ export async function createLocalBackupJson(): Promise<string> {
     exportedAt: new Date().toISOString(),
     activePlayerId,
     reportNameLabels,
+    reportBenchmarks,
     players,
     matches,
   };
@@ -528,6 +549,9 @@ export async function loadLocalBackupFromDevice(): Promise<
   const matchResult = await mergeLocalMatchesFromBackup(matchesWithMappedPlayers);
   if (backup.reportNameLabels) {
     await saveLocalReportNameLabels(backup.reportNameLabels);
+  }
+  if (backup.reportBenchmarks) {
+    await restoreLocalReportBenchmarkSettings(backup.reportBenchmarks);
   }
   return {
     cancelled: false,

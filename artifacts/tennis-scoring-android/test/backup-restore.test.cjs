@@ -101,6 +101,9 @@ Module._load = function (request, parent, isMain) {
   if (request === '@/lib/local-report-labels') {
     return activeModules.localReportLabels;
   }
+  if (request === '@/lib/local-benchmarks') {
+    return activeModules.localBenchmarks;
+  }
   if (request === 'expo-file-system/legacy') return fileSystem;
   if (request === 'expo-document-picker') {
     return { __esModule: true, ...documentPicker };
@@ -128,6 +131,10 @@ const localReportLabelsPath = path.join(
   __dirname,
   '../lib/local-report-labels.ts',
 );
+const localBenchmarksPath = path.join(
+  __dirname,
+  '../lib/local-benchmarks.ts',
+);
 const localBackupPath = path.join(__dirname, '../lib/local-backup.ts');
 const versionOneBackupFixturePath = path.join(
   __dirname,
@@ -142,10 +149,12 @@ function loadLocalModules() {
   delete require.cache[require.resolve(localMatchesPath)];
   delete require.cache[require.resolve(localPlayersPath)];
   delete require.cache[require.resolve(localReportLabelsPath)];
+  delete require.cache[require.resolve(localBenchmarksPath)];
   activeModules = {
     localMatches: require(localMatchesPath),
     localPlayers: require(localPlayersPath),
     localReportLabels: require(localReportLabelsPath),
+    localBenchmarks: require(localBenchmarksPath),
   };
 }
 
@@ -255,6 +264,33 @@ test('backup save, share, and restore preserve all players and sets without netw
   await activeModules.localReportLabels.saveLocalReportNameLabels(
     reportNameLabels,
   );
+  const seasonBenchmarkSettings =
+    await activeModules.localBenchmarks.saveLocalReportBenchmarkPreset({
+      name: 'Sana season baseline',
+      firstServePointsWon: 74.2,
+      secondServePointsWon: 57.1,
+      serviceGamesWon: 88.3,
+    });
+  const seasonPreset = seasonBenchmarkSettings.presets.find(
+    (preset) => preset.name === 'Sana season baseline',
+  );
+  assert.ok(seasonPreset);
+  const eventBenchmarkSettings =
+    await activeModules.localBenchmarks.saveLocalReportBenchmarkPreset({
+      name: 'City Open target',
+      firstServePointsWon: 78.5,
+      secondServePointsWon: 60.2,
+      serviceGamesWon: 91.4,
+    });
+  const eventPreset = eventBenchmarkSettings.presets.find(
+    (preset) => preset.name === 'City Open target',
+  );
+  assert.ok(eventPreset);
+  const benchmarkSettings =
+    await activeModules.localBenchmarks.setSelectedLocalReportBenchmarkPresets([
+      eventPreset.id,
+      seasonPreset.id,
+    ]);
   await activeModules.localMatches.recordLocalMatchOutcome(match.id, {
     reason: 'retirement',
     winner: 'opponent',
@@ -270,6 +306,11 @@ test('backup save, share, and restore preserve all players and sets without netw
   assert.equal(exported.version, 1);
   assert.equal(exported.activePlayerId, player.id);
   assert.deepEqual(exported.reportNameLabels, reportNameLabels);
+  assert.deepEqual(exported.reportBenchmarks, benchmarkSettings);
+  assert.deepEqual(exported.reportBenchmarks.selectedPresetIds, [
+    eventPreset.id,
+    seasonPreset.id,
+  ]);
   assert.equal(exported.players[0].dateOfBirth, '2005-07-09');
   assert.equal(exported.players[0].itfPlayerId, 'ITF-54321');
   assert.equal(exported.players[0].atpRanking, 285);
@@ -326,6 +367,7 @@ test('backup save, share, and restore preserve all players and sets without netw
   assert.ok(sharedUri.startsWith('file://cache/'));
   assert.equal(JSON.parse(sharedBackup).matches[0].completedSets[0].points.length, 24);
   assert.deepEqual(JSON.parse(sharedBackup).reportNameLabels, reportNameLabels);
+  assert.deepEqual(JSON.parse(sharedBackup).reportBenchmarks, benchmarkSettings);
   assert.equal(networkRequestCount, 0);
 
   const legacyBackup = JSON.parse(savedDeviceBackup.contents);
@@ -358,6 +400,10 @@ test('backup save, share, and restore preserve all players and sets without netw
   assert.deepEqual(
     await activeModules.localReportLabels.getLocalReportNameLabels(),
     reportNameLabels,
+  );
+  assert.deepEqual(
+    await activeModules.localBenchmarks.getLocalReportBenchmarkSettings(),
+    benchmarkSettings,
   );
   assert.equal(restoredPlayer.dateOfBirth, '2005-07-09');
   assert.equal(restoredPlayer.itfPlayerId, 'ITF-54321');
@@ -465,6 +511,22 @@ test('backup save, share, and restore preserve all players and sets without netw
     [...storageValues.entries()],
     beforeInvalidImport,
     'Invalid report labels must not partially import players or matches.',
+  );
+
+  const invalidBenchmarksBackup = JSON.parse(savedDeviceBackup.contents);
+  invalidBenchmarksBackup.players[0].name = 'Player from invalid benchmark backup';
+  invalidBenchmarksBackup.reportBenchmarks.selectedPresetIds = [
+    'missing-benchmark-id',
+  ];
+  selectedBackupContents = JSON.stringify(invalidBenchmarksBackup);
+  await assert.rejects(
+    loadBackupModule().loadLocalBackupFromDevice(),
+    /invalid report benchmarks\. No data was imported/,
+  );
+  assert.deepEqual(
+    [...storageValues.entries()],
+    beforeInvalidImport,
+    'Invalid report benchmarks must not partially import players or matches.',
   );
 
   const duplicateBackup = JSON.parse(savedDeviceBackup.contents);
@@ -819,7 +881,24 @@ test('version-one fixture restores representative player and match history', asy
   await activeModules.localReportLabels.saveLocalReportNameLabels(
     existingLabels,
   );
-  selectedBackupContents = readVersionOneBackupFixture();
+  const existingBenchmarkSettings =
+    await activeModules.localBenchmarks.saveLocalReportBenchmarkPreset({
+      name: 'Keep on this device',
+      firstServePointsWon: 72,
+      secondServePointsWon: null,
+      serviceGamesWon: 84,
+    });
+  const existingBenchmark = existingBenchmarkSettings.presets.find(
+    (preset) => preset.name === 'Keep on this device',
+  );
+  assert.ok(existingBenchmark);
+  const benchmarksBeforeLegacyRestore =
+    await activeModules.localBenchmarks.setSelectedLocalReportBenchmarkPresets([
+      existingBenchmark.id,
+    ]);
+  const legacyFixture = JSON.parse(readVersionOneBackupFixture());
+  assert.equal('reportBenchmarks' in legacyFixture, false);
+  selectedBackupContents = JSON.stringify(legacyFixture);
 
   const result = await loadBackupModule().loadLocalBackupFromDevice();
   const [restoredPlayer] = await activeModules.localPlayers.listLocalPlayers();
@@ -853,7 +932,28 @@ test('version-one fixture restores representative player and match history', asy
     await activeModules.localReportLabels.getLocalReportNameLabels(),
     existingLabels,
   );
+  assert.deepEqual(
+    await activeModules.localBenchmarks.getLocalReportBenchmarkSettings(),
+    benchmarksBeforeLegacyRestore,
+  );
   assert.equal(networkRequestCount, 0);
+});
+
+test('loading a backup refreshes the home screen report benchmark settings', () => {
+  const homeScreen = fs.readFileSync(
+    path.join(__dirname, '../app/index.tsx'),
+    'utf8',
+  );
+
+  assert.match(homeScreen, /LOCAL_REPORT_BENCHMARKS_KEY/);
+  assert.match(
+    homeScreen,
+    /queryClient\.invalidateQueries\(\{\s*queryKey:\s*LOCAL_REPORT_BENCHMARKS_KEY/,
+  );
+  assert.match(
+    homeScreen,
+    /Report benchmarks and their selected order were restored if the backup includes them/,
+  );
 });
 
 test('unsupported backup versions are rejected without changing device data', async () => {

@@ -60,6 +60,61 @@ function isValidPercent(value: unknown): value is number | null {
     (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isLocalReportBenchmarkPreset(
+  value: unknown,
+): value is LocalReportBenchmarkPreset {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    value.id.length > 0 &&
+    value.id.length <= 100 &&
+    typeof value.name === 'string' &&
+    value.name.trim().length > 0 &&
+    value.name.length <= 60 &&
+    isValidPercent(value.firstServePointsWon) &&
+    isValidPercent(value.secondServePointsWon) &&
+    isValidPercent(value.serviceGamesWon) &&
+    typeof value.createdAt === 'string' &&
+    Number.isFinite(Date.parse(value.createdAt)) &&
+    typeof value.updatedAt === 'string' &&
+    Number.isFinite(Date.parse(value.updatedAt))
+  );
+}
+
+export function isLocalReportBenchmarkSettings(
+  value: unknown,
+): value is LocalReportBenchmarkSettings {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.presets) ||
+    !Array.isArray(value.selectedPresetIds) ||
+    value.selectedPresetIds.length > MAX_SELECTED_REPORT_BENCHMARKS ||
+    !value.presets.every(isLocalReportBenchmarkPreset) ||
+    !value.selectedPresetIds.every(
+      (id) => typeof id === 'string' && id.length > 0,
+    )
+  ) {
+    return false;
+  }
+
+  const presets = value.presets;
+  const presetIds = presets.map((preset) => preset.id);
+  const normalizedNames = presets.map((preset) =>
+    preset.name.trim().replace(/\s+/g, ' ').toLocaleLowerCase(),
+  );
+  const selectedPresetIds = value.selectedPresetIds as string[];
+  return (
+    new Set(presetIds).size === presetIds.length &&
+    new Set(normalizedNames).size === normalizedNames.length &&
+    new Set(selectedPresetIds).size === selectedPresetIds.length &&
+    selectedPresetIds.every((id) => presetIds.includes(id))
+  );
+}
+
 function parsePresets(raw: string): LocalReportBenchmarkPreset[] {
   let value: unknown;
   try {
@@ -170,6 +225,29 @@ function newPresetId(): string {
 
 export function getLocalReportBenchmarkSettings(): Promise<LocalReportBenchmarkSettings> {
   return withWriteLock(readSettings);
+}
+
+export function restoreLocalReportBenchmarkSettings(
+  settings: LocalReportBenchmarkSettings,
+): Promise<LocalReportBenchmarkSettings> {
+  return withWriteLock(async () => {
+    if (!isLocalReportBenchmarkSettings(settings)) {
+      throw new Error('The backup contains invalid report benchmark settings.');
+    }
+
+    const restored: LocalReportBenchmarkSettings = {
+      presets: settings.presets.map((preset) => ({ ...preset })),
+      selectedPresetIds: [...settings.selectedPresetIds],
+    };
+    await AsyncStorage.multiSet([
+      [PRESETS_STORAGE_KEY, JSON.stringify(restored.presets)],
+      [
+        SELECTION_STORAGE_KEY,
+        JSON.stringify(restored.selectedPresetIds),
+      ],
+    ]);
+    return restored;
+  });
 }
 
 export function saveLocalReportBenchmarkPreset(
