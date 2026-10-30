@@ -449,6 +449,124 @@ test('backup save, share, and restore preserve all players and sets without netw
   assert.equal(networkRequestCount, 0);
 });
 
+test('backup restore remaps both saved player links and keeps each player history offline', async () => {
+  storageValues.clear();
+  networkRequestCount = 0;
+  loadLocalModules();
+
+  const trackedPlayer = await activeModules.localPlayers.addLocalPlayer(
+    'Sana Iyer',
+    {
+      profileUrls: ['https://atp.example.org/players/sana-iyer'],
+      profileUrlLabels: ['ATP profile'],
+    },
+  );
+  const opponentPlayer = await activeModules.localPlayers.addLocalPlayer(
+    'Maya Rao',
+    {
+      profileUrls: ['https://itf.example.org/players/maya-rao'],
+      profileUrlLabels: ['ITF profile'],
+    },
+  );
+  await activeModules.localPlayers.setActiveLocalPlayerId(trackedPlayer.id);
+  const match = await activeModules.localMatches.createLocalMatch({
+    matchDate: '2026-10-30',
+    event: 'Local Profile Link Test',
+    round: 'Quarter-final',
+    trackedPlayer: trackedPlayer.name,
+    trackedPlayerId: trackedPlayer.id,
+    opponent: opponentPlayer.name,
+    opponentPlayerId: opponentPlayer.id,
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+  await activeModules.localMatches.recordLocalPoint(match.id, {
+    winner: 'tracked',
+    endingCode: 'A',
+    firstServeFault: false,
+  });
+  await activeModules.localMatches.recordLocalPoint(match.id, {
+    winner: 'opponent',
+  });
+
+  const backupJson = await loadBackupModule().createLocalBackupJson();
+  const exported = JSON.parse(backupJson);
+  assert.equal(exported.matches[0].trackedPlayerId, trackedPlayer.id);
+  assert.equal(exported.matches[0].opponentPlayerId, opponentPlayer.id);
+  assert.deepEqual(
+    exported.players.find((player) => player.id === trackedPlayer.id)
+      .profileUrlLabels,
+    ['ATP profile'],
+  );
+  assert.deepEqual(
+    exported.players.find((player) => player.id === opponentPlayer.id)
+      .profileUrlLabels,
+    ['ITF profile'],
+  );
+
+  storageValues.clear();
+  loadLocalModules();
+  selectedBackupContents = backupJson;
+  const restoreResult = await loadBackupModule().loadLocalBackupFromDevice();
+  const restoredRoster = await activeModules.localPlayers.listLocalPlayers();
+  const restoredTrackedPlayer = restoredRoster.find(
+    (player) => player.name === 'Sana Iyer',
+  );
+  const restoredOpponentPlayer = restoredRoster.find(
+    (player) => player.name === 'Maya Rao',
+  );
+  const restoredMatch = await activeModules.localMatches.getLocalMatch(match.id);
+
+  assert.deepEqual(restoreResult, {
+    cancelled: false,
+    playersAdded: 2,
+    playersSkipped: 0,
+    matchesAdded: 1,
+    matchesSkipped: 0,
+  });
+  assert.ok(restoredTrackedPlayer);
+  assert.ok(restoredOpponentPlayer);
+  assert.notEqual(restoredTrackedPlayer.id, trackedPlayer.id);
+  assert.notEqual(restoredOpponentPlayer.id, opponentPlayer.id);
+  assert.deepEqual(restoredTrackedPlayer.profileUrls, [
+    'https://atp.example.org/players/sana-iyer',
+  ]);
+  assert.deepEqual(restoredTrackedPlayer.profileUrlLabels, ['ATP profile']);
+  assert.deepEqual(restoredOpponentPlayer.profileUrls, [
+    'https://itf.example.org/players/maya-rao',
+  ]);
+  assert.deepEqual(restoredOpponentPlayer.profileUrlLabels, ['ITF profile']);
+  assert.ok(restoredMatch);
+  assert.equal(restoredMatch.trackedPlayerId, restoredTrackedPlayer.id);
+  assert.equal(restoredMatch.opponentPlayerId, restoredOpponentPlayer.id);
+  assert.notEqual(restoredMatch.trackedPlayerId, restoredMatch.opponentPlayerId);
+  assert.equal(
+    await activeModules.localPlayers.getActiveLocalPlayerId(),
+    restoredTrackedPlayer.id,
+  );
+
+  const trackedHistory =
+    await activeModules.localMatches.listLocalPlayerMatchInsights(
+      restoredTrackedPlayer.id,
+      restoredRoster,
+    );
+  const opponentHistory =
+    await activeModules.localMatches.listLocalPlayerMatchInsights(
+      restoredOpponentPlayer.id,
+      restoredRoster,
+    );
+  assert.equal(trackedHistory.length, 1);
+  assert.equal(trackedHistory[0].match.id, match.id);
+  assert.equal(trackedHistory[0].playerSide, 'tracked');
+  assert.equal(trackedHistory[0].insights.pointCount, 2);
+  assert.equal(opponentHistory.length, 1);
+  assert.equal(opponentHistory[0].match.id, match.id);
+  assert.equal(opponentHistory[0].playerSide, 'opponent');
+  assert.equal(opponentHistory[0].insights.pointCount, 2);
+  assert.equal(networkRequestCount, 0);
+});
+
 test('backups written before match outcomes still restore offline', async () => {
   storageValues.clear();
   savedDeviceBackup = null;
