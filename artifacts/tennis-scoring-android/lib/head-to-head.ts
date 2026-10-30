@@ -3,6 +3,7 @@ import {
   SHOT_DIRECTION_OPTIONS,
   STROKE_TYPE_OPTIONS,
   type BreakPointStats,
+  type CourtSurface,
   type LocalContextInsight,
   type LocalInsights,
   type LocalMatchSummary,
@@ -22,6 +23,21 @@ export interface HeadToHeadMeeting {
   summary: LocalMatchSummary;
   insights: LocalInsights;
 }
+
+export type PersonalAverageCourtSurface = Exclude<CourtSurface, 'Other'>;
+
+export interface SurfaceBreakPointBaseline {
+  surface: PersonalAverageCourtSurface;
+  matchCount: number;
+  breakPoints: BreakPointStats;
+}
+
+export const PERSONAL_AVERAGE_COURT_SURFACES = [
+  'Hard',
+  'Clay',
+  'Grass',
+  'Carpet',
+] as const satisfies readonly PersonalAverageCourtSurface[];
 
 export interface HeadToHeadReport {
   trackedPlayer: string;
@@ -43,6 +59,7 @@ export interface HeadToHeadReport {
   personalAverageInsights: LocalInsights;
   personalAveragePerformance: PlayerPerformanceSummary;
   personalAverageMatches: number;
+  personalAverageBreakPointsBySurface: SurfaceBreakPointBaseline[];
 }
 
 function normalizeName(value: string): string {
@@ -284,6 +301,20 @@ export function buildHeadToHeadReport(
   const personalAverageInsights = aggregateLocalInsights(
     personalMeetings.map((meeting) => meeting.insights),
   );
+  const personalAverageBreakPointsBySurface =
+    PERSONAL_AVERAGE_COURT_SURFACES.map((surface) => {
+      const surfaceMeetings = personalMeetings.filter(
+        ({ summary }) => summary.surface === surface,
+      );
+      const surfaceInsights = aggregateLocalInsights(
+        surfaceMeetings.map((meeting) => meeting.insights),
+      );
+      return {
+        surface,
+        matchCount: surfaceMeetings.length,
+        breakPoints: surfaceInsights.breakPoints.tracked,
+      };
+    });
   const completeMeetings = meetings.filter(
     (meeting) => meeting.summary.status === 'complete',
   );
@@ -326,5 +357,6 @@ export function buildHeadToHeadReport(
       personalMeetings.length,
     ),
     personalAverageMatches: personalMeetings.length,
+    personalAverageBreakPointsBySurface,
   };
 }

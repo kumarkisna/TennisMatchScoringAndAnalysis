@@ -474,6 +474,14 @@ function reportRowsAfterHeading(html, heading) {
     .map((match) => match[1].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim());
 }
 
+function emptySurfaceBreakPointBaselines() {
+  return ['Hard', 'Clay', 'Grass', 'Carpet'].map((surface) => ({
+    surface,
+    matchCount: 0,
+    breakPoints: { ...emptyBreakPoints },
+  }));
+}
+
 function headToHeadReportFixture(insights, performance, matchesRecorded = 1) {
   return {
     trackedPlayer: 'Tracked',
@@ -495,6 +503,7 @@ function headToHeadReportFixture(insights, performance, matchesRecorded = 1) {
     personalAverageInsights: insights,
     personalAveragePerformance: performance,
     personalAverageMatches: matchesRecorded,
+    personalAverageBreakPointsBySurface: emptySurfaceBreakPointBaselines(),
   };
 }
 
@@ -655,6 +664,7 @@ function breakPointMeeting(
   trackedBreakPoints,
   opponentBreakPoints,
   matchDate,
+  surface = 'Hard',
 ) {
   const insights = {
     ...emptyInsight,
@@ -674,7 +684,7 @@ function breakPointMeeting(
       setNumber: 1,
       trackedPlayer,
       opponent,
-      surface: 'Hard',
+      surface,
       status: 'complete',
       syncStatus: 'local_only',
       pendingPointCount: 0,
@@ -764,6 +774,140 @@ test('head-to-head personal break-point averages pool each tracked-player match 
     'Break points saved 5/9 · 55.6%',
     'Break points lost while serving 4/9 · 44.4%',
   ]);
+});
+
+test('surface break-point averages pool chances and mark missing rates unavailable', () => {
+  const hardOne = breakPointMeeting(
+    'alex-bailey-hard',
+    'Alex',
+    'Bailey',
+    { opportunities: 4, converted: 2, faced: 5, saved: 3 },
+    { opportunities: 1, converted: 1, faced: 3, saved: 2 },
+    '2026-10-01',
+    'Hard',
+  );
+  const hardTwo = breakPointMeeting(
+    'alex-casey-hard',
+    'Alex',
+    'Casey',
+    { opportunities: 6, converted: 3, faced: 4, saved: 2 },
+    { opportunities: 2, converted: 1, faced: 3, saved: 2 },
+    '2026-10-02',
+    'Hard',
+  );
+  const clay = breakPointMeeting(
+    'alex-casey-clay',
+    'Alex',
+    'Casey',
+    { opportunities: 2, converted: 1, faced: 2, saved: 1 },
+    { opportunities: 1, converted: 0, faced: 2, saved: 1 },
+    '2026-10-03',
+    'Clay',
+  );
+  const grassWithoutChances = breakPointMeeting(
+    'alex-drew-grass',
+    'Alex',
+    'Drew',
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    '2026-10-04',
+    'Grass',
+  );
+  const carpet = breakPointMeeting(
+    'alex-ellis-carpet',
+    'Alex',
+    'Ellis',
+    { opportunities: 3, converted: 2, faced: 2, saved: 1 },
+    { opportunities: 0, converted: 0, faced: 1, saved: 0 },
+    '2026-10-05',
+    'Carpet',
+  );
+  const otherSurface = breakPointMeeting(
+    'alex-fox-other',
+    'Alex',
+    'Fox',
+    { opportunities: 9, converted: 8, faced: 8, saved: 4 },
+    { opportunities: 1, converted: 1, faced: 2, saved: 1 },
+    '2026-10-06',
+    'Other',
+  );
+  const reverseOriented = breakPointMeeting(
+    'bailey-alex-hard',
+    'Bailey',
+    'Alex',
+    { opportunities: 100, converted: 100, faced: 100, saved: 0 },
+    { opportunities: 100, converted: 0, faced: 100, saved: 0 },
+    '2026-10-07',
+    'Hard',
+  );
+
+  const report = buildHeadToHeadReport(
+    'Alex',
+    'Bailey',
+    [hardOne],
+    [
+      hardOne,
+      hardTwo,
+      clay,
+      grassWithoutChances,
+      carpet,
+      otherSurface,
+      reverseOriented,
+    ],
+  );
+
+  assert.equal(report.personalAverageMatches, 6);
+  assert.deepEqual(
+    report.personalAverageBreakPointsBySurface.map(
+      ({ surface, matchCount, breakPoints }) => ({
+        surface,
+        matchCount,
+        breakPoints,
+      }),
+    ),
+    [
+      {
+        surface: 'Hard',
+        matchCount: 2,
+        breakPoints: { opportunities: 10, converted: 5, faced: 9, saved: 5 },
+      },
+      {
+        surface: 'Clay',
+        matchCount: 1,
+        breakPoints: { opportunities: 2, converted: 1, faced: 2, saved: 1 },
+      },
+      {
+        surface: 'Grass',
+        matchCount: 1,
+        breakPoints: { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+      },
+      {
+        surface: 'Carpet',
+        matchCount: 1,
+        breakPoints: { opportunities: 3, converted: 2, faced: 2, saved: 1 },
+      },
+    ],
+  );
+
+  const html = buildHeadToHeadReportHtml(report);
+  assert.deepEqual(
+    reportRows(html, 'Personal break-point rates by court surface'),
+    [
+      'Matches included 2 1 1 1',
+      'Break points converted 5/10 · 50.0% 1/2 · 50.0% — 2/3 · 66.7%',
+      'Break points missed 5/10 · 50.0% 1/2 · 50.0% — 1/3 · 33.3%',
+      'Break points saved 5/9 · 55.6% 1/2 · 50.0% — 1/2 · 50.0%',
+      'Break points lost while serving 4/9 · 44.4% 1/2 · 50.0% — 1/2 · 50.0%',
+    ],
+  );
+  assert.match(
+    html,
+    /Each rate pools recorded chances from saved matches on that surface/,
+  );
+  assert.doesNotMatch(
+    buildHeadToHeadReportHtml(report, ['overview']),
+    /Personal break-point rates by court surface/,
+  );
 });
 
 test('head-to-head break-point rates are unavailable for empty samples', () => {
@@ -2139,6 +2283,7 @@ test('head-to-head report removes URL-like text and keeps names and statistics',
     personalAverageInsights: emptyInsight,
     personalAveragePerformance: emptyPerformance,
     personalAverageMatches: 1,
+    personalAverageBreakPointsBySurface: emptySurfaceBreakPointBaselines(),
   });
 
   assertCleanReport(html);
@@ -2198,6 +2343,7 @@ test('head-to-head reports compare selected local benchmarks without exposing pr
     personalAverageInsights: emptyInsight,
     personalAveragePerformance: emptyPerformance,
     personalAverageMatches: 1,
+    personalAverageBreakPointsBySurface: emptySurfaceBreakPointBaselines(),
   };
   const html = buildHeadToHeadReportHtml(report, undefined, {
     benchmarks: [
@@ -2455,6 +2601,7 @@ test('head-to-head PDF includes only selected analysis sections', () => {
       personalAverageInsights: emptyInsight,
       personalAveragePerformance: emptyPerformance,
       personalAverageMatches: 1,
+      personalAverageBreakPointsBySurface: emptySurfaceBreakPointBaselines(),
     },
     HEAD_TO_HEAD_REPORT_SECTION_PRESETS[1].sections,
   );
@@ -2506,6 +2653,7 @@ test('clearing all sections keeps match details without analysis sections', () =
       personalAverageInsights: emptyInsight,
       personalAveragePerformance: emptyPerformance,
       personalAverageMatches: 1,
+      personalAverageBreakPointsBySurface: emptySurfaceBreakPointBaselines(),
     },
     [],
   );

@@ -17,6 +17,7 @@ import { useLocalReportNameLabels } from '@/hooks/useLocalReportNameLabels';
 import { ReportAnonymityToggle } from '@/components/ReportAnonymityToggle';
 import { ReportSectionPicker } from '@/components/ReportSectionPicker';
 import {
+  type BreakPointStats,
   getLocalInsights,
   listLocalMatches,
   LOCAL_MATCH_LIST_KEY,
@@ -85,6 +86,32 @@ function rateValue(wins: number, attempts: number): RateValue {
         sample: `${wins}/${attempts}`,
       }
     : { value: '—', sample: 'No attempts recorded' };
+}
+
+function breakPointRateRows(
+  stats: BreakPointStats,
+): { label: string; value: RateValue }[] {
+  return [
+    {
+      label: 'Break points converted',
+      value: rateValue(stats.converted, stats.opportunities),
+    },
+    {
+      label: 'Break points missed',
+      value: rateValue(
+        stats.opportunities - stats.converted,
+        stats.opportunities,
+      ),
+    },
+    {
+      label: 'Break points saved',
+      value: rateValue(stats.saved, stats.faced),
+    },
+    {
+      label: 'Break points lost while serving',
+      value: rateValue(stats.faced - stats.saved, stats.faced),
+    },
+  ];
 }
 
 function unavailableValue(sample: string): RateValue {
@@ -301,6 +328,7 @@ export default function HeadToHeadScreen() {
   const insets = useSafeAreaInsets();
   const [trackedOverride, setTrackedOverride] = useState('');
   const [opponentOverride, setOpponentOverride] = useState('');
+  const [showSurfaceBreakPoints, setShowSurfaceBreakPoints] = useState(false);
   const [reportAction, setReportAction] = useState<'review' | 'share' | null>(null);
   const [reviewedVersion, setReviewedVersion] = useState('');
   const [reportError, setReportError] = useState('');
@@ -707,38 +735,13 @@ export default function HeadToHeadScreen() {
   const personalBreakPointStats =
     report?.personalAverageInsights.breakPoints.tracked;
   const personalBreakPointRows = personalBreakPointStats
-    ? [
-        {
-          label: 'Break points converted',
-          value: rateValue(
-            personalBreakPointStats.converted,
-            personalBreakPointStats.opportunities,
-          ),
-        },
-        {
-          label: 'Break points missed',
-          value: rateValue(
-            personalBreakPointStats.opportunities -
-              personalBreakPointStats.converted,
-            personalBreakPointStats.opportunities,
-          ),
-        },
-        {
-          label: 'Break points saved',
-          value: rateValue(
-            personalBreakPointStats.saved,
-            personalBreakPointStats.faced,
-          ),
-        },
-        {
-          label: 'Break points lost while serving',
-          value: rateValue(
-            personalBreakPointStats.faced - personalBreakPointStats.saved,
-            personalBreakPointStats.faced,
-          ),
-        },
-      ]
+    ? breakPointRateRows(personalBreakPointStats)
     : [];
+  const personalSurfaceBreakPointRows =
+    report?.personalAverageBreakPointsBySurface.map((surfaceBaseline) => ({
+      ...surfaceBaseline,
+      rows: breakPointRateRows(surfaceBaseline.breakPoints),
+    })) ?? [];
 
   async function previewReport() {
     if (
@@ -1106,6 +1109,131 @@ export default function HeadToHeadScreen() {
                   </View>
                 </View>
               ))}
+              <Pressable
+                testID="toggle-head-to-head-surface-break-points"
+                accessibilityRole="button"
+                accessibilityLabel={
+                  showSurfaceBreakPoints
+                    ? 'Hide surface break-point comparison'
+                    : 'Show surface break-point comparison'
+                }
+                accessibilityState={{ expanded: showSurfaceBreakPoints }}
+                onPress={() =>
+                  setShowSurfaceBreakPoints((current) => !current)
+                }
+                style={[
+                  styles.surfaceComparisonToggle,
+                  { borderTopColor: colors.border },
+                ]}
+              >
+                <View style={styles.surfaceComparisonCopy}>
+                  <Text
+                    style={[
+                      styles.surfaceComparisonTitle,
+                      { color: colors.foreground },
+                    ]}
+                  >
+                    Compare by court surface
+                  </Text>
+                  <Text
+                    style={[
+                      styles.surfaceComparisonSubtitle,
+                      { color: colors.mutedForeground },
+                    ]}
+                  >
+                    Hard · Clay · Grass · Carpet
+                  </Text>
+                </View>
+                <Ionicons
+                  name={showSurfaceBreakPoints ? 'chevron-up' : 'chevron-down'}
+                  size={16}
+                  color={colors.mutedForeground}
+                />
+              </Pressable>
+              {showSurfaceBreakPoints ? (
+                <View
+                  testID="head-to-head-surface-break-point-averages"
+                  style={styles.surfaceComparisonList}
+                >
+                  <Text
+                    style={[
+                      styles.sectionHint,
+                      { color: colors.mutedForeground },
+                    ]}
+                  >
+                    Rates pool recorded chances. Match counts include tracked-player matches on each surface; other surfaces are excluded.
+                  </Text>
+                  {personalSurfaceBreakPointRows.map(
+                    ({ surface, matchCount, rows }) => (
+                      <View
+                        key={surface}
+                        style={[
+                          styles.surfaceComparisonCard,
+                          {
+                            backgroundColor: colors.background,
+                            borderColor: colors.border,
+                          },
+                        ]}
+                      >
+                        <View style={styles.surfaceComparisonHeader}>
+                          <Text
+                            style={[
+                              styles.surfaceComparisonName,
+                              { color: colors.foreground },
+                            ]}
+                          >
+                            {surface}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.surfaceComparisonMatchCount,
+                              { color: colors.mutedForeground },
+                            ]}
+                          >
+                            {matchCount} {matchCount === 1 ? 'match' : 'matches'}
+                          </Text>
+                        </View>
+                        {rows.map(({ label, value }) => (
+                          <View
+                            key={label}
+                            style={[
+                              styles.surfaceRateRow,
+                              { borderTopColor: colors.border },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.surfaceRateLabel,
+                                { color: colors.foreground },
+                              ]}
+                            >
+                              {label}
+                            </Text>
+                            <View style={styles.surfaceRateValue}>
+                              <Text
+                                style={[
+                                  styles.surfaceRateText,
+                                  { color: colors.primary },
+                                ]}
+                              >
+                                {value.value}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.surfaceRateSample,
+                                  { color: colors.mutedForeground },
+                                ]}
+                              >
+                                {value.sample}
+                              </Text>
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+                    ),
+                  )}
+                </View>
+              ) : null}
             </View>
             <View
               testID="head-to-head-shot-tags"
@@ -1506,6 +1634,20 @@ const styles = StyleSheet.create({
   statValue: { fontFamily: 'DMSans_700Bold', fontSize: 11, fontVariant: ['tabular-nums'] },
   statSample: { textAlign: 'center', fontFamily: 'DMSans_400Regular', fontSize: 8, lineHeight: 11 },
   personalAverageRow: { borderTopWidth: StyleSheet.hairlineWidth, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  surfaceComparisonToggle: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 8, paddingTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  surfaceComparisonCopy: { flex: 1, gap: 3 },
+  surfaceComparisonTitle: { fontFamily: 'DMSans_700Bold', fontSize: 10 },
+  surfaceComparisonSubtitle: { fontFamily: 'DMSans_400Regular', fontSize: 8 },
+  surfaceComparisonList: { gap: 8, marginTop: 8 },
+  surfaceComparisonCard: { borderWidth: 1, borderRadius: 10, padding: 10 },
+  surfaceComparisonHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginBottom: 4 },
+  surfaceComparisonName: { fontFamily: 'Manrope_700Bold', fontSize: 12 },
+  surfaceComparisonMatchCount: { fontFamily: 'DMSans_500Medium', fontSize: 8 },
+  surfaceRateRow: { borderTopWidth: StyleSheet.hairlineWidth, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  surfaceRateLabel: { flex: 1, fontFamily: 'DMSans_500Medium', fontSize: 9, lineHeight: 13 },
+  surfaceRateValue: { alignItems: 'flex-end', gap: 1 },
+  surfaceRateText: { fontFamily: 'DMSans_700Bold', fontSize: 10, fontVariant: ['tabular-nums'] },
+  surfaceRateSample: { fontFamily: 'DMSans_400Regular', fontSize: 7, lineHeight: 10, textAlign: 'right' },
   personalAverageLabel: { flex: 1, fontFamily: 'DMSans_500Medium', fontSize: 10, lineHeight: 14 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 7 },
   countPill: { fontFamily: 'DMSans_700Bold', fontSize: 10 },

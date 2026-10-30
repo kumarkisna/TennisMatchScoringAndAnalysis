@@ -394,6 +394,41 @@ export function buildHeadToHeadReportHtml(
         </tr>`,
     )
     .join('');
+  const personalAverageSurfaces =
+    report.personalAverageBreakPointsBySurface;
+  const personalAverageSurfaceRows = tableRows([
+    [
+      'Matches included',
+      ...personalAverageSurfaces.map(({ matchCount }) => String(matchCount)),
+    ],
+    [
+      'Break points converted',
+      ...personalAverageSurfaces.map(({ breakPoints }) =>
+        rate(breakPoints.converted, breakPoints.opportunities),
+      ),
+    ],
+    [
+      'Break points missed',
+      ...personalAverageSurfaces.map(({ breakPoints }) =>
+        rate(
+          breakPoints.opportunities - breakPoints.converted,
+          breakPoints.opportunities,
+        ),
+      ),
+    ],
+    [
+      'Break points saved',
+      ...personalAverageSurfaces.map(({ breakPoints }) =>
+        rate(breakPoints.saved, breakPoints.faced),
+      ),
+    ],
+    [
+      'Break points lost while serving',
+      ...personalAverageSurfaces.map(({ breakPoints }) =>
+        rate(breakPoints.faced - breakPoints.saved, breakPoints.faced),
+      ),
+    ],
+  ]);
 
   const matchRows = report.meetings
     .map((meeting) => {
@@ -518,6 +553,10 @@ export function buildHeadToHeadReportHtml(
       .matches-table th:nth-child(2), .matches-table td:nth-child(2) { width: 21%; }
       .matches-table th:nth-child(3), .matches-table td:nth-child(3) { width: 46%; }
       .matches-table th:nth-child(4), .matches-table td:nth-child(4) { width: 15%; }
+      .surface-break-point-table th:first-child, .surface-break-point-table td:first-child { width: 28%; }
+      .surface-break-point-table th:not(:first-child), .surface-break-point-table td:not(:first-child) { text-align: center; }
+      .surface-break-point-table th { font-size: 7.5px; padding-left: 3px; padding-right: 3px; }
+      .surface-break-point-table td:not(:first-child) { white-space: nowrap; }
       @media print { html, body { margin: 0; } main { padding: 14mm; } }
     </style>
   </head>
@@ -563,6 +602,12 @@ export function buildHeadToHeadReportHtml(
       <h3>${escapeHtml(trackedPlayer)} · personal average</h3>
       <p class="note">Pooled break-point chances across ${report.personalAverageMatches} saved ${report.personalAverageMatches === 1 ? 'match' : 'matches'} where this player was recorded as the tracked player, including this pairing when present.</p>
       <table><thead><tr><th>Statistic</th><th>Personal average</th></tr></thead><tbody>${personalBreakPointRows}</tbody></table>
+      <h3>Personal break-point rates by court surface</h3>
+      <p class="note">Each rate pools recorded chances from saved matches on that surface. The match count is shown separately; surfaces recorded as Other are excluded. Rates are unavailable where no chances were recorded.</p>
+      <table class="surface-break-point-table">
+        <thead><tr><th>Statistic</th>${personalAverageSurfaces.map(({ surface }) => `<th>${escapeHtml(surface)}</th>`).join('')}</tr></thead>
+        <tbody>${personalAverageSurfaceRows}</tbody>
+      </table>
       ` : ''}
 
       ${includes('point-ending') ? `
