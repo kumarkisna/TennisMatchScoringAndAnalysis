@@ -1,44 +1,41 @@
-# [Project name]
+# TennisScoring Android
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+An offline-first Android app for recording tennis points and reviewing player development. Match and player records stay on the device.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- `pnpm --filter @workspace/tennis-scoring-android run dev` — start the Android preview
+- `pnpm --filter @workspace/tennis-scoring-android run typecheck` — typecheck the mobile app
+- `pnpm --filter @workspace/tennis-scoring-android run test:offline-persistence` — verify local storage and backup behavior
+- `pnpm --filter @workspace/tennis-scoring-android run test:reports` — verify report generation
+- `pnpm --filter @workspace/tennis-scoring-android run test:score-progress` — verify scoring logic
+- `pnpm --filter @workspace/tennis-scoring-android run test:match-ui` — verify match UI behavior
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Expo, React Native, Expo Router, and TypeScript
+- Local persistence: AsyncStorage
+- Reports and backups are generated and shared from the device
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/tennis-scoring-android` — Android app
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Scoring, player records, and analytics are local-only; the app does not use accounts, sync, or a remote database.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Record live tennis matches, save players locally, and review match and player reports offline.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Keep the Android app standalone and offline; do not add remote storage or authentication.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- The Replit Expo workflow is only for development preview; match data remains on-device.
 
 ## Pointers
 

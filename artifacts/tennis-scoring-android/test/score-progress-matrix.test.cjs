@@ -26,7 +26,8 @@ test('each standard-game point renders in chronological two-player lanes', () =>
   assert.match(regularMatrix, /\['tracked', 'opponent'\] as const\)\.map/);
   assert.match(regularMatrix, /matrix-game-\$\{gameNumber\}-lane-\$\{side\}/);
   assert.match(regularMatrix, /const progress = gameScoreProgress\[pointIndex\]/);
-  assert.match(regularMatrix, /point=\{gamePoints\[pointIndex\]\}/);
+  assert.match(regularMatrix, /const point = gamePoints\[pointIndex\]/);
+  assert.match(regularMatrix, /point=\{point\}/);
   assert.match(
     regularMatrix,
     /progress\.trackedScore\s*:\s*progress\.opponentScore/,

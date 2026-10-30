@@ -1,12 +1,4 @@
-modules = ["nodejs-24", "postgresql-16", "python-base-3.13"]
-
-[deployment]
-router = "application"
-deploymentTarget = "autoscale"
-
-[deployment.postBuild]
-args = ["pnpm", "store", "prune"]
-env = { "CI" = "true" }
+modules = ["nodejs-24"]
 
 [workflows]
 runButton = "Project"
@@ -21,3 +13,13 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
+
+[[ports]]
+localPort = 8081
+externalPort = 8081
+exposeLocalhost = true
+
+[[ports]]
+localPort = 21976
+externalPort = 80
+exposeLocalhost = true
