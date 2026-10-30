@@ -8,10 +8,46 @@ import {
   anonymizeReportPlayerNames,
   escapeReportHtml as escapeHtml,
 } from '@/lib/report-html-utils';
+import type { LocalReportBenchmarkPreset } from '@/lib/local-benchmarks';
 import {
   allHeadToHeadReportSections,
   type HeadToHeadReportSection,
 } from '@/lib/report-sections';
+
+type HeadToHeadBenchmarkMetrics = Pick<
+  LocalReportBenchmarkPreset,
+  'firstServePointsWon' | 'secondServePointsWon' | 'serviceGamesWon'
+>;
+
+type HeadToHeadBenchmarkRevision = HeadToHeadBenchmarkMetrics &
+  Pick<LocalReportBenchmarkPreset, 'id' | 'updatedAt'>;
+
+export function buildHeadToHeadReportReviewVersion(
+  reportVersion: string,
+  selectedSections: readonly HeadToHeadReportSection[],
+  benchmarks: readonly HeadToHeadBenchmarkRevision[],
+  reportLabelVersion: string,
+): string {
+  if (!reportVersion) return '';
+  const benchmarkVersion = JSON.stringify(
+    benchmarks.map(
+      ({
+        id,
+        updatedAt,
+        firstServePointsWon,
+        secondServePointsWon,
+        serviceGamesWon,
+      }) => ({
+        id,
+        updatedAt,
+        firstServePointsWon,
+        secondServePointsWon,
+        serviceGamesWon,
+      }),
+    ),
+  );
+  return `${reportVersion}:${selectedSections.join(',')}:${benchmarkVersion}:${reportLabelVersion}`;
+}
 
 function formatDate(value: string): string {
   const [year, month, day] = value.slice(0, 10).split('-').map(Number);
@@ -64,14 +100,14 @@ function matchResult(report: HeadToHeadReport, winner: 'tracked' | 'opponent' | 
 
 function tableRows(rows: readonly (readonly string[])[]): string {
   return rows
-    .map(
-      ([label, tracked, opponent]) => `
+    .map((row) => {
+      const [label, ...values] = row;
+      return `
         <tr>
           <td>${escapeHtml(label ?? '')}</td>
-          <td>${escapeHtml(tracked ?? '—')}</td>
-          <td>${escapeHtml(opponent ?? '—')}</td>
-        </tr>`,
-    )
+          ${values.map((value) => `<td>${escapeHtml(value ?? '—')}</td>`).join('')}
+        </tr>`;
+    })
     .join('');
 }
 
@@ -82,6 +118,7 @@ export function buildHeadToHeadReportHtml(
   options: {
     hidePlayerNames?: boolean;
     labels?: { trackedPlayer: string; opponent: string };
+    benchmarks?: readonly HeadToHeadBenchmarkMetrics[];
   } = {},
 ): string {
   const hidePlayerNames = options.hidePlayerNames ?? false;
@@ -130,47 +167,66 @@ export function buildHeadToHeadReportHtml(
   const opponentReturnGamesPlayed = insights.serviceGames.tracked.gamesPlayed;
   const opponentReturnGamesWon =
     opponentReturnGamesPlayed - insights.serviceGames.tracked.gamesWon;
+  const benchmarks = options.benchmarks ?? [];
+  const benchmarkHeaders = benchmarks
+    .map((_, index) => `<th>User reference ${index + 1}</th>`)
+    .join('');
+  const noBenchmarkValues = benchmarks.map(() => '—');
+  const benchmarkValues = (
+    key: keyof HeadToHeadBenchmarkMetrics,
+  ) =>
+    benchmarks.map((benchmark) =>
+      benchmark[key] === null ? '—' : `${benchmark[key]!.toFixed(1)}%`,
+    );
 
   const serveRows = tableRows([
     [
       'First serve in',
       rate(trackedServe.firstServePoints, trackedServe.servicePoints),
       rate(opponentServe.firstServePoints, opponentServe.servicePoints),
+      ...noBenchmarkValues,
     ],
     [
       'Second serve in',
       rate(trackedSecondServeIn, trackedServe.secondServePoints),
       rate(opponentSecondServeIn, opponentServe.secondServePoints),
+      ...noBenchmarkValues,
     ],
     [
       'First-serve points won',
       rate(trackedServe.firstServePointsWon, trackedServe.firstServePoints),
       rate(opponentServe.firstServePointsWon, opponentServe.firstServePoints),
+      ...benchmarkValues('firstServePointsWon'),
     ],
     [
       'Second-serve points won',
       rate(trackedServe.secondServePointsWon, trackedServe.secondServePoints),
       rate(opponentServe.secondServePointsWon, opponentServe.secondServePoints),
+      ...benchmarkValues('secondServePointsWon'),
     ],
     [
       'Service points won',
       rate(trackedServe.servicePointsWon, trackedServe.servicePoints),
       rate(opponentServe.servicePointsWon, opponentServe.servicePoints),
+      ...noBenchmarkValues,
     ],
     [
       'Service games won',
       rate(insights.serviceGames.tracked.gamesWon, insights.serviceGames.tracked.gamesPlayed),
       rate(insights.serviceGames.opponent.gamesWon, insights.serviceGames.opponent.gamesPlayed),
+      ...benchmarkValues('serviceGamesWon'),
     ],
     [
       'Aces tagged',
       `${trackedServe.aces} · ${trackedServe.servicePoints} service points`,
       `${opponentServe.aces} · ${opponentServe.servicePoints} service points`,
+      ...noBenchmarkValues,
     ],
     [
       'Double faults tagged',
       `${trackedServe.doubleFaults} · ${trackedServe.servicePoints} service points`,
       `${opponentServe.doubleFaults} · ${opponentServe.servicePoints} service points`,
+      ...noBenchmarkValues,
     ],
     [
       'Aces per service game',
@@ -184,11 +240,13 @@ export function buildHeadToHeadReportHtml(
         insights.serviceGames.opponent.gamesPlayed,
         'service games',
       ),
+      ...noBenchmarkValues,
     ],
     [
       'Aces per set',
       averageAces(trackedServe.aces, recordedSetCount, 'sets with points'),
       averageAces(opponentServe.aces, recordedSetCount, 'sets with points'),
+      ...noBenchmarkValues,
     ],
     [
       'Aces per match',
@@ -202,6 +260,7 @@ export function buildHeadToHeadReportHtml(
         insights.pointCount > 0 ? report.matchesRecorded : 0,
         'matches',
       ),
+      ...noBenchmarkValues,
     ],
   ]);
 
@@ -481,7 +540,7 @@ export function buildHeadToHeadReportHtml(
 
       ${includes('serve') ? `
       <h2>Serve</h2>
-      <table><thead><tr><th>Statistic</th><th>${escapeHtml(trackedPlayer)}</th><th>${escapeHtml(opponent)}</th></tr></thead><tbody>${serveRows}</tbody></table>
+      <table><thead><tr><th>Statistic</th><th>${escapeHtml(trackedPlayer)}</th><th>${escapeHtml(opponent)}</th>${benchmarkHeaders}</tr></thead><tbody>${serveRows}</tbody></table>
       ` : ''}
       ${includes('return-points') ? `
       <h2>Return and points</h2>

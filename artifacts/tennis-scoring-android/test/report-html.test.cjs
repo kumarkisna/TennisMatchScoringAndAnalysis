@@ -65,7 +65,10 @@ playerReportExports = require('../lib/player-report-html.ts');
 playerInsightsExports = require('../lib/player-insights.ts');
 headToHeadExports = require('../lib/head-to-head.ts');
 const { buildPlayerReportHtml } = playerReportExports;
-const { buildHeadToHeadReportHtml } = require('../lib/head-to-head-report-html.ts');
+const {
+  buildHeadToHeadReportHtml,
+  buildHeadToHeadReportReviewVersion,
+} = require('../lib/head-to-head-report-html.ts');
 const { summarizePlayerPerformance } = playerInsightsExports;
 const { buildHeadToHeadReport } = headToHeadExports;
 Module._load = originalLoad;
@@ -1435,6 +1438,110 @@ test('head-to-head report removes URL-like text and keeps names and statistics',
   assert.match(html, />Return and points</);
   assert.match(html, /HEAD-TO-HEAD · MATCH ANALYSIS/);
   assert.doesNotMatch(html, /TENNISSCORING|LOCAL MATCH ANALYSIS/i);
+});
+
+test('head-to-head reports compare selected local benchmarks without exposing preset names', () => {
+  const report = {
+    trackedPlayer: 'Alex',
+    opponent: 'Jordan',
+    meetings: [],
+    matchesRecorded: 1,
+    completedMatches: 1,
+    matchesWon: 1,
+    matchesLost: 0,
+    completedMatchesWithoutWinner: 0,
+    matchesInProgress: 0,
+    setsRecorded: 1,
+    completedSets: 1,
+    setsWon: 1,
+    setsLost: 0,
+    completedSetsWithoutWinner: 0,
+    insights: emptyInsight,
+    performance: emptyPerformance,
+    personalAverageInsights: emptyInsight,
+    personalAveragePerformance: emptyPerformance,
+    personalAverageMatches: 1,
+  };
+  const html = buildHeadToHeadReportHtml(report, undefined, {
+    benchmarks: [
+      {
+        id: 'reference-one',
+        name: 'Private season label',
+        updatedAt: '2026-10-30T10:00:00.000Z',
+        firstServePointsWon: 75.1,
+        secondServePointsWon: 56.4,
+        serviceGamesWon: 86.8,
+      },
+      {
+        id: 'reference-two',
+        name: 'Private event label',
+        updatedAt: '2026-10-30T10:00:00.000Z',
+        firstServePointsWon: 79.2,
+        secondServePointsWon: null,
+        serviceGamesWon: 94.3,
+      },
+    ],
+  });
+
+  assert.match(html, /User reference 1/);
+  assert.match(html, /User reference 2/);
+  assert.match(
+    html,
+    /<td>First-serve points won<\/td>.*?<td>75\.1%<\/td><td>79\.2%<\/td>/s,
+  );
+  assert.match(
+    html,
+    /<td>Second-serve points won<\/td>.*?<td>56\.4%<\/td><td>—<\/td>/s,
+  );
+  assert.match(
+    html,
+    /<td>Service games won<\/td>.*?<td>86\.8%<\/td><td>94\.3%<\/td>/s,
+  );
+  assert.doesNotMatch(html, /Private season label|Private event label/);
+});
+
+test('selected benchmark edits and selection changes invalidate reviewed head-to-head reports', () => {
+  const selected = {
+    id: 'local-season',
+    updatedAt: '2026-10-30T10:00:00.000Z',
+    firstServePointsWon: 75.1,
+    secondServePointsWon: 56.4,
+    serviceGamesWon: 86.8,
+  };
+  const reviewed = buildHeadToHeadReportReviewVersion(
+    'match-1:2026-10-30',
+    ['serve'],
+    [selected],
+    'named',
+  );
+
+  assert.notEqual(
+    buildHeadToHeadReportReviewVersion(
+      'match-1:2026-10-30',
+      ['serve'],
+      [{ ...selected, updatedAt: '2026-10-30T10:01:00.000Z' }],
+      'named',
+    ),
+    reviewed,
+  );
+  assert.notEqual(
+    buildHeadToHeadReportReviewVersion(
+      'match-1:2026-10-30',
+      ['serve'],
+      [{ ...selected, firstServePointsWon: 77 }],
+      'named',
+    ),
+    reviewed,
+  );
+  assert.notEqual(
+    buildHeadToHeadReportReviewVersion(
+      'match-1:2026-10-30',
+      ['serve'],
+      [],
+      'named',
+    ),
+    reviewed,
+  );
 });
 
 test('anonymized single-match reports replace names in headings and match notes', () => {

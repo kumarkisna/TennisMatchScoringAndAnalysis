@@ -36,9 +36,16 @@ import {
   type HeadToHeadMeeting,
   type HeadToHeadReport,
 } from '@/lib/head-to-head';
-import { buildHeadToHeadReportHtml } from '@/lib/head-to-head-report-html';
+import {
+  buildHeadToHeadReportHtml,
+  buildHeadToHeadReportReviewVersion,
+} from '@/lib/head-to-head-report-html';
 import { POINT_CODE_LABELS } from '@/lib/player-report-html';
 import type { ContextPerformanceInsight } from '@/lib/player-insights';
+import {
+  getLocalReportBenchmarkSettings,
+  LOCAL_REPORT_BENCHMARKS_KEY,
+} from '@/lib/local-benchmarks';
 import {
   allHeadToHeadReportSections,
   HEAD_TO_HEAD_REPORT_SECTIONS,
@@ -308,8 +315,20 @@ export default function HeadToHeadScreen() {
     queryKey: ACTIVE_LOCAL_PLAYER_KEY,
     queryFn: getActiveLocalPlayerId,
   });
+  const reportBenchmarksQuery = useQuery({
+    queryKey: LOCAL_REPORT_BENCHMARKS_KEY,
+    queryFn: getLocalReportBenchmarkSettings,
+  });
 
   const matches = matchesQuery.data ?? [];
+  const selectedReportBenchmarks = reportBenchmarksQuery.data
+    ? reportBenchmarksQuery.data.selectedPresetIds.flatMap((id) => {
+        const preset = reportBenchmarksQuery.data?.presets.find(
+          (item) => item.id === id,
+        );
+        return preset ? [preset] : [];
+      })
+    : [];
   const activePlayer = playersQuery.data?.find(
     (player) => player.id === activePlayerQuery.data,
   );
@@ -384,15 +403,25 @@ export default function HeadToHeadScreen() {
   const reportLabelVersion = hidePlayerNames
     ? JSON.stringify(reportNameLabels.labels)
     : 'named';
-  const reportReviewVersion = reportVersion
-    ? `${reportVersion}:${selectedReportSections.join(',')}:${reportLabelVersion}`
-    : '';
+  const reportReviewVersion = buildHeadToHeadReportReviewVersion(
+    reportVersion,
+    selectedReportSections,
+    selectedReportBenchmarks,
+    reportLabelVersion,
+  );
+  const reportBenchmarksReady =
+    Boolean(reportBenchmarksQuery.data) &&
+    !reportBenchmarksQuery.isFetching &&
+    !reportBenchmarksQuery.isError;
   const hasReviewedReport =
-    Boolean(reportReviewVersion) && reviewedVersion === reportReviewVersion;
-  const reportHtml = report
+    Boolean(reportReviewVersion) &&
+    reportBenchmarksReady &&
+    reviewedVersion === reportReviewVersion;
+  const reportHtml = report && reportBenchmarksQuery.data
     ? buildHeadToHeadReportHtml(report, selectedReportSections, {
         hidePlayerNames,
         labels: reportNameLabels.labels,
+        benchmarks: selectedReportBenchmarks,
       })
     : null;
   const isReportBusy = reportAction !== null;
@@ -710,6 +739,7 @@ export default function HeadToHeadScreen() {
     if (
       !reportHtml ||
       !reportReviewVersion ||
+      !reportBenchmarksReady ||
       !reportLabelsReady ||
       isReportBusy
     ) {
@@ -734,6 +764,7 @@ export default function HeadToHeadScreen() {
     if (
       !reportHtml ||
       !hasReviewedReport ||
+      !reportBenchmarksReady ||
       isReportBusy ||
       Platform.OS === 'web'
     ) {
@@ -1269,6 +1300,34 @@ export default function HeadToHeadScreen() {
                 </Text>
               </View>
             ) : null}
+            {reportBenchmarksQuery.isError ? (
+              <View
+                accessibilityRole="alert"
+                style={[
+                  styles.errorBanner,
+                  { borderColor: colors.destructive },
+                ]}
+              >
+                <Ionicons
+                  name="alert-circle-outline"
+                  size={16}
+                  color={colors.destructive}
+                />
+                <Text style={[styles.errorText, { color: colors.destructive }]}>
+                  Could not read the saved report benchmarks from this device.
+                </Text>
+                <Pressable
+                  testID="button-retry-head-to-head-benchmarks"
+                  accessibilityRole="button"
+                  accessibilityLabel="Retry loading saved report benchmarks"
+                  onPress={() => void reportBenchmarksQuery.refetch()}
+                >
+                  <Text style={[styles.errorText, { color: colors.primary }]}>
+                    Retry
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
             {Platform.OS === 'web' ? (
               <Text style={[styles.pdfUnavailable, { color: colors.mutedForeground }]}>
                 PDF review and export are available in the Android app.
@@ -1279,7 +1338,12 @@ export default function HeadToHeadScreen() {
                   testID="button-review-head-to-head-pdf"
                   accessibilityRole="button"
                   accessibilityLabel="Review and save head-to-head report as PDF"
-                  disabled={isReportBusy || !reportHtml || !reportLabelsReady}
+                  disabled={
+                    isReportBusy ||
+                    !reportHtml ||
+                    !reportLabelsReady ||
+                    !reportBenchmarksReady
+                  }
                   onPress={() => void previewReport()}
                   style={[
                     styles.reviewButton,
@@ -1287,7 +1351,12 @@ export default function HeadToHeadScreen() {
                       backgroundColor: colors.secondary,
                       borderRadius: colors.radius,
                       opacity:
-                        isReportBusy || !reportHtml || !reportLabelsReady ? 0.5 : 1,
+                        isReportBusy ||
+                        !reportHtml ||
+                        !reportLabelsReady ||
+                        !reportBenchmarksReady
+                          ? 0.5
+                          : 1,
                     },
                   ]}
                 >
