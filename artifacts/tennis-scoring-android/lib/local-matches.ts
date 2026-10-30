@@ -56,6 +56,30 @@ export const EMPTY_LOCAL_SET_REVIEW: LocalSetReview = {
   mentalNote: '',
 };
 
+export const LOCAL_MATCH_NOTE_PROMPTS = [
+  { id: 'worked', label: 'What worked?', starter: 'What worked: ' },
+  { id: 'changed', label: 'What changed?', starter: 'What changed: ' },
+  { id: 'opponent', label: 'Opponent pattern', starter: 'Opponent pattern: ' },
+  {
+    id: 'next-match',
+    label: 'Next-match adjustment',
+    starter: 'Next-match adjustment: ',
+  },
+] as const;
+
+export function appendLocalNotePrompt(
+  note: string,
+  starter: string,
+  maxLength = Number.POSITIVE_INFINITY,
+  separator = '\n',
+): string {
+  if (!starter) return note;
+  const nextValue = note
+    ? `${note}${note.endsWith(separator) ? '' : separator}${starter}`
+    : starter;
+  return nextValue.length <= maxLength ? nextValue : note;
+}
+
 export const SHOT_DIRECTION_OPTIONS = [
   { value: 'cross_court', label: 'Cross-court' },
   { value: 'down_the_line', label: 'Down the line' },

@@ -34,6 +34,8 @@ import {
   getLocalPointHistory,
   getLocalSetHistory,
   LOCAL_MATCH_LIST_KEY,
+  LOCAL_MATCH_NOTE_PROMPTS,
+  appendLocalNotePrompt,
   addLocalSet,
   clearLocalMatchOutcome,
   updateLocalGameNote,
@@ -106,6 +108,62 @@ type NoteEditorTarget =
     };
 
 const courtSurfaces: CourtSurface[] = ['Hard', 'Clay', 'Grass', 'Carpet', 'Other'];
+
+function NotePromptChips({
+  scope,
+  value,
+  onChangeText,
+  maxLength,
+}: {
+  scope: 'point' | 'editor';
+  value: string;
+  onChangeText: (value: string) => void;
+  maxLength: number;
+}) {
+  const colors = useColors();
+  return (
+    <View style={styles.notePromptGroup}>
+      <Text style={[styles.notePromptLabel, { color: colors.mutedForeground }]}>
+        OPTIONAL PROMPTS
+      </Text>
+      <View style={styles.notePromptWrap}>
+        {LOCAL_MATCH_NOTE_PROMPTS.map((prompt) => {
+          const nextValue = appendLocalNotePrompt(
+            value,
+            prompt.starter,
+            maxLength,
+            scope === 'point' ? ' · ' : '\n',
+          );
+          const disabled = nextValue === value;
+          return (
+            <Pressable
+              key={prompt.id}
+              testID={`note-prompt-${scope}-${prompt.id}`}
+              accessibilityRole="button"
+              accessibilityLabel={`Add note starter: ${prompt.label}`}
+              accessibilityHint="Adds an editable starter phrase to this note."
+              disabled={disabled}
+              onPress={() => onChangeText(nextValue)}
+              style={[
+                styles.notePromptChip,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                  borderRadius: colors.radius,
+                  opacity: disabled ? 0.45 : 1,
+                },
+              ]}
+            >
+              <Text style={[styles.notePromptText, { color: colors.foreground }]}>
+                {prompt.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
 
 function MatchDetailsField({
   label,
@@ -580,6 +638,10 @@ export default function MatchScreen() {
     Number.isInteger(customTarget) &&
     customTarget >= 1 &&
     customTarget <= 99;
+  const noteEditorMaxLength =
+    noteEditorTarget?.kind === 'game' || noteEditorTarget?.kind === 'stroke'
+      ? 500
+      : 1000;
   const performance = insightsQuery.data
     ? summarizePlayerPerformance(insightsQuery.data)
     : null;
@@ -1228,6 +1290,7 @@ export default function MatchScreen() {
       edges={['top', 'left', 'right']}
     >
       <ScrollView
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={[
           styles.content,
           { paddingBottom: Math.max(insets.bottom, 20) + 30 },
@@ -2027,6 +2090,12 @@ export default function MatchScreen() {
                       backgroundColor: colors.card,
                     },
                   ]}
+                />
+                <NotePromptChips
+                  scope="point"
+                  value={strokeNoteDraft}
+                  onChangeText={setStrokeNoteDraft}
+                  maxLength={200}
                 />
                 <Pressable
                   testID="button-stage-stroke"
@@ -3411,22 +3480,23 @@ export default function MatchScreen() {
           <KeyboardAwareScrollViewCompat
             contentContainerStyle={styles.editModalContent}
             bottomOffset={24}
+            keyboardShouldPersistTaps="handled"
           >
             <Text style={[styles.editModalNote, { color: colors.mutedForeground }]}>
               Notes are saved on this device and can be changed later.
             </Text>
+            <NotePromptChips
+              scope="editor"
+              value={noteEditorDraft}
+              onChangeText={setNoteEditorDraft}
+              maxLength={noteEditorMaxLength}
+            />
             <TextInput
               testID="note-editor-input"
               accessibilityLabel="Match observation note"
               autoFocus
               multiline
-              maxLength={
-                noteEditorTarget?.kind === 'game'
-                  ? 500
-                  : noteEditorTarget?.kind === 'stroke'
-                    ? 500
-                    : 1000
-              }
+              maxLength={noteEditorMaxLength}
               value={noteEditorDraft}
               onChangeText={setNoteEditorDraft}
               placeholder="Write an observation"
@@ -3785,6 +3855,11 @@ const styles = StyleSheet.create({
   editModalTitle: { fontFamily: 'Manrope_700Bold', fontSize: 17 },
   editModalContent: { paddingHorizontal: 18, paddingTop: 17, gap: 16 },
   editModalNote: { fontFamily: 'DMSans_400Regular', fontSize: 12, lineHeight: 18, marginBottom: 1 },
+  notePromptGroup: { gap: 5 },
+  notePromptLabel: { fontFamily: 'DMSans_700Bold', fontSize: 7, letterSpacing: 0.8 },
+  notePromptWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  notePromptChip: { minHeight: 32, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 6, justifyContent: 'center' },
+  notePromptText: { fontFamily: 'DMSans_500Medium', fontSize: 8 },
   editField: { gap: 7 },
   editFieldLabel: { fontFamily: 'DMSans_700Bold', fontSize: 9, letterSpacing: 1.1 },
   editInput: { minHeight: 48, borderWidth: 1, paddingHorizontal: 12, fontFamily: 'DMSans_400Regular', fontSize: 14 },

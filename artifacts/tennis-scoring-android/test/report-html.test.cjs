@@ -128,6 +128,7 @@ const localReportLayoutManagerSource = fs.readFileSync(
   'utf8',
 );
 const {
+  appendLocalNotePrompt,
   calculateBreakPointStats,
   calculateLocalInsights,
   createLocalMatch,
@@ -137,6 +138,7 @@ const {
   getLocalMatch,
   getBreakPointPointOutcomes,
   getLocalPointHistory,
+  LOCAL_MATCH_NOTE_PROMPTS,
   listLocalMatches,
   recordLocalPoint,
   undoLocalPoint,
@@ -3524,4 +3526,31 @@ test('match notes become contextual, evidence-linked post-match feedback', () =>
 test('matches without recorded notes have no invented note themes', () => {
   const insights = calculateLocalInsights(performanceSampleMatch());
   assert.deepEqual(summarizeMatchNotes(insights), []);
+});
+
+test('note prompt starters append to editable text without replacing it', () => {
+  assert.deepEqual(
+    LOCAL_MATCH_NOTE_PROMPTS.map((prompt) => prompt.label),
+    [
+      'What worked?',
+      'What changed?',
+      'Opponent pattern',
+      'Next-match adjustment',
+    ],
+  );
+  const worked = LOCAL_MATCH_NOTE_PROMPTS[0].starter;
+  assert.equal(appendLocalNotePrompt('', worked), worked);
+  assert.equal(
+    appendLocalNotePrompt('Observed a wide return', worked),
+    `Observed a wide return\n${worked}`,
+  );
+  assert.equal(
+    appendLocalNotePrompt('First note\n', worked),
+    `First note\n${worked}`,
+  );
+  assert.equal(
+    appendLocalNotePrompt('Point note', worked, 200, ' · '),
+    `Point note · ${worked}`,
+  );
+  assert.equal(appendLocalNotePrompt('Already full', worked, 8), 'Already full');
 });

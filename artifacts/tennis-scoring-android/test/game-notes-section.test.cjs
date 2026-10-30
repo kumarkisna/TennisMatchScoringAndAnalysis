@@ -58,3 +58,20 @@ test('expanding reveals editable game-note rows and collapsing hides them', () =
     ),
   );
 });
+
+test('point, game, and set note editors offer optional editable prompts', () => {
+  assert.match(
+    matchScreen,
+    /<NotePromptChips(?=[^>]*scope="point")(?=[^>]*value=\{strokeNoteDraft\})(?=[^>]*onChangeText=\{setStrokeNoteDraft\})(?=[^>]*maxLength=\{200\})[^>]*\/>/,
+  );
+  assert.match(
+    matchScreen,
+    /<NotePromptChips(?=[^>]*scope="editor")(?=[^>]*value=\{noteEditorDraft\})(?=[^>]*onChangeText=\{setNoteEditorDraft\})(?=[^>]*maxLength=\{noteEditorMaxLength\})[^>]*\/>/,
+  );
+  assert.ok(matchScreen.includes('OPTIONAL PROMPTS'));
+  assert.ok(matchScreen.includes('accessibilityHint="Adds an editable starter phrase to this note."'));
+  assert.ok(matchScreen.includes('onPress={() => openGameNoteEditor(viewedSet.setNumber, gameNumber)}'));
+  assert.ok(matchScreen.includes('openStrokeNoteEditor(viewedSet.setNumber, option.value)'));
+  assert.ok(matchScreen.includes('openObservationEditor(viewedSet.setNumber, field, value)'));
+  assert.ok(matchScreen.includes('keyboardShouldPersistTaps="handled"'));
+});
