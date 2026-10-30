@@ -5,6 +5,28 @@ const path = require('node:path');
 const test = require('node:test');
 const ts = require('typescript');
 
+const storageValues = new Map();
+const asyncStorage = {
+  async getItem(key) {
+    return storageValues.has(key) ? storageValues.get(key) : null;
+  },
+  async setItem(key, value) {
+    storageValues.set(key, String(value));
+  },
+  async removeItem(key) {
+    storageValues.delete(key);
+  },
+  async multiSet(entries) {
+    for (const [key, value] of entries) storageValues.set(key, String(value));
+  },
+  async multiGet(keys) {
+    return keys.map((key) => [
+      key,
+      storageValues.has(key) ? storageValues.get(key) : null,
+    ]);
+  },
+};
+
 const strokeOptions = [
   { value: 'first_serve', label: 'First serve' },
 ];
@@ -19,7 +41,7 @@ Module._load = function (request, parent, isMain) {
     return localMatchExports ?? { STROKE_TYPE_OPTIONS: strokeOptions };
   }
   if (request === '@react-native-async-storage/async-storage') {
-    return { __esModule: true, default: {} };
+    return { __esModule: true, default: asyncStorage, ...asyncStorage };
   }
   if (request === '@/lib/head-to-head') {
     return headToHeadExports ?? { getSetWinner: () => null };
@@ -76,8 +98,14 @@ const { createAndPreviewLocalPdf } = require('../lib/report-pdf.ts');
 const {
   calculateBreakPointStats,
   calculateLocalInsights,
+  createLocalMatch,
+  editLocalPointWinner,
+  getLocalMatch,
   getBreakPointPointOutcomes,
   getLocalPointHistory,
+  listLocalMatches,
+  recordLocalPoint,
+  undoLocalPoint,
 } = localMatchExports;
 const {
   allHeadToHeadReportSections,
@@ -468,6 +496,156 @@ function headToHeadReportFixture(insights, performance, matchesRecorded = 1) {
   };
 }
 
+async function createSavedPointReportFixture() {
+  const match = await createLocalMatch({
+    matchDate: '2026-10-30',
+    event: 'Saved-point report check',
+    round: 'Final',
+    trackedPlayer: 'Tracked',
+    opponent: 'Opponent',
+    chairCoach: null,
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+  const inputs = [
+    { winner: 'opponent' },
+    { winner: 'tracked', endingCode: 'A' },
+    { winner: 'tracked', endingCode: 'F' },
+    { winner: 'opponent', endingCode: 'N' },
+    { winner: 'opponent', firstServeFault: true },
+    { winner: 'opponent' },
+    { winner: 'tracked' },
+    { winner: 'opponent' },
+    { winner: 'tracked' },
+    { winner: 'opponent' },
+    { winner: 'tracked', firstServeFault: true },
+    { winner: 'opponent' },
+    { winner: 'opponent', endingCode: 'A' },
+    { winner: 'opponent' },
+  ];
+
+  let savedMatch = match;
+  for (const input of inputs) {
+    savedMatch = await recordLocalPoint(match.id, input);
+  }
+
+  return {
+    matchId: match.id,
+    rallyPointId: savedMatch.points[2].id,
+    errorPointId: savedMatch.points[3].id,
+  };
+}
+
+async function buildSavedPointReportSnapshot(matchId) {
+  const match = await getLocalMatch(matchId);
+  assert.ok(match, 'Expected the corrected match to remain saved locally');
+  const insights = calculateLocalInsights(match);
+  const performance = summarizePlayerPerformance(insights, 1);
+  const playerHtml = buildPlayerReportHtml(match, insights, performance);
+  const summary = (await listLocalMatches()).find(({ id }) => id === matchId);
+  assert.ok(summary, 'Expected a match-book entry for the saved match');
+  const meeting = { summary, insights };
+  const headToHeadReport = buildHeadToHeadReport(
+    match.trackedPlayer,
+    match.opponent,
+    [meeting],
+  );
+
+  return {
+    insights,
+    performance,
+    playerHtml,
+    headToHeadHtml: buildHeadToHeadReportHtml(headToHeadReport),
+  };
+}
+
+function assertServeMetricInBothReports(
+  snapshot,
+  label,
+  playerValue,
+  headToHeadValue = playerValue,
+  playerOpponentValue,
+  headToHeadOpponentValue = playerOpponentValue,
+) {
+  for (const [html, expected, expectedOpponent] of [
+    [snapshot.playerHtml, playerValue, playerOpponentValue],
+    [snapshot.headToHeadHtml, headToHeadValue, headToHeadOpponentValue],
+  ]) {
+    const row = reportRowsAfterHeading(html, 'Serve').find((item) =>
+      item.startsWith(label),
+    );
+    assert.ok(row, `Missing ${label} row`);
+    assert.ok(
+      row.startsWith(`${label} ${expected}`),
+      `Expected ${label} to begin with "${expected}", received "${row}"`,
+    );
+    if (expectedOpponent !== undefined) {
+      assert.ok(
+        row.endsWith(expectedOpponent),
+        `Expected ${label} to end with "${expectedOpponent}", received "${row}"`,
+      );
+    }
+  }
+}
+
+function assertPointAnalysisInBothReports(
+  snapshot,
+  {
+    rallyTile,
+    rallyTracked,
+    rallyOpponent,
+    errorTile,
+    errorTracked,
+    errorOpponent,
+    pointCount,
+  },
+) {
+  const rallyTileStart = snapshot.playerHtml.indexOf('RALLY SHOT WINNERS');
+  const errorTileStart = snapshot.playerHtml.indexOf('UNFORCED ERRORS');
+  assert.notEqual(rallyTileStart, -1, 'Missing player rally-winner tile');
+  assert.notEqual(errorTileStart, -1, 'Missing player unforced-error tile');
+  assert.ok(
+    snapshot.playerHtml
+      .slice(rallyTileStart, rallyTileStart + 300)
+      .includes(`<div class="tile-value">${rallyTile}</div>`),
+    `Unexpected player rally-winner tile: ${rallyTile}`,
+  );
+  assert.ok(
+    snapshot.playerHtml
+      .slice(errorTileStart, errorTileStart + 300)
+      .includes(`<div class="tile-value">${errorTile}</div>`),
+    `Unexpected player unforced-error tile: ${errorTile}`,
+  );
+
+  const pointRows = reportRowsAfterHeading(
+    snapshot.headToHeadHtml,
+    'Return and points',
+  );
+  const rallyRow = pointRows.find((row) =>
+    row.startsWith('Rally-shot winner points'),
+  );
+  const errorRow = pointRows.find((row) => row.startsWith('Unforced errors'));
+  assert.ok(rallyRow, 'Missing head-to-head rally-winner row');
+  assert.ok(errorRow, 'Missing head-to-head unforced-error row');
+  assert.ok(
+    rallyRow.startsWith(
+      `Rally-shot winner points ${rallyTracked} ${rallyOpponent}`,
+    ),
+    `Unexpected head-to-head rally-winner row: ${rallyRow}`,
+  );
+  assert.ok(
+    errorRow.startsWith(
+      `Unforced errors ${errorTracked} ${errorOpponent}`,
+    ),
+    `Unexpected head-to-head unforced-error row: ${errorRow}`,
+  );
+
+  if (pointCount !== undefined) {
+    assert.equal(snapshot.insights.pointCount, pointCount);
+  }
+}
+
 function breakPointMeeting(
   id,
   trackedPlayer,
@@ -727,6 +905,301 @@ test('player statistics match a deterministic four-game point log', () => {
     headToHeadHtml,
     /Unforced errors<\/td>\s*<td>2 · 24 recorded points<\/td>\s*<td>1 · 24 recorded points<\/td>/,
   );
+});
+
+test('saved-point corrections and undo refresh match and head-to-head report stats', async () => {
+  storageValues.clear();
+  const { matchId, rallyPointId, errorPointId } =
+    await createSavedPointReportFixture();
+
+  const initial = await buildSavedPointReportSnapshot(matchId);
+  assertServeMetricInBothReports(
+    initial,
+    'First serve in',
+    '5/6 (83.3%)',
+    '5/6 · 83.3%',
+    '7/8 (87.5%)',
+    '7/8 · 87.5%',
+  );
+  assertServeMetricInBothReports(
+    initial,
+    'Second serve in',
+    '1/1 (100.0%)',
+    '1/1 · 100.0%',
+    '1/1 (100.0%)',
+    '1/1 · 100.0%',
+  );
+  for (const label of [
+    'Aces per service game',
+    'Aces per set',
+    'Aces per match',
+  ]) {
+    const unit =
+      label === 'Aces per service game'
+        ? 'service games'
+        : label === 'Aces per set'
+          ? 'sets with points'
+          : 'match';
+    assertServeMetricInBothReports(
+      initial,
+      label,
+      '1.00',
+      '1.00',
+      `1.00 (1 aces / 1 ${unit})`,
+      `1.00 (1 aces / 1 ${label === 'Aces per match' ? 'matches' : unit})`,
+    );
+  }
+  assertPointAnalysisInBothReports(initial, {
+    rallyTile: '1/14 (7.1%)',
+    rallyTracked: '1/14 · 7.1%',
+    rallyOpponent: '0/14 · 0.0%',
+    errorTile: '1',
+    errorTracked: '1 · 14 recorded points',
+    errorOpponent: '0 · 14 recorded points',
+    pointCount: 14,
+  });
+
+  await editLocalPointWinner(matchId, 1, rallyPointId, 'opponent');
+  const afterRallyCorrection = await buildSavedPointReportSnapshot(matchId);
+  assertServeMetricInBothReports(
+    afterRallyCorrection,
+    'First serve in',
+    '5/6 (83.3%)',
+    '5/6 · 83.3%',
+    '7/8 (87.5%)',
+    '7/8 · 87.5%',
+  );
+  assertServeMetricInBothReports(
+    afterRallyCorrection,
+    'Second serve in',
+    '1/1 (100.0%)',
+    '1/1 · 100.0%',
+    '1/1 (100.0%)',
+    '1/1 · 100.0%',
+  );
+  for (const label of [
+    'Aces per service game',
+    'Aces per set',
+    'Aces per match',
+  ]) {
+    const unit =
+      label === 'Aces per service game'
+        ? 'service games'
+        : label === 'Aces per set'
+          ? 'sets with points'
+          : 'match';
+    assertServeMetricInBothReports(
+      afterRallyCorrection,
+      label,
+      '1.00',
+      '1.00',
+      `1.00 (1 aces / 1 ${unit})`,
+      `1.00 (1 aces / 1 ${label === 'Aces per match' ? 'matches' : unit})`,
+    );
+  }
+  assertPointAnalysisInBothReports(afterRallyCorrection, {
+    rallyTile: '0/14 (0.0%)',
+    rallyTracked: '0/14 · 0.0%',
+    rallyOpponent: '1/14 · 7.1%',
+    errorTile: '1',
+    errorTracked: '1 · 14 recorded points',
+    errorOpponent: '0 · 14 recorded points',
+    pointCount: 14,
+  });
+
+  await editLocalPointWinner(matchId, 1, errorPointId, 'tracked');
+  const afterErrorCorrection = await buildSavedPointReportSnapshot(matchId);
+  assertServeMetricInBothReports(
+    afterErrorCorrection,
+    'First serve in',
+    '5/6 (83.3%)',
+    '5/6 · 83.3%',
+    '7/8 (87.5%)',
+    '7/8 · 87.5%',
+  );
+  for (const label of [
+    'Aces per service game',
+    'Aces per set',
+    'Aces per match',
+  ]) {
+    const unit =
+      label === 'Aces per service game'
+        ? 'service games'
+        : label === 'Aces per set'
+          ? 'sets with points'
+          : 'match';
+    assertServeMetricInBothReports(
+      afterErrorCorrection,
+      label,
+      '1.00',
+      '1.00',
+      `1.00 (1 aces / 1 ${unit})`,
+      `1.00 (1 aces / 1 ${label === 'Aces per match' ? 'matches' : unit})`,
+    );
+  }
+  assertPointAnalysisInBothReports(afterErrorCorrection, {
+    rallyTile: '0/14 (0.0%)',
+    rallyTracked: '0/14 · 0.0%',
+    rallyOpponent: '1/14 · 7.1%',
+    errorTile: '0',
+    errorTracked: '0 · 14 recorded points',
+    errorOpponent: '1 · 14 recorded points',
+    pointCount: 14,
+  });
+
+  await undoLocalPoint(matchId);
+  const afterGamePointUndo = await buildSavedPointReportSnapshot(matchId);
+  assertServeMetricInBothReports(
+    afterGamePointUndo,
+    'First serve in',
+    '5/6 (83.3%)',
+    '5/6 · 83.3%',
+    '6/7 (85.7%)',
+    '6/7 · 85.7%',
+  );
+  assertServeMetricInBothReports(
+    afterGamePointUndo,
+    'Aces per service game',
+    '1.00',
+    '1.00',
+    '—',
+    '—',
+  );
+  assertServeMetricInBothReports(
+    afterGamePointUndo,
+    'Aces per set',
+    '1.00',
+    '1.00',
+    '1.00 (1 aces / 1 sets with points)',
+    '1.00 (1 aces / 1 sets with points)',
+  );
+  assertServeMetricInBothReports(
+    afterGamePointUndo,
+    'Aces per match',
+    '1.00',
+    '1.00',
+    '1.00 (1 aces / 1 match)',
+    '1.00 (1 aces / 1 matches)',
+  );
+  assertPointAnalysisInBothReports(afterGamePointUndo, {
+    rallyTile: '0/13 (0.0%)',
+    rallyTracked: '0/13 · 0.0%',
+    rallyOpponent: '1/13 · 7.7%',
+    errorTile: '0',
+    errorTracked: '0 · 13 recorded points',
+    errorOpponent: '1 · 13 recorded points',
+    pointCount: 13,
+  });
+
+  await undoLocalPoint(matchId);
+  const afterAceUndo = await buildSavedPointReportSnapshot(matchId);
+  assertServeMetricInBothReports(
+    afterAceUndo,
+    'Aces per service game',
+    '1.00',
+    '1.00',
+    '—',
+    '—',
+  );
+  assertServeMetricInBothReports(
+    afterAceUndo,
+    'Aces per set',
+    '1.00',
+    '1.00',
+    '0.00 (0 aces / 1 sets with points)',
+    '0.00 (0 aces / 1 sets with points)',
+  );
+  assertServeMetricInBothReports(
+    afterAceUndo,
+    'Aces per match',
+    '1.00',
+    '1.00',
+    '0.00 (0 aces / 1 match)',
+    '0.00 (0 aces / 1 matches)',
+  );
+  assertPointAnalysisInBothReports(afterAceUndo, {
+    rallyTile: '0/12 (0.0%)',
+    rallyTracked: '0/12 · 0.0%',
+    rallyOpponent: '1/12 · 8.3%',
+    errorTile: '0',
+    errorTracked: '0 · 12 recorded points',
+    errorOpponent: '1 · 12 recorded points',
+    pointCount: 12,
+  });
+
+  await undoLocalPoint(matchId);
+  await undoLocalPoint(matchId);
+  const afterFaultUndo = await buildSavedPointReportSnapshot(matchId);
+  assertServeMetricInBothReports(
+    afterFaultUndo,
+    'First serve in',
+    '5/6 (83.3%)',
+    '5/6 · 83.3%',
+    '4/4 (100.0%)',
+    '4/4 · 100.0%',
+  );
+  assertServeMetricInBothReports(
+    afterFaultUndo,
+    'Second serve in',
+    '1/1 (100.0%)',
+    '1/1 · 100.0%',
+    '—',
+    '—',
+  );
+  assertServeMetricInBothReports(
+    afterFaultUndo,
+    'Aces per match',
+    '1.00',
+    '1.00',
+    '0.00 (0 aces / 1 match)',
+    '0.00 (0 aces / 1 matches)',
+  );
+
+  for (let point = 0; point < 6; point += 1) {
+    await undoLocalPoint(matchId);
+  }
+  const beforeTagUndos = await buildSavedPointReportSnapshot(matchId);
+  assertServeMetricInBothReports(
+    beforeTagUndos,
+    'First serve in',
+    '4/4 (100.0%)',
+    '4/4 · 100.0%',
+    '—',
+    '—',
+  );
+  assertPointAnalysisInBothReports(beforeTagUndos, {
+    rallyTile: '0/4 (0.0%)',
+    rallyTracked: '0/4 · 0.0%',
+    rallyOpponent: '1/4 · 25.0%',
+    errorTile: '0',
+    errorTracked: '0 · 4 recorded points',
+    errorOpponent: '1 · 4 recorded points',
+    pointCount: 4,
+  });
+
+  await undoLocalPoint(matchId);
+  const afterErrorUndo = await buildSavedPointReportSnapshot(matchId);
+  assertPointAnalysisInBothReports(afterErrorUndo, {
+    rallyTile: '0/3 (0.0%)',
+    rallyTracked: '0/3 · 0.0%',
+    rallyOpponent: '1/3 · 33.3%',
+    errorTile: '—',
+    errorTracked: '—',
+    errorOpponent: '—',
+    pointCount: 3,
+  });
+
+  await undoLocalPoint(matchId);
+  const afterRallyUndo = await buildSavedPointReportSnapshot(matchId);
+  assertPointAnalysisInBothReports(afterRallyUndo, {
+    rallyTile: '—',
+    rallyTracked: '—',
+    rallyOpponent: '—',
+    errorTile: '—',
+    errorTracked: '—',
+    errorOpponent: '—',
+    pointCount: 2,
+  });
 });
 
 test('player feedback interprets break-point results and marks small samples directional', () => {
