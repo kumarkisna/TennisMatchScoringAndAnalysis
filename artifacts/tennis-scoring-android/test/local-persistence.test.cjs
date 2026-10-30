@@ -476,7 +476,7 @@ test('profile link pairs survive edits, removals, and a saved-player rename', as
   );
 });
 
-test('moving profile links preserves pairs and saves the selected order', async () => {
+test('removing a reordered profile link keeps the remaining saved pairs in order', async () => {
   storageValues.clear();
   const { localPlayers } = loadStorageModulesAfterRestart();
   const links = localPlayers.pairLocalPlayerProfileLinks(
@@ -484,28 +484,50 @@ test('moving profile links preserves pairs and saves the selected order', async 
       'https://atp.example.org/player/one',
       'https://club.example.org/players/one',
       'https://itf.example.org/player/one',
+      'https://academy.example.net/players/one',
     ],
-    ['ATP profile', 'Club profile', 'ITF profile'],
+    ['ATP profile', 'Club profile', 'ITF profile', 'Academy profile'],
   );
 
-  const movedUp = localPlayers.moveLocalPlayerProfileLink(links, 1, 'up');
-  assert.deepEqual(movedUp, [
-    { url: 'https://club.example.org/players/one', label: 'Club profile' },
+  const movedItfOnce = localPlayers.moveLocalPlayerProfileLink(links, 2, 'up');
+  assert.deepEqual(movedItfOnce, [
     { url: 'https://atp.example.org/player/one', label: 'ATP profile' },
     { url: 'https://itf.example.org/player/one', label: 'ITF profile' },
+    { url: 'https://club.example.org/players/one', label: 'Club profile' },
+    { url: 'https://academy.example.net/players/one', label: 'Academy profile' },
+  ]);
+  const customOrder = localPlayers.moveLocalPlayerProfileLink(
+    movedItfOnce,
+    1,
+    'up',
+  );
+  assert.deepEqual(customOrder, [
+    { url: 'https://itf.example.org/player/one', label: 'ITF profile' },
+    { url: 'https://atp.example.org/player/one', label: 'ATP profile' },
+    { url: 'https://club.example.org/players/one', label: 'Club profile' },
+    { url: 'https://academy.example.net/players/one', label: 'Academy profile' },
   ]);
   assert.deepEqual(
-    localPlayers.moveLocalPlayerProfileLink(movedUp, 0, 'down'),
-    links,
+    localPlayers.moveLocalPlayerProfileLink(customOrder, 0, 'down'),
+    movedItfOnce,
   );
   assert.deepEqual(
     localPlayers.moveLocalPlayerProfileLink(links, 0, 'up'),
     links,
   );
   assert.deepEqual(
-    localPlayers.moveLocalPlayerProfileLink(links, 2, 'down'),
+    localPlayers.moveLocalPlayerProfileLink(links, 3, 'down'),
     links,
   );
+  const afterRemovingMiddle = localPlayers.removeLocalPlayerProfileLink(
+    customOrder,
+    1,
+  );
+  assert.deepEqual(afterRemovingMiddle, [
+    { url: 'https://itf.example.org/player/one', label: 'ITF profile' },
+    { url: 'https://club.example.org/players/one', label: 'Club profile' },
+    { url: 'https://academy.example.net/players/one', label: 'Academy profile' },
+  ]);
 
   const player = await localPlayers.addLocalPlayer(
     'Reordered profile links player',
@@ -514,7 +536,7 @@ test('moving profile links preserves pairs and saves the selected order', async 
   await localPlayers.updateLocalPlayer(
     player.id,
     player.name,
-    localPlayers.serializeLocalPlayerProfileLinks(movedUp),
+    localPlayers.serializeLocalPlayerProfileLinks(afterRemovingMiddle),
   );
   const afterRestart = loadStorageModulesAfterRestart();
   const restored = (await afterRestart.localPlayers.listLocalPlayers()).find(
@@ -526,7 +548,7 @@ test('moving profile links preserves pairs and saves the selected order', async 
       restored.profileUrls,
       restored.profileUrlLabels,
     ),
-    movedUp,
+    afterRemovingMiddle,
   );
 
   const playersScreen = fs.readFileSync(
