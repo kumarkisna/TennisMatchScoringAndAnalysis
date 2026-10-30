@@ -13,6 +13,30 @@ export const PLAYER_REPORT_SECTIONS = [
 
 export type PlayerReportSection = (typeof PLAYER_REPORT_SECTIONS)[number]['id'];
 
+export type ReportSectionPreset<TSection extends string = string> = {
+  id: string;
+  label: string;
+  sections: readonly TSection[];
+};
+
+export const PLAYER_REPORT_SECTION_PRESETS = [
+  {
+    id: 'overview',
+    label: 'Overview only',
+    sections: ['overview'],
+  },
+  {
+    id: 'statistics',
+    label: 'Statistics',
+    sections: ['overview', 'serve', 'return', 'sets', 'break-points'],
+  },
+  {
+    id: 'full',
+    label: 'Full report',
+    sections: PLAYER_REPORT_SECTIONS.map(({ id }) => id),
+  },
+] satisfies readonly ReportSectionPreset<PlayerReportSection>[];
+
 export const HEAD_TO_HEAD_REPORT_SECTIONS = [
   { id: 'overview', label: 'Match overview' },
   { id: 'meetings', label: 'Meetings and set scores' },
@@ -26,6 +50,24 @@ export const HEAD_TO_HEAD_REPORT_SECTIONS = [
 
 export type HeadToHeadReportSection =
   (typeof HEAD_TO_HEAD_REPORT_SECTIONS)[number]['id'];
+
+export const HEAD_TO_HEAD_REPORT_SECTION_PRESETS = [
+  {
+    id: 'overview',
+    label: 'Overview only',
+    sections: ['overview'],
+  },
+  {
+    id: 'statistics',
+    label: 'Statistics',
+    sections: ['overview', 'meetings', 'serve', 'return-points', 'break-points'],
+  },
+  {
+    id: 'full',
+    label: 'Full report',
+    sections: HEAD_TO_HEAD_REPORT_SECTIONS.map(({ id }) => id),
+  },
+] satisfies readonly ReportSectionPreset<HeadToHeadReportSection>[];
 
 export function allPlayerReportSections(): PlayerReportSection[] {
   return PLAYER_REPORT_SECTIONS.map(({ id }) => id);

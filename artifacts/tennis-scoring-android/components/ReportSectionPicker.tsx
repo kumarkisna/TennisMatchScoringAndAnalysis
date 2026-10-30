@@ -1,22 +1,27 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useColors } from '@/hooks/useColors';
+import type { ReportSectionPreset } from '@/lib/report-sections';
 
-type Section = { id: string; label: string };
+type Section<TSection extends string> = { id: TSection; label: string };
 
-export function ReportSectionPicker({
+export function ReportSectionPicker<TSection extends string>({
   sections,
   selected,
   onToggle,
   onSelectAll,
   onClear,
+  presets,
+  onApplyPreset,
   testID,
 }: {
-  sections: readonly Section[];
-  selected: readonly string[];
-  onToggle: (section: string) => void;
+  sections: readonly Section<TSection>[];
+  selected: readonly TSection[];
+  onToggle: (section: TSection) => void;
   onSelectAll: () => void;
   onClear: () => void;
+  presets: readonly ReportSectionPreset<TSection>[];
+  onApplyPreset: (sections: readonly TSection[]) => void;
   testID: string;
 }) {
   const colors = useColors();
@@ -57,6 +62,46 @@ export function ReportSectionPicker({
           >
             <Text style={[styles.action, { color: colors.primary }]}>None</Text>
           </Pressable>
+        </View>
+      </View>
+      <View style={styles.presetGroup}>
+        <Text style={[styles.presetHeading, { color: colors.mutedForeground }]}>
+          Quick layouts
+        </Text>
+        <View style={styles.presets}>
+          {presets.map((preset) => {
+            const active =
+              selected.length === preset.sections.length &&
+              preset.sections.every((section) => selected.includes(section));
+            return (
+              <Pressable
+                key={preset.id}
+                testID={`${testID}-preset-${preset.id}`}
+                accessibilityRole="button"
+                accessibilityLabel={`Use ${preset.label} report layout`}
+                accessibilityHint="Replaces the selected report sections."
+                accessibilityState={{ selected: active }}
+                onPress={() => onApplyPreset(preset.sections)}
+                style={[
+                  styles.preset,
+                  {
+                    borderColor: active ? colors.primary : colors.border,
+                    backgroundColor: active ? colors.secondary : colors.card,
+                  },
+                ]}
+              >
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.presetLabel,
+                    { color: active ? colors.foreground : colors.mutedForeground },
+                  ]}
+                >
+                  {preset.label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
       </View>
       <View style={styles.options}>
@@ -108,6 +153,21 @@ const styles = StyleSheet.create({
   hint: { fontFamily: 'DMSans_400Regular', fontSize: 9 },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   action: { fontFamily: 'DMSans_700Bold', fontSize: 10 },
+  presetGroup: { gap: 5 },
+  presetHeading: { fontFamily: 'DMSans_700Bold', fontSize: 9 },
+  presets: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  preset: {
+    flexGrow: 1,
+    flexBasis: '30%',
+    minHeight: 35,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  presetLabel: { fontFamily: 'DMSans_700Bold', fontSize: 9 },
   options: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
   option: {
     width: '47%',

@@ -42,6 +42,7 @@ import type { ContextPerformanceInsight } from '@/lib/player-insights';
 import {
   allHeadToHeadReportSections,
   HEAD_TO_HEAD_REPORT_SECTIONS,
+  HEAD_TO_HEAD_REPORT_SECTION_PRESETS,
   type HeadToHeadReportSection,
 } from '@/lib/report-sections';
 
@@ -948,6 +949,8 @@ export default function HeadToHeadScreen() {
                 setSelectedReportSections(allHeadToHeadReportSections())
               }
               onClear={() => setSelectedReportSections([])}
+              presets={HEAD_TO_HEAD_REPORT_SECTION_PRESETS}
+              onApplyPreset={(sections) => setSelectedReportSections([...sections])}
             />
             <ReportAnonymityToggle
               testID="head-to-head-report-hide-names"

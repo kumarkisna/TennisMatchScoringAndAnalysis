@@ -76,6 +76,7 @@ import {
 import {
   allPlayerReportSections,
   PLAYER_REPORT_SECTIONS,
+  PLAYER_REPORT_SECTION_PRESETS,
   type PlayerReportSection,
 } from '@/lib/report-sections';
 import { listLocalPlayers, LOCAL_PLAYERS_KEY } from '@/lib/local-players';
@@ -2426,6 +2427,8 @@ export default function MatchScreen() {
           onToggle={toggleReportSection}
           onSelectAll={() => setSelectedReportSections(allPlayerReportSections())}
           onClear={() => setSelectedReportSections([])}
+          presets={PLAYER_REPORT_SECTION_PRESETS}
+          onApplyPreset={(sections) => setSelectedReportSections([...sections])}
         />
         <ReportAnonymityToggle
           testID="player-report-hide-names"

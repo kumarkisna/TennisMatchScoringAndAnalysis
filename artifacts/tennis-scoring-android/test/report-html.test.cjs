@@ -75,6 +75,50 @@ const {
   calculateLocalInsights,
   getBreakPointPointOutcomes,
 } = localMatchExports;
+const {
+  allHeadToHeadReportSections,
+  allPlayerReportSections,
+  HEAD_TO_HEAD_REPORT_SECTION_PRESETS,
+  PLAYER_REPORT_SECTION_PRESETS,
+} = require('../lib/report-sections.ts');
+
+test('report layouts provide overview, statistics, and full presets for both report types', () => {
+  const expectedLabels = ['Overview only', 'Statistics', 'Full report'];
+  assert.deepEqual(
+    PLAYER_REPORT_SECTION_PRESETS.map(({ label }) => label),
+    expectedLabels,
+  );
+  assert.deepEqual(
+    HEAD_TO_HEAD_REPORT_SECTION_PRESETS.map(({ label }) => label),
+    expectedLabels,
+  );
+
+  assert.deepEqual(PLAYER_REPORT_SECTION_PRESETS[0].sections, ['overview']);
+  assert.deepEqual(PLAYER_REPORT_SECTION_PRESETS[1].sections, [
+    'overview',
+    'serve',
+    'return',
+    'sets',
+    'break-points',
+  ]);
+  assert.deepEqual(
+    PLAYER_REPORT_SECTION_PRESETS[2].sections,
+    allPlayerReportSections(),
+  );
+
+  assert.deepEqual(HEAD_TO_HEAD_REPORT_SECTION_PRESETS[0].sections, ['overview']);
+  assert.deepEqual(HEAD_TO_HEAD_REPORT_SECTION_PRESETS[1].sections, [
+    'overview',
+    'meetings',
+    'serve',
+    'return-points',
+    'break-points',
+  ]);
+  assert.deepEqual(
+    HEAD_TO_HEAD_REPORT_SECTION_PRESETS[2].sections,
+    allHeadToHeadReportSections(),
+  );
+});
 
 const emptySide = {
   servicePoints: 4,
@@ -1355,12 +1399,13 @@ test('single-match PDF includes only selected analysis sections', () => {
     },
     insights,
     emptyPerformance,
-    ['serve'],
+    PLAYER_REPORT_SECTION_PRESETS[1].sections,
   );
 
   assert.match(html, /<h2>Serve<\/h2>/);
-  assert.doesNotMatch(html, /<h2>Return<\/h2>/);
-  assert.doesNotMatch(html, /<h2>Set scores and winners<\/h2>/);
+  assert.match(html, /<h2>Return<\/h2>/);
+  assert.match(html, /<h2>Set scores and winners<\/h2>/);
+  assert.doesNotMatch(html, /<h2>Coaching notes<\/h2>/);
   assert.match(html, /<strong>Points logged:<\/strong> 4/);
 });
 
@@ -1387,12 +1432,14 @@ test('head-to-head PDF includes only selected analysis sections', () => {
       personalAveragePerformance: emptyPerformance,
       personalAverageMatches: 1,
     },
-    ['serve'],
+    HEAD_TO_HEAD_REPORT_SECTION_PRESETS[1].sections,
   );
 
   assert.match(html, /<h2>Serve<\/h2>/);
-  assert.doesNotMatch(html, /<h2>Meetings and set scores<\/h2>/);
-  assert.doesNotMatch(html, /<h2>Return and points<\/h2>/);
+  assert.match(html, /<h2>Meetings and set scores<\/h2>/);
+  assert.match(html, /<h2>Return and points<\/h2>/);
+  assert.doesNotMatch(html, /<h2>Point-ending tags<\/h2>/);
+  assert.doesNotMatch(html, /<h2>Coaching observations<\/h2>/);
 });
 
 test('clearing all sections keeps match details without analysis sections', () => {
