@@ -28,6 +28,7 @@ import {
   getLocalInsights,
   getLocalMatch,
   getLocalSetHistory,
+  getBreakPointPointOutcomes,
   LOCAL_MATCH_LIST_KEY,
   addLocalSet,
   updateLocalGameNote,
@@ -846,6 +847,17 @@ export default function MatchScreen() {
   const trackedName = match.trackedPlayer;
   const opponentName = match.opponent;
   const viewedSet = displayedSet ?? currentSet ?? setHistory[setHistory.length - 1]!;
+  const viewedSetBreakPointOutcomes = getBreakPointPointOutcomes(
+    viewedSet.points,
+    viewedSet.format,
+  );
+  const recentHistoryPoints = viewedSet.points
+    .map((point, pointIndex) => ({
+      point,
+      breakPointOutcome: viewedSetBreakPointOutcomes[pointIndex],
+    }))
+    .slice(-8)
+    .reverse();
   const pointGroups = new Map<number, typeof viewedSet.points>();
   for (const point of viewedSet.points) {
     if (point.isTiebreak) continue;
@@ -2672,10 +2684,7 @@ export default function MatchScreen() {
               </Text>
             </View>
           ) : (
-            [...viewedSet.points]
-              .slice(-8)
-              .reverse()
-              .map((point, index, recentPoints) => (
+            recentHistoryPoints.map(({ point, breakPointOutcome }, index, recentPoints) => (
                 <View
                   key={point.id}
                   testID={`point-log-${point.id}`}
@@ -2720,6 +2729,46 @@ export default function MatchScreen() {
                         ? ` · ${point.strokes.length} stroke entr${point.strokes.length === 1 ? 'y' : 'ies'}`
                         : ''}
                     </Text>
+                    {breakPointOutcome ? (
+                      <View
+                        testID={`point-log-break-point-${point.id}`}
+                        accessible
+                        accessibilityLabel={
+                          breakPointOutcome === 'converted'
+                            ? 'Break point converted'
+                            : 'Break point saved'
+                        }
+                        style={[
+                          styles.breakPointMarker,
+                          {
+                            backgroundColor:
+                              breakPointOutcome === 'converted'
+                                ? colors.secondary
+                                : colors.background,
+                            borderColor:
+                              breakPointOutcome === 'converted'
+                                ? colors.primary
+                                : colors.accent,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.breakPointMarkerText,
+                            {
+                              color:
+                                breakPointOutcome === 'converted'
+                                  ? colors.primary
+                                : colors.foreground,
+                            },
+                          ]}
+                        >
+                          {breakPointOutcome === 'converted'
+                            ? 'BREAK POINT CONVERTED'
+                            : 'BREAK POINT SAVED'}
+                        </Text>
+                      </View>
+                    ) : null}
                     {point.strokes?.some((stroke) => stroke.note) ? (
                       <Text style={[styles.logDetail, { color: colors.mutedForeground }]}>
                         {point.strokes
@@ -3388,5 +3437,18 @@ const styles = StyleSheet.create({
   logDescription: { flex: 1, gap: 3 },
   logWinner: { fontFamily: 'DMSans_600SemiBold', fontSize: 11 },
   logDetail: { fontFamily: 'DMSans_400Regular', fontSize: 9 },
+  breakPointMarker: {
+    alignSelf: 'flex-start',
+    marginTop: 2,
+    borderWidth: 1,
+    borderRadius: 5,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  breakPointMarkerText: {
+    fontFamily: 'DMSans_700Bold',
+    fontSize: 8,
+    letterSpacing: 0.35,
+  },
   logCode: { fontFamily: 'DMSans_700Bold', fontSize: 11 },
 });

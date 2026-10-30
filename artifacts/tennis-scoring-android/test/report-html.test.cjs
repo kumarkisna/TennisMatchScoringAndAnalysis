@@ -61,7 +61,11 @@ playerReportExports = { buildPlayerReportHtml };
 const { buildHeadToHeadReportHtml } = require('../lib/head-to-head-report-html.ts');
 Module._load = originalLoad;
 const { createAndPreviewLocalPdf } = require('../lib/report-pdf.ts');
-const { calculateBreakPointStats, calculateLocalInsights } = localMatchExports;
+const {
+  calculateBreakPointStats,
+  calculateLocalInsights,
+  getBreakPointPointOutcomes,
+} = localMatchExports;
 
 const emptySide = {
   servicePoints: 4,
@@ -282,6 +286,7 @@ function breakPointSampleMatch() {
     },
     savedZeroForty,
     repeatedAdvantageChances,
+    standardTiebreakPoints,
   };
 }
 
@@ -334,8 +339,12 @@ test('single-match report removes URL-like text and keeps match details and anal
 });
 
 test('break-point counts, set aggregation, exclusions, and report rates match scored sequences', () => {
-  const { match, savedZeroForty, repeatedAdvantageChances } =
-    breakPointSampleMatch();
+  const {
+    match,
+    savedZeroForty,
+    repeatedAdvantageChances,
+    standardTiebreakPoints,
+  } = breakPointSampleMatch();
 
   assert.deepEqual(calculateBreakPointStats(savedZeroForty, 'standard'), {
     tracked: { opportunities: 0, converted: 0, faced: 3, saved: 3 },
@@ -347,6 +356,36 @@ test('break-point counts, set aggregation, exclusions, and report rates match sc
       tracked: { opportunities: 2, converted: 1, faced: 0, saved: 0 },
       opponent: { opportunities: 0, converted: 0, faced: 2, saved: 1 },
     },
+  );
+  assert.deepEqual(getBreakPointPointOutcomes(savedZeroForty, 'standard'), [
+    null,
+    null,
+    null,
+    'saved',
+    'saved',
+    'saved',
+    null,
+    null,
+  ]);
+  assert.deepEqual(
+    getBreakPointPointOutcomes(repeatedAdvantageChances, 'standard'),
+    [null, null, null, null, null, null, null, 'saved', null, 'converted'],
+  );
+  assert.deepEqual(
+    getBreakPointPointOutcomes(standardTiebreakPoints, 'standard'),
+    [null, null, null, null],
+  );
+  assert.deepEqual(
+    getBreakPointPointOutcomes(match.points, 'match_tiebreak'),
+    [null, null, null, null],
+  );
+  const completedBreakThenNextGame = [
+    ...gamePoints(1, 1, 'opponent', ['tracked', 'tracked', 'tracked', 'tracked']),
+    ...gamePoints(1, 2, 'tracked', ['tracked', 'tracked', 'tracked', 'tracked'], false, 5),
+  ];
+  assert.deepEqual(
+    getBreakPointPointOutcomes(completedBreakThenNextGame, 'standard'),
+    [null, null, null, 'converted', null, null, null, null],
   );
 
   const insights = calculateLocalInsights(match);

@@ -588,15 +588,18 @@ function emptyBreakPointStats(): Record<PlayerSide, BreakPointStats> {
   };
 }
 
-export function calculateBreakPointStats(
+export type BreakPointPointOutcome = 'converted' | 'saved';
+
+export function getBreakPointPointOutcomes(
   points: Pick<LocalPoint, 'isTiebreak' | 'server' | 'winner'>[],
   format: SetFormat,
-): Record<PlayerSide, BreakPointStats> {
-  const stats = emptyBreakPointStats();
-  if (format === 'match_tiebreak') return stats;
+): (BreakPointPointOutcome | null)[] {
+  const outcomes: (BreakPointPointOutcome | null)[] = points.map(() => null);
+  if (format === 'match_tiebreak') return outcomes;
 
   const gamePoints: Record<PlayerSide, number> = { tracked: 0, opponent: 0 };
-  for (const point of points) {
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index]!;
     if (point.isTiebreak) continue;
 
     const server = point.server;
@@ -604,10 +607,7 @@ export function calculateBreakPointStats(
     const isBreakPoint =
       gamePoints[returner] >= 3 && gamePoints[returner] > gamePoints[server];
     if (isBreakPoint) {
-      stats[returner].opportunities += 1;
-      stats[server].faced += 1;
-      if (point.winner === returner) stats[returner].converted += 1;
-      else stats[server].saved += 1;
+      outcomes[index] = point.winner === returner ? 'converted' : 'saved';
     }
 
     gamePoints[point.winner] += 1;
@@ -618,6 +618,25 @@ export function calculateBreakPointStats(
       gamePoints.tracked = 0;
       gamePoints.opponent = 0;
     }
+  }
+  return outcomes;
+}
+
+export function calculateBreakPointStats(
+  points: Pick<LocalPoint, 'isTiebreak' | 'server' | 'winner'>[],
+  format: SetFormat,
+): Record<PlayerSide, BreakPointStats> {
+  const stats = emptyBreakPointStats();
+  const outcomes = getBreakPointPointOutcomes(points, format);
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index]!;
+    if (!outcomes[index]) continue;
+    const server = point.server;
+    const returner = opposite(server);
+    stats[returner].opportunities += 1;
+    stats[server].faced += 1;
+    if (outcomes[index] === 'converted') stats[returner].converted += 1;
+    else stats[server].saved += 1;
   }
   return stats;
 }
