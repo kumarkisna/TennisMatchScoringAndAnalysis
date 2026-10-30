@@ -11,6 +11,7 @@ import {
   type LocalStrokeTally,
   type ShotDirection,
   BreakPointStats,
+  type LocalPlayerMatchInsight,
 } from '@/lib/local-matches';
 
 const shotCodes = ['A', 'F', 'B', 'V', 'O', 'P'] as const satisfies readonly PointCode[];
@@ -105,6 +106,101 @@ export interface PlayerReportInsights {
   sets: LocalSetInsights[];
   strokeTallies: LocalStrokeTally[];
   strokeNotes: LocalInsights['strokeNotes'];
+}
+
+export const PLAYER_TREND_METRICS = [
+  { key: 'overall', label: 'Points won' },
+  { key: 'service', label: 'Service points won' },
+  { key: 'return', label: 'Return points won' },
+  { key: 'firstServe', label: '1st-serve points won' },
+  { key: 'secondServe', label: '2nd-serve points won' },
+] as const;
+
+export type PlayerTrendMetricKey = (typeof PLAYER_TREND_METRICS)[number]['key'];
+
+export interface PlayerTrendMetricValue {
+  percent: number | null;
+  won: number;
+  total: number;
+  countLabel: string;
+}
+
+export interface PlayerTrendMatch {
+  id: string;
+  date: string;
+  event: string | null;
+  round: string | null;
+  trackedPlayer: string;
+  opponent: string;
+  metrics: Record<PlayerTrendMetricKey, PlayerTrendMetricValue>;
+}
+
+export function buildPlayerPerformanceHistory(
+  records: readonly LocalPlayerMatchInsight[],
+): PlayerTrendMatch[] {
+  return records.map(({ match, playerSide, insights }) => {
+    const playerWon =
+      playerSide === 'tracked'
+        ? insights.trackedPointsWon
+        : insights.opponentPointsWon;
+    const serve = insights.serveStats[playerSide];
+    const returnPoints = Math.max(0, insights.pointCount - serve.servicePoints);
+    const returnPointsWon = Math.max(0, playerWon - serve.servicePointsWon);
+
+    const values: Record<
+      PlayerTrendMetricKey,
+      { won: number; total: number; countLabel: string }
+    > = {
+      overall: {
+        won: playerWon,
+        total: insights.pointCount,
+        countLabel: 'points',
+      },
+      service: {
+        won: serve.servicePointsWon,
+        total: serve.servicePoints,
+        countLabel: 'service points',
+      },
+      return: {
+        won: returnPointsWon,
+        total: returnPoints,
+        countLabel: 'return points',
+      },
+      firstServe: {
+        won: serve.firstServePointsWon,
+        total: serve.firstServePoints,
+        countLabel: 'first-serve points',
+      },
+      secondServe: {
+        won: serve.secondServePointsWon,
+        total: serve.secondServePoints,
+        countLabel: 'second-serve points',
+      },
+    };
+
+    const metrics = Object.fromEntries(
+      PLAYER_TREND_METRICS.map(({ key }) => {
+        const value = values[key];
+        return [
+          key,
+          {
+            ...value,
+            percent: percent(value.won, value.total),
+          },
+        ];
+      }),
+    ) as Record<PlayerTrendMetricKey, PlayerTrendMetricValue>;
+
+    return {
+      id: match.id,
+      date: match.matchDate,
+      event: match.event,
+      round: match.round,
+      trackedPlayer: match.trackedPlayer,
+      opponent: match.opponent,
+      metrics,
+    };
+  });
 }
 
 const allPointCodes: PointCode[] = [...shotCodes, 'N', 'L', 'W', 'D', 'FE'];

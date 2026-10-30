@@ -221,6 +221,18 @@ export default function NewMatchScreen() {
     createMatch.mutate({
       ...details,
       setNumber: parsedSet,
+      trackedPlayerId:
+        players.find(
+          (player) =>
+            player.name.trim().replace(/\s+/g, ' ').toLocaleLowerCase() ===
+            trackedPlayerValue.trim().replace(/\s+/g, ' ').toLocaleLowerCase(),
+        )?.id ?? null,
+      opponentPlayerId:
+        players.find(
+          (player) =>
+            player.name.trim().replace(/\s+/g, ' ').toLocaleLowerCase() ===
+            opponent.trim().replace(/\s+/g, ' ').toLocaleLowerCase(),
+        )?.id ?? null,
     });
   }
 

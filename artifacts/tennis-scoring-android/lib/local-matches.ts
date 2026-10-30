@@ -127,7 +127,9 @@ export interface LocalMatch {
   round: string | null;
   setNumber: number;
   trackedPlayer: string;
+  trackedPlayerId: string | null;
   opponent: string;
+  opponentPlayerId: string | null;
   chairCoach: string | null;
   surface: CourtSurface;
   firstServer: PlayerSide;
@@ -172,6 +174,8 @@ export interface LocalMatchDetails {
 
 export interface NewLocalMatch extends LocalMatchDetails {
   setNumber: number;
+  trackedPlayerId?: string | null;
+  opponentPlayerId?: string | null;
 }
 
 export interface NewLocalPoint {
@@ -273,6 +277,22 @@ export interface LocalInsights {
     result: StrokeResult;
     note: string;
   }[];
+}
+
+export interface LocalPlayerMatchInsight {
+  match: Pick<
+    LocalMatch,
+    | 'id'
+    | 'matchDate'
+    | 'event'
+    | 'round'
+    | 'trackedPlayer'
+    | 'opponent'
+    | 'trackedPlayerId'
+    | 'opponentPlayerId'
+  >;
+  playerSide: PlayerSide;
+  insights: LocalInsights;
 }
 
 export interface ServeSideStats {
@@ -511,6 +531,10 @@ function normalizeLocalMatch(value: Record<string, unknown>): LocalMatch {
   });
   return {
     ...(value as unknown as LocalMatch),
+    trackedPlayerId:
+      typeof value.trackedPlayerId === 'string' ? value.trackedPlayerId : null,
+    opponentPlayerId:
+      typeof value.opponentPlayerId === 'string' ? value.opponentPlayerId : null,
     ownerUserId: typeof value.ownerUserId === 'string' ? value.ownerUserId : null,
     setFormat: value.setFormat === 'match_tiebreak' ? 'match_tiebreak' : 'standard',
     tiebreakTarget:
@@ -893,6 +917,10 @@ export async function createLocalMatch(input: NewLocalMatch): Promise<LocalMatch
       id,
       ownerUserId: null,
       ...details,
+      trackedPlayerId:
+        typeof input.trackedPlayerId === 'string' ? input.trackedPlayerId : null,
+      opponentPlayerId:
+        typeof input.opponentPlayerId === 'string' ? input.opponentPlayerId : null,
       setNumber: input.setNumber,
       setFormat: 'standard' as const,
       tiebreakTarget: 10,
@@ -930,7 +958,19 @@ export async function updateLocalMatchDetails(
     const match = await readMatch(id);
     if (!match) throw new Error('This match is not saved on this device.');
 
-    const updatedDetails = { ...match, ...details };
+    const sameName = (left: string, right: string) =>
+      left.trim().replace(/\s+/g, ' ').toLocaleLowerCase() ===
+      right.trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+    const updatedDetails = {
+      ...match,
+      ...details,
+      trackedPlayerId: sameName(match.trackedPlayer, details.trackedPlayer)
+        ? match.trackedPlayerId
+        : null,
+      opponentPlayerId: sameName(match.opponent, details.opponent)
+        ? match.opponentPlayerId
+        : null,
+    };
     const nextServer = calculateLocalScore(updatedDetails, match.points).nextServer;
     const updated: LocalMatch = {
       ...updatedDetails,
@@ -1352,12 +1392,7 @@ export async function setLocalSyncError(
   });
 }
 
-export async function getLocalInsights(
-  id: string,
-): Promise<LocalInsights | null> {
-  const match = await readMatch(id);
-  if (!match) return null;
-
+export function calculateLocalInsights(match: LocalMatch): LocalInsights {
   const setHistory = getLocalSetHistory(match);
   const codeCounts = new Map<
     PointCode,
@@ -1629,4 +1664,100 @@ export async function getLocalInsights(
     strokeTallies: [...strokeTallyByKey.values()],
     strokeNotes,
   };
+}
+
+export async function getLocalInsights(
+  id: string,
+): Promise<LocalInsights | null> {
+  const match = await readMatch(id);
+  return match ? calculateLocalInsights(match) : null;
+}
+
+function normalizePlayerName(name: string): string {
+  return name.trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+}
+
+export async function listLocalPlayerMatchInsights(
+  playerId: string,
+  players: readonly { id: string; name: string }[],
+): Promise<LocalPlayerMatchInsight[]> {
+  const uniquePlayersByName = new Map<string, string | null>();
+  for (const player of players) {
+    const key = normalizePlayerName(player.name);
+    if (uniquePlayersByName.has(key)) {
+      uniquePlayersByName.set(key, null);
+    } else {
+      uniquePlayersByName.set(key, player.id);
+    }
+  }
+
+  const matches = await withWriteLock(async () => {
+    const ids = await readIndex();
+    const records = await AsyncStorage.multiGet(ids.map(matchStorageKey));
+    const playerMatches: LocalMatch[] = [];
+    for (const [key, raw] of records) {
+      if (raw === null) continue;
+      const value: unknown = JSON.parse(raw);
+      if (!value || typeof value !== 'object' || !('id' in value)) {
+        throw new Error(`A local match record could not be read (${key}).`);
+      }
+      const match = normalizeLocalMatch(value as Record<string, unknown>);
+      const trackedMatch =
+        match.trackedPlayerId === null
+          ? uniquePlayersByName.get(normalizePlayerName(match.trackedPlayer))
+          : undefined;
+      const opponentMatch =
+        match.opponentPlayerId === null
+          ? uniquePlayersByName.get(normalizePlayerName(match.opponent))
+          : undefined;
+      const trackedPlayerId = trackedMatch ?? match.trackedPlayerId;
+      const opponentPlayerId = opponentMatch ?? match.opponentPlayerId;
+      const linked =
+        trackedPlayerId !== match.trackedPlayerId ||
+        opponentPlayerId !== match.opponentPlayerId;
+      const updated = linked
+        ? { ...match, trackedPlayerId, opponentPlayerId }
+        : match;
+      if (linked) {
+        await AsyncStorage.setItem(
+          matchStorageKey(match.id),
+          JSON.stringify(updated),
+        );
+      }
+      if (
+        updated.trackedPlayerId === playerId &&
+        updated.opponentPlayerId !== playerId
+      ) {
+        playerMatches.push(updated);
+      } else if (
+        updated.opponentPlayerId === playerId &&
+        updated.trackedPlayerId !== playerId
+      ) {
+        playerMatches.push(updated);
+      }
+    }
+    return playerMatches;
+  });
+
+  return matches
+    .filter((match) => getLocalSetHistory(match).some((set) => set.points.length > 0))
+    .map((match) => ({
+      match: {
+        id: match.id,
+        matchDate: match.matchDate,
+        event: match.event,
+        round: match.round,
+        trackedPlayer: match.trackedPlayer,
+        opponent: match.opponent,
+        trackedPlayerId: match.trackedPlayerId,
+        opponentPlayerId: match.opponentPlayerId,
+      },
+      playerSide:
+        match.trackedPlayerId === playerId ? ('tracked' as const) : ('opponent' as const),
+      insights: calculateLocalInsights(match),
+    }))
+    .sort((left, right) =>
+      left.match.matchDate.localeCompare(right.match.matchDate) ||
+      left.match.id.localeCompare(right.match.id),
+    );
 }

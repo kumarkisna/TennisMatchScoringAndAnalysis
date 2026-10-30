@@ -57,7 +57,9 @@ function portableMatch(match: LocalMatch): LocalMatchBackupRecord {
     round: match.round,
     setNumber: match.setNumber,
     trackedPlayer: match.trackedPlayer,
+    trackedPlayerId: match.trackedPlayerId,
     opponent: match.opponent,
+    opponentPlayerId: match.opponentPlayerId,
     chairCoach: match.chairCoach,
     surface: match.surface,
     firstServer: match.firstServer,
@@ -294,9 +296,11 @@ function isBackupMatch(value: unknown): value is LocalMatchBackupRecord {
     typeof value.trackedPlayer === 'string' &&
     value.trackedPlayer.trim().length > 0 &&
     value.trackedPlayer.length <= 80 &&
+    (value.trackedPlayerId === undefined || isNullableString(value.trackedPlayerId)) &&
     typeof value.opponent === 'string' &&
     value.opponent.trim().length > 0 &&
     value.opponent.length <= 80 &&
+    (value.opponentPlayerId === undefined || isNullableString(value.opponentPlayerId)) &&
     isNullableString(value.chairCoach) &&
     (value.chairCoach === null || value.chairCoach.length <= 80) &&
     surfaces.includes(value.surface as (typeof surfaces)[number]) &&
@@ -460,7 +464,16 @@ export async function loadLocalBackupFromDevice(): Promise<
     }
   }
 
-  const matchResult = await mergeLocalMatchesFromBackup(backup.matches);
+  const matchesWithMappedPlayers = backup.matches.map((match) => ({
+    ...match,
+    trackedPlayerId: match.trackedPlayerId
+      ? playerIdMap.get(match.trackedPlayerId) ?? null
+      : null,
+    opponentPlayerId: match.opponentPlayerId
+      ? playerIdMap.get(match.opponentPlayerId) ?? null
+      : null,
+  }));
+  const matchResult = await mergeLocalMatchesFromBackup(matchesWithMappedPlayers);
   return {
     cancelled: false,
     playersAdded,

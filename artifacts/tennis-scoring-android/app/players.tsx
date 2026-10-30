@@ -795,6 +795,25 @@ export default function PlayersScreen() {
                         </Pressable>
                       );
                     })}
+                    <Pressable
+                      testID={`button-player-development-${player.id}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={`View ${player.name} performance trends`}
+                      accessibilityHint="Shows match-by-match point percentages from recorded points"
+                      onPress={() =>
+                        router.push(`/players/${player.id}/development`)
+                      }
+                      style={({ pressed }) => [
+                        styles.developmentButton,
+                        { opacity: pressed ? 0.65 : 1 },
+                      ]}
+                    >
+                      <Ionicons name="stats-chart-outline" size={13} color={colors.primary} />
+                      <Text style={[styles.developmentButtonText, { color: colors.primary }]}>
+                        Performance trends
+                      </Text>
+                      <Ionicons name="chevron-forward" size={13} color={colors.mutedForeground} />
+                    </Pressable>
                     {isMainPlayer ? (
                       <View
                         testID={`main-tracked-player-${player.id}`}
@@ -906,6 +925,8 @@ const styles = StyleSheet.create({
   removeLinkButton: { width: 36, height: 38, alignItems: 'center', justifyContent: 'center' },
   profileLink: { alignSelf: 'flex-start', maxWidth: '100%', flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 2 },
   profileLinkText: { flexShrink: 1, fontFamily: 'DMSans_600SemiBold', fontSize: 10, textDecorationLine: 'underline' },
+  developmentButton: { alignSelf: 'flex-start', minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
+  developmentButtonText: { fontFamily: 'DMSans_600SemiBold', fontSize: 11 },
   profileDetailsToggle: { minHeight: 40, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
   profileDetailsToggleText: { flex: 1, fontFamily: 'DMSans_600SemiBold', fontSize: 11 },
   tourDetails: { gap: 10 },
