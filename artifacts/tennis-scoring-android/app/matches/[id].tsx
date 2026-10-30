@@ -60,6 +60,11 @@ import {
 } from '@/lib/local-matches';
 import { summarizePlayerPerformance } from '@/lib/player-insights';
 import { buildPlayerReportHtml } from '@/lib/player-report-html';
+import { createAndPreviewLocalPdf } from '@/lib/report-pdf';
+import {
+  getStandardPointProgress,
+  getTiebreakPointProgress,
+} from '@/lib/score-progress';
 import {
   allPlayerReportSections,
   PLAYER_REPORT_SECTIONS,
@@ -284,6 +289,95 @@ function CodeCell({
   );
 }
 
+function ScoreProgressCell({
+  score,
+  point,
+  side,
+  colors,
+  testID,
+}: {
+  score: string;
+  point?: {
+    id: string;
+    winner: Side;
+    endingCode?: string | null;
+    firstServeFault: boolean;
+  };
+  side: Side;
+  colors: ReturnType<typeof useColors>;
+  testID: string;
+}) {
+  const isPointWinner = point?.winner === side;
+  const sideColor = side === 'tracked' ? colors.primary : colors.accent;
+  const pointCode = point
+    ? point.endingCode || (side === 'tracked' ? 'T' : 'O')
+    : '';
+
+  return (
+    <View
+      testID={testID}
+      accessibilityLabel={`${side === 'tracked' ? 'Tracked player' : 'Opponent'} score ${score}${isPointWinner ? `, won point by ${pointCode}` : ''}`}
+      style={[
+        styles.matrixScoreCell,
+        {
+          backgroundColor: isPointWinner ? sideColor : colors.background,
+          borderColor: isPointWinner ? sideColor : colors.border,
+        },
+      ]}
+    >
+      <Text
+        numberOfLines={1}
+        style={[
+          styles.matrixPointScore,
+          { color: isPointWinner ? colors.primaryForeground : colors.foreground },
+        ]}
+      >
+        {score}
+      </Text>
+      <Text
+        numberOfLines={1}
+        style={[
+          styles.matrixPointCode,
+          { color: isPointWinner ? colors.primaryForeground : colors.mutedForeground },
+        ]}
+      >
+        {isPointWinner ? pointCode : '\u00a0'}
+      </Text>
+      {isPointWinner && point?.firstServeFault ? (
+        <View style={[styles.faultDot, { backgroundColor: colors.primaryForeground }]} />
+      ) : null}
+    </View>
+  );
+}
+
+function MatrixLaneLabel({
+  side,
+  name,
+  colors,
+}: {
+  side: Side;
+  name: string;
+  colors: ReturnType<typeof useColors>;
+}) {
+  const sideColor = side === 'tracked' ? colors.primary : colors.accent;
+
+  return (
+    <View style={styles.matrixLaneLabel}>
+      <View style={[styles.playerLaneBadge, { borderColor: sideColor }]}>
+        <Text style={[styles.playerLaneBadgeText, { color: sideColor }]}>
+          {side === 'tracked' ? 'T' : 'O'}
+        </Text>
+      </View>
+      <Text
+        numberOfLines={1}
+        style={[styles.matrixLaneName, { color: colors.foreground }]}
+      >
+        {name}
+      </Text>
+    </View>
+  );
+}
+
 export default function MatchScreen() {
   const colors = useColors();
   const router = useRouter();
@@ -307,7 +401,10 @@ export default function MatchScreen() {
   const [shotDirection, setShotDirection] = useState<ShotDirection | null>(null);
   const [rallyLength, setRallyLength] = useState<RallyLength | null>(null);
   const [reportAction, setReportAction] = useState<'preview' | 'share' | null>(null);
-  const [reviewedReportVersion, setReviewedReportVersion] = useState<string | null>(null);
+  const [reviewedReport, setReviewedReport] = useState<{
+    version: string;
+    uri: string | null;
+  } | null>(null);
   const [selectedReportSections, setSelectedReportSections] =
     useState<PlayerReportSection[]>(allPlayerReportSections);
   const [reportExportError, setReportExportError] = useState('');
@@ -419,7 +516,8 @@ export default function MatchScreen() {
     : null;
   const hasReviewedReport =
     reportReviewVersion !== null &&
-    reviewedReportVersion === reportReviewVersion;
+    reviewedReport?.version === reportReviewVersion &&
+    (Platform.OS === 'web' || Boolean(reviewedReport.uri));
   const isReportBusy = reportAction !== null;
   const setHistory = match ? getLocalSetHistory(match) : [];
   const currentSet = setHistory.find((set) => set.isCurrent);
@@ -650,13 +748,14 @@ export default function MatchScreen() {
 
   async function previewPlayerReport() {
     const html = buildCurrentReportHtml();
-    if (!html || !reportReviewVersion || insightsQuery.isFetching || isReportBusy) return;
+    const reviewVersion = reportReviewVersion;
+    if (!html || !reviewVersion || insightsQuery.isFetching || isReportBusy) return;
 
     setReportAction('preview');
     setReportExportError('');
     try {
-      await Print.printAsync({ html });
-      setReviewedReportVersion(reportReviewVersion);
+      const uri = await createAndPreviewLocalPdf(html, Platform.OS, Print);
+      setReviewedReport({ version: reviewVersion, uri });
     } catch (error) {
       setReportExportError(
         error instanceof Error ? error.message : 'Could not open the report preview.',
@@ -667,8 +766,8 @@ export default function MatchScreen() {
   }
 
   async function sharePlayerReport() {
-    const html = buildCurrentReportHtml();
-    if (!html || !hasReviewedReport || insightsQuery.isFetching || isReportBusy) return;
+    const fileUri = reviewedReport?.uri;
+    if (!fileUri || !hasReviewedReport || insightsQuery.isFetching || isReportBusy) return;
 
     setReportAction('share');
     setReportExportError('');
@@ -676,8 +775,7 @@ export default function MatchScreen() {
       if (!(await Sharing.isAvailableAsync())) {
         throw new Error('Sharing is not available on this device.');
       }
-      const file = await Print.printToFileAsync({ html });
-      await Sharing.shareAsync(file.uri, {
+      await Sharing.shareAsync(fileUri, {
         mimeType: 'application/pdf',
         dialogTitle: 'Share player report',
         UTI: 'com.adobe.pdf',
@@ -766,15 +864,21 @@ export default function MatchScreen() {
         ]
       : []),
   ])].sort((a, b) => a - b);
+  const tiebreakPoints = match.points.filter((point) => point.isTiebreak);
+  const matrixTiebreakPoints = viewedSet.points.filter((point) => point.isTiebreak);
+  const maxMatrixTiebreakColumn = Math.max(
+    viewedSet.format === 'match_tiebreak' ? Math.min(viewedSet.tiebreakTarget, 10) : 7,
+    matrixTiebreakPoints.length,
+  );
   const matrixColumnCount = Math.max(
     8,
     ...Array.from(pointGroups.values(), (gamePoints) => gamePoints.length),
+    maxMatrixTiebreakColumn,
   );
-  const scoreColumns = Array.from({ length: matrixColumnCount }, (_, index) =>
-    index < 3 ? ['15', '30', '40'][index] : 'AD',
+  const pointColumns = Array.from(
+    { length: matrixColumnCount },
+    (_, index) => `P${index + 1}`,
   );
-  const tiebreakPoints = match.points.filter((point) => point.isTiebreak);
-  const matrixTiebreakPoints = viewedSet.points.filter((point) => point.isTiebreak);
   const currentGameNumber = match.score.trackedGames + match.score.opponentGames + 1;
   const matrixCurrentGameNumber =
     viewedSet.score.trackedGames + viewedSet.score.opponentGames + 1;
@@ -816,36 +920,107 @@ export default function MatchScreen() {
   const serverName =
     match.score.nextServer === 'tracked' ? trackedName : opponentName;
   const recordError = recordPoint.error?.message || undoPoint.error?.message;
-  const maxMatrixTiebreakColumn = Math.max(
-    viewedSet.format === 'match_tiebreak' ? Math.min(viewedSet.tiebreakTarget, 10) : 7,
-    matrixTiebreakPoints.length,
-  );
+  const matrixTiebreakScoreProgress = getTiebreakPointProgress(matrixTiebreakPoints);
+  const matrixTiebreakWinner = viewedSet.score.isComplete
+    ? matrixTiebreakPoints.at(-1)?.winner
+    : undefined;
   const matrixTiebreakRow = matrixShowsTiebreakRows ? (
     <View
-      style={[
-        styles.tiebreakBlock,
-        {
-          borderTopColor: colors.border,
-          backgroundColor: matrixTiebreakIsLive ? colors.secondary : 'transparent',
-        },
-      ]}
+      testID="matrix-tiebreak"
     >
-      <View style={styles.tiebreakLabel}>
-        <Text style={[styles.tiebreakTitle, { color: colors.foreground }]}>
-          {viewedSet.format === 'match_tiebreak'
-            ? `MATCH TIE-BREAK TO ${viewedSet.tiebreakTarget}`
-            : 'TIE-BREAK'}
-        </Text>
-        <Text style={[styles.tiebreakScore, { color: colors.mutedForeground }]}>
-          {viewedSet.score.trackedTiebreakPoints} – {viewedSet.score.opponentTiebreakPoints}
-        </Text>
-      </View>
-      {Array.from({ length: maxMatrixTiebreakColumn }, (_, index) => (
-        <View key={`tb-${index + 1}`} style={styles.tiebreakColumn}>
-          <Text style={[styles.tiebreakColumnHeader, { color: colors.mutedForeground }]}>
-            {index + 1}
+      <View
+        style={[
+          styles.matrixGameHeaderRow,
+          {
+            borderTopColor: colors.border,
+            backgroundColor: matrixTiebreakIsLive ? colors.secondary : 'transparent',
+          },
+        ]}
+      >
+        <View style={styles.tiebreakLabel}>
+          <Text style={[styles.tiebreakTitle, { color: colors.foreground }]}>
+            {viewedSet.format === 'match_tiebreak'
+              ? `MATCH TIE-BREAK TO ${viewedSet.tiebreakTarget}`
+              : 'TIE-BREAK'}
           </Text>
-          <CodeCell point={matrixTiebreakPoints[index]} colors={colors} />
+          <Text style={[styles.tiebreakScore, { color: colors.mutedForeground }]}>
+            {viewedSet.score.trackedTiebreakPoints} – {viewedSet.score.opponentTiebreakPoints}
+          </Text>
+        </View>
+        <View style={{ width: Math.max(0, matrixColumnCount * 36 - 3) }} />
+        <View
+          style={[
+            styles.winnerCell,
+            {
+              backgroundColor: matrixTiebreakWinner
+                ? matrixTiebreakWinner === 'tracked'
+                  ? colors.primary
+                  : colors.accent
+                : colors.background,
+              borderColor: matrixTiebreakWinner
+                ? matrixTiebreakWinner === 'tracked'
+                  ? colors.primary
+                  : colors.accent
+                : colors.border,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.winnerCellText,
+              {
+                color: matrixTiebreakWinner
+                  ? colors.primaryForeground
+                  : colors.mutedForeground,
+              },
+            ]}
+          >
+            {matrixTiebreakWinner
+              ? matrixTiebreakWinner === 'tracked'
+                ? 'T'
+                : 'O'
+              : '—'}
+          </Text>
+        </View>
+      </View>
+      {(['tracked', 'opponent'] as const).map((side) => (
+        <View
+          key={`tiebreak-${side}`}
+          testID={`matrix-tiebreak-lane-${side}`}
+          style={[
+            styles.matrixScoreLane,
+            {
+              borderTopColor: colors.border,
+              backgroundColor: matrixTiebreakIsLive ? colors.secondary : 'transparent',
+            },
+          ]}
+        >
+          <MatrixLaneLabel
+            side={side}
+            name={side === 'tracked' ? trackedName : opponentName}
+            colors={colors}
+          />
+          {Array.from({ length: matrixColumnCount }, (_, index) => {
+            const point = matrixTiebreakPoints[index];
+            const progress = matrixTiebreakScoreProgress[index];
+            return (
+              <ScoreProgressCell
+                key={`tb-${side}-${index + 1}`}
+                testID={`matrix-tiebreak-score-${index + 1}-${side}`}
+                score={
+                  progress
+                    ? side === 'tracked'
+                      ? progress.trackedScore
+                      : progress.opponentScore
+                    : '·'
+                }
+                point={point}
+                side={side}
+                colors={colors}
+              />
+            );
+          })}
+          <View style={styles.matrixWinnerSpacer} />
         </View>
       ))}
     </View>
@@ -1731,12 +1906,12 @@ export default function MatchScreen() {
             </Text>
             <Text style={[styles.sectionCaption, { color: colors.mutedForeground }]}>
               {isReviewingHistoricalSet
-                ? `Read-only review · live scoring stays in Set ${match.setNumber}`
+                ? `Read-only review · live scoring stays in Set ${match.setNumber} · 40–40 is deuce`
                 : viewedSet.score.isComplete
-                  ? 'Completed set · games in order'
+                  ? 'Completed games in order · both scores shown after each point · 40–40 is deuce'
                 : viewedSet.format === 'match_tiebreak'
-                  ? 'Live tiebreak first; completed games follow in order'
-                  : 'Current game first; completed games follow in order'}
+                  ? 'Tiebreak first · both point totals shown after every point'
+                  : 'Current game first · both scores shown after each point · 40–40 is deuce'}
             </Text>
           </View>
           <View style={styles.matrixLegend}>
@@ -1758,8 +1933,10 @@ export default function MatchScreen() {
         >
           <View>
             <View style={styles.matrixHeaderRow}>
-              <Text style={[styles.matrixGameHeader, { color: colors.mutedForeground }]}>GAME / SERVER</Text>
-              {scoreColumns.map((label, index) => (
+              <Text style={[styles.matrixGameHeader, { color: colors.mutedForeground }]}>
+                GAME / SERVER
+              </Text>
+              {pointColumns.map((label, index) => (
                 <Text
                   key={`${label}-${index}`}
                   style={[
@@ -1776,6 +1953,7 @@ export default function MatchScreen() {
             {matrixTiebreakIsLive ? matrixTiebreakRow : null}
             {matrixRegularGameNumbers.map((gameNumber) => {
               const gamePoints = pointGroups.get(gameNumber) ?? [];
+              const gameScoreProgress = getStandardPointProgress(gamePoints);
               const isCompleted = gameNumber <= matrixCompletedRegularGameCount;
               const rowWinner = isCompleted ? gamePoints.at(-1)?.winner : undefined;
               const isActiveGame =
@@ -1785,77 +1963,110 @@ export default function MatchScreen() {
                 <View
                   key={gameNumber}
                   testID={`matrix-game-${gameNumber}`}
-                  style={[
-                    styles.matrixRow,
-                    {
-                      borderTopColor: colors.border,
-                      backgroundColor: isActiveGame ? colors.secondary : 'transparent',
-                    },
-                  ]}
                 >
-                  <View style={styles.matrixGameLabel}>
-                    <Text style={[styles.gameNumber, { color: colors.foreground }]}>
-                      {String(gameNumber).padStart(2, '0')}
-                    </Text>
+                  <View
+                    style={[
+                      styles.matrixGameHeaderRow,
+                      {
+                        borderTopColor: colors.border,
+                        backgroundColor: isActiveGame ? colors.secondary : 'transparent',
+                      },
+                    ]}
+                  >
+                    <View style={styles.matrixGameLabel}>
+                      <Text style={[styles.gameNumber, { color: colors.foreground }]}>
+                        {String(gameNumber).padStart(2, '0')}
+                      </Text>
+                      <View
+                        style={[
+                          styles.serverCircle,
+                          { borderColor: server === 'tracked' ? colors.primary : colors.accent },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.serverInitial,
+                            { color: server === 'tracked' ? colors.primary : colors.accent },
+                          ]}
+                        >
+                          {server === 'tracked' ? 'T' : 'O'}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={{ width: Math.max(0, matrixColumnCount * 36 - 3) }} />
                     <View
                       style={[
-                        styles.serverCircle,
-                        { borderColor: server === 'tracked' ? colors.primary : colors.accent },
+                        styles.winnerCell,
+                        {
+                          backgroundColor: rowWinner
+                            ? rowWinner === 'tracked'
+                              ? colors.primary
+                              : colors.accent
+                            : colors.background,
+                          borderColor: rowWinner
+                            ? rowWinner === 'tracked'
+                              ? colors.primary
+                              : colors.accent
+                            : colors.border,
+                        },
                       ]}
                     >
                       <Text
                         style={[
-                          styles.serverInitial,
-                          { color: server === 'tracked' ? colors.primary : colors.accent },
+                          styles.winnerCellText,
+                          {
+                            color: rowWinner
+                              ? colors.primaryForeground
+                              : colors.mutedForeground,
+                          },
                         ]}
                       >
-                        {server === 'tracked' ? 'T' : 'O'}
+                        {rowWinner ? (rowWinner === 'tracked' ? 'T' : 'O') : '—'}
                       </Text>
                     </View>
                   </View>
-                  {Array.from(
-                    { length: matrixColumnCount },
-                    (_, pointIndex) => (
-                      <CodeCell
-                        key={`${gameNumber}-${pointIndex}`}
-                        point={gamePoints[pointIndex]}
-                        colors={colors}
-                      />
-                    ),
-                  )}
-                  <View
-                    style={[
-                      styles.winnerCell,
-                      {
-                        backgroundColor: rowWinner
-                          ? rowWinner === 'tracked'
-                            ? colors.primary
-                            : colors.accent
-                          : colors.background,
-                        borderColor: rowWinner
-                          ? rowWinner === 'tracked'
-                            ? colors.primary
-                            : colors.accent
-                          : colors.border,
-                      },
-                    ]}
-                  >
-                    <Text
+                  {(['tracked', 'opponent'] as const).map((side) => (
+                    <View
+                      key={`${gameNumber}-${side}`}
+                      testID={`matrix-game-${gameNumber}-lane-${side}`}
                       style={[
-                        styles.winnerCellText,
+                        styles.matrixScoreLane,
                         {
-                          color: rowWinner
-                            ? colors.primaryForeground
-                            : colors.mutedForeground,
+                          borderTopColor: colors.border,
+                          backgroundColor: isActiveGame ? colors.secondary : 'transparent',
                         },
                       ]}
                     >
-                      {rowWinner ? (rowWinner === 'tracked' ? 'T' : 'O') : '—'}
-                    </Text>
-                  </View>
+                      <MatrixLaneLabel
+                        side={side}
+                        name={side === 'tracked' ? trackedName : opponentName}
+                        colors={colors}
+                      />
+                      {Array.from({ length: matrixColumnCount }, (_, pointIndex) => {
+                        const progress = gameScoreProgress[pointIndex];
+                        return (
+                          <ScoreProgressCell
+                            key={`${gameNumber}-${side}-${pointIndex}`}
+                            testID={`matrix-game-${gameNumber}-score-${pointIndex + 1}-${side}`}
+                            score={
+                              progress
+                                ? side === 'tracked'
+                                  ? progress.trackedScore
+                                  : progress.opponentScore
+                                : '·'
+                            }
+                            point={gamePoints[pointIndex]}
+                            side={side}
+                            colors={colors}
+                          />
+                        );
+                      })}
+                      <View style={styles.matrixWinnerSpacer} />
+                    </View>
+                  ))}
                 </View>
               );
-              })}
+            })}
 
             {!matrixTiebreakIsLive ? matrixTiebreakRow : null}
           </View>
@@ -2073,7 +2284,7 @@ export default function MatchScreen() {
             <Pressable
               testID="button-export-player-report"
               accessibilityRole="button"
-              accessibilityLabel="Review report and open PDF save options"
+              accessibilityLabel="Preview the generated PDF report"
               disabled={isReportBusy || !insightsQuery.data || insightsQuery.isFetching}
               onPress={() => void previewPlayerReport()}
               style={[
@@ -2090,29 +2301,35 @@ export default function MatchScreen() {
               {reportAction === 'preview' ? (
                 <ActivityIndicator size="small" color={colors.secondaryForeground} />
               ) : (
-                <Ionicons name="print-outline" size={15} color={colors.secondaryForeground} />
+                <Ionicons name="eye-outline" size={15} color={colors.secondaryForeground} />
               )}
               <Text style={[styles.exportButtonText, { color: colors.secondaryForeground }]}>
-                {reportAction === 'preview' ? 'Opening…' : 'Review / save'}
+                {reportAction === 'preview' ? 'Preparing…' : 'Preview PDF'}
               </Text>
             </Pressable>
             {hasReviewedReport && Platform.OS !== 'web' ? (
               <Pressable
                 testID="button-share-player-report"
                 accessibilityRole="button"
-                accessibilityLabel="Share reviewed player report as PDF"
-                disabled={isReportBusy}
+                accessibilityLabel="Share the reviewed PDF report"
+                disabled={isReportBusy || !reviewedReport?.uri}
                 onPress={() => void sharePlayerReport()}
                 style={[
-                  styles.shareReportIcon,
-                  { opacity: isReportBusy ? 0.55 : 1 },
+                  styles.exportButton,
+                  {
+                    backgroundColor: colors.primary,
+                    opacity: isReportBusy || !reviewedReport?.uri ? 0.55 : 1,
+                  },
                 ]}
               >
                 {reportAction === 'share' ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
+                  <ActivityIndicator size="small" color={colors.primaryForeground} />
                 ) : (
-                  <Ionicons name="share-outline" size={18} color={colors.primary} />
+                  <Ionicons name="share-outline" size={15} color={colors.primaryForeground} />
                 )}
+                <Text style={[styles.exportButtonText, { color: colors.primaryForeground }]}>
+                  Share PDF
+                </Text>
               </Pressable>
             ) : null}
           </View>
@@ -3097,33 +3314,38 @@ const styles = StyleSheet.create({
   sectionCaption: { marginTop: 3, fontFamily: 'DMSans_400Regular', fontSize: 10 },
   exportButton: { minHeight: 36, borderRadius: 8, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 6 },
   exportButtonText: { fontFamily: 'DMSans_700Bold', fontSize: 11 },
-  shareReportIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
   exportError: { marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 7 },
   matrixLegend: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   legendDot: { width: 7, height: 7, borderRadius: 4, marginLeft: 3 },
   legendText: { fontFamily: 'DMSans_400Regular', fontSize: 8 },
   matrixCard: { borderWidth: 1, borderRadius: 11, paddingHorizontal: 9 },
-  matrixHeaderRow: { flexDirection: 'row', alignItems: 'center', minHeight: 32, gap: 4 },
+  matrixHeaderRow: { flexDirection: 'row', alignItems: 'center', minHeight: 32, gap: 3 },
   matrixGameHeader: { width: 77, fontFamily: 'DMSans_700Bold', fontSize: 7, letterSpacing: 0.4 },
-  matrixColumnHeader: { width: 31, textAlign: 'center', fontFamily: 'DMSans_700Bold', fontSize: 7 },
+  matrixColumnHeader: { width: 33, textAlign: 'center', fontFamily: 'DMSans_700Bold', fontSize: 7 },
   matrixWinnerHeader: { width: 29, textAlign: 'center', fontFamily: 'DMSans_700Bold', fontSize: 7 },
-  matrixRow: { minHeight: 40, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  matrixGameHeaderRow: { minHeight: 32, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 3 },
+  matrixScoreLane: { minHeight: 38, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 3 },
   matrixGameLabel: { width: 77, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  matrixLaneLabel: { width: 77, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  playerLaneBadge: { width: 17, height: 17, borderRadius: 9, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  playerLaneBadgeText: { fontFamily: 'DMSans_700Bold', fontSize: 7 },
+  matrixLaneName: { flex: 1, fontFamily: 'DMSans_500Medium', fontSize: 8 },
   gameNumber: { fontFamily: 'DMSans_600SemiBold', fontSize: 11, fontVariant: ['tabular-nums'] },
   serverCircle: { width: 20, height: 20, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   serverInitial: { fontFamily: 'DMSans_700Bold', fontSize: 8 },
   matrixCell: { width: 31, height: 27, borderWidth: 1, borderRadius: 4, alignItems: 'center', justifyContent: 'center', position: 'relative' },
   matrixCode: { fontFamily: 'DMSans_700Bold', fontSize: 8 },
+  matrixScoreCell: { width: 33, height: 34, borderWidth: 1, borderRadius: 5, alignItems: 'center', justifyContent: 'center', position: 'relative', paddingVertical: 2 },
+  matrixPointScore: { fontFamily: 'DMSans_700Bold', fontSize: 8, lineHeight: 10, fontVariant: ['tabular-nums'] },
+  matrixPointCode: { fontFamily: 'DMSans_700Bold', fontSize: 6, lineHeight: 7 },
   emptyCellText: { fontFamily: 'DMSans_400Regular', fontSize: 12 },
   faultDot: { position: 'absolute', left: 3, bottom: 3, width: 4, height: 4, borderRadius: 2 },
   winnerCell: { width: 29, height: 27, borderWidth: 1, borderRadius: 4, alignItems: 'center', justifyContent: 'center' },
   winnerCellText: { fontFamily: 'DMSans_700Bold', fontSize: 9 },
-  tiebreakBlock: { minHeight: 58, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 5 },
   tiebreakLabel: { width: 77, gap: 3 },
   tiebreakTitle: { fontFamily: 'DMSans_700Bold', fontSize: 7, letterSpacing: 0.5 },
   tiebreakScore: { fontFamily: 'DMSans_500Medium', fontSize: 8 },
-  tiebreakColumn: { width: 31, alignItems: 'center', gap: 3 },
-  tiebreakColumnHeader: { fontFamily: 'DMSans_600SemiBold', fontSize: 7 },
+  matrixWinnerSpacer: { width: 29, height: 27 },
   insightCard: { borderWidth: 1, borderRadius: 11, padding: 11 },
   reportPlayer: { fontFamily: 'Manrope_700Bold', fontSize: 16 },
   reportCaption: { marginTop: 3, marginBottom: 11, fontFamily: 'DMSans_400Regular', fontSize: 10 },

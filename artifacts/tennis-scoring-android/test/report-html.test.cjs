@@ -57,6 +57,7 @@ const { buildPlayerReportHtml } = require('../lib/player-report-html.ts');
 playerReportExports = { buildPlayerReportHtml };
 const { buildHeadToHeadReportHtml } = require('../lib/head-to-head-report-html.ts');
 Module._load = originalLoad;
+const { createAndPreviewLocalPdf } = require('../lib/report-pdf.ts');
 
 const emptySide = {
   servicePoints: 4,
@@ -433,4 +434,42 @@ test('long match reports keep all set, feedback, observation, and shot details p
   assert.match(html, /\.feedback li\s*\{[^}]*page-break-inside:\s*avoid/);
   assert.match(html, /\.observation-group\s*\{[^}]*page-break-inside:\s*avoid/);
   assert.match(html, /\.observation-list li\s*\{[^}]*page-break-inside:\s*avoid/);
+});
+
+test('native report preview creates a local PDF before opening that same file', async () => {
+  const events = [];
+  const html = '<h1>Private match report</h1>';
+  const uri = 'file:///app/cache/player-report.pdf';
+  const reviewedUri = await createAndPreviewLocalPdf(html, 'android', {
+    async printToFileAsync(options) {
+      events.push({ action: 'generate', options });
+      return { uri };
+    },
+    async printAsync(options) {
+      events.push({ action: 'preview', options });
+    },
+  });
+
+  assert.equal(reviewedUri, uri);
+  assert.deepEqual(events, [
+    { action: 'generate', options: { html } },
+    { action: 'preview', options: { uri } },
+  ]);
+});
+
+test('web report preview keeps using the HTML print dialog without a local share file', async () => {
+  const events = [];
+  const html = '<h1>Private match report</h1>';
+  const uri = await createAndPreviewLocalPdf(html, 'web', {
+    async printToFileAsync(options) {
+      events.push({ action: 'generate', options });
+      return { uri: 'file:///unused.pdf' };
+    },
+    async printAsync(options) {
+      events.push({ action: 'preview', options });
+    },
+  });
+
+  assert.equal(uri, null);
+  assert.deepEqual(events, [{ action: 'preview', options: { html } }]);
 });

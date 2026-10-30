@@ -9,6 +9,7 @@
     "serve": "node server/serve.js",
     "test:offline-persistence": "node --test test/local-persistence.test.cjs test/backup-restore.test.cjs",
     "test:reports": "node --test test/report-html.test.cjs",
+    "test:score-progress": "node --test test/score-progress.test.cjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
