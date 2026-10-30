@@ -931,14 +931,10 @@ export default function MatchScreen() {
   ])].sort((a, b) => a - b);
   const tiebreakPoints = match.points.filter((point) => point.isTiebreak);
   const matrixTiebreakPoints = viewedSet.points.filter((point) => point.isTiebreak);
-  const maxMatrixTiebreakColumn = Math.max(
-    viewedSet.format === 'match_tiebreak' ? Math.min(viewedSet.tiebreakTarget, 10) : 7,
-    matrixTiebreakPoints.length,
-  );
   const matrixColumnCount = Math.max(
-    8,
+    1,
     ...Array.from(pointGroups.values(), (gamePoints) => gamePoints.length),
-    maxMatrixTiebreakColumn,
+    matrixTiebreakPoints.length,
   );
   const pointColumns = Array.from(
     { length: matrixColumnCount },
@@ -1979,12 +1975,12 @@ export default function MatchScreen() {
             </Text>
             <Text style={[styles.sectionCaption, { color: colors.mutedForeground }]}>
               {isReviewingHistoricalSet
-                ? `Read-only review · live scoring stays in Set ${match.setNumber} · 40–40 is deuce`
+                ? `Read-only review · live scoring stays in Set ${match.setNumber} · T/O lanes are chronological`
                 : viewedSet.score.isComplete
-                  ? 'Completed games in order · both scores shown after each point · 40–40 is deuce'
+                  ? 'Completed games in order · T/O lanes · both scores after each point · 40–40 is deuce'
                 : viewedSet.format === 'match_tiebreak'
-                  ? 'Tiebreak first · both point totals shown after every point'
-                  : 'Current game first · both scores shown after each point · 40–40 is deuce'}
+                  ? 'Tiebreak first · T/O lanes show both point totals after each point'
+                  : 'Current game first · T/O lanes show each point in order · 40–40 is deuce'}
             </Text>
           </View>
           <View style={styles.matrixLegend}>
@@ -3486,7 +3482,7 @@ const styles = StyleSheet.create({
   matrixCode: { fontFamily: 'DMSans_700Bold', fontSize: 8 },
   matrixScoreCell: { width: 33, height: 34, borderWidth: 1, borderRadius: 5, alignItems: 'center', justifyContent: 'center', position: 'relative', paddingVertical: 2 },
   matrixPointScore: { fontFamily: 'DMSans_700Bold', fontSize: 8, lineHeight: 10, fontVariant: ['tabular-nums'] },
-  matrixPointCode: { fontFamily: 'DMSans_700Bold', fontSize: 6, lineHeight: 7 },
+  matrixPointCode: { fontFamily: 'DMSans_700Bold', fontSize: 7, lineHeight: 8 },
   emptyCellText: { fontFamily: 'DMSans_400Regular', fontSize: 12 },
   faultDot: { position: 'absolute', left: 3, bottom: 3, width: 4, height: 4, borderRadius: 2 },
   winnerCell: { width: 29, height: 27, borderWidth: 1, borderRadius: 4, alignItems: 'center', justifyContent: 'center' },

@@ -68,3 +68,19 @@ test('tiebreak progress shows both point totals in chronological order', () => {
     { trackedScore: '3', opponentScore: '2' },
   ]);
 });
+
+test('score progress derives labels without changing stored point data', () => {
+  const points = Object.freeze(
+    [
+      { winner: 'tracked', endingCode: 'A' },
+      { winner: 'opponent', endingCode: 'N' },
+      { winner: 'tracked', endingCode: 'V' },
+    ].map(Object.freeze),
+  );
+  const originalPoints = JSON.stringify(points);
+
+  getStandardPointProgress(points);
+  getTiebreakPointProgress(points);
+
+  assert.equal(JSON.stringify(points), originalPoints);
+});
