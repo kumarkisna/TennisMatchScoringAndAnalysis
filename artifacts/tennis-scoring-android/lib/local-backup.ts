@@ -227,7 +227,6 @@ function isBackupPoint(value: unknown): boolean {
             (stroke.note === null || stroke.note.length <= 200)
           );
         }))) &&
-    (value.syncStatus === 'pending' || value.syncStatus === 'synced') &&
     isTimestamp(value.createdAt)
   );
 }
