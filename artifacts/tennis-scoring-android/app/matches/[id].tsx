@@ -2984,7 +2984,7 @@ export default function MatchScreen() {
 
             <View style={[styles.feedbackBlock, { backgroundColor: colors.secondary }]}>
               <Text style={[styles.codeStatsTitle, { color: colors.secondaryForeground }]}>
-                PLAYER FEEDBACK
+                MATCH FEEDBACK
               </Text>
               {performance.feedback.map((item, index) => (
                 <View key={`${index}-${item}`} style={styles.feedbackRow}>

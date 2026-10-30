@@ -304,6 +304,38 @@ function breakPointFeedback(
   return `Break-point defense was mixed in this sample: the tracked player ${detail} (${successPercent}%).`;
 }
 
+function opponentBreakPointFeedback(
+  opportunities: number,
+  converted: number,
+  faced: number,
+  saved: number,
+): string | null {
+  const details: string[] = [];
+  const sampleSizes: number[] = [];
+  const conversionPercent = percent(converted, opportunities);
+  const savedPercent = percent(saved, faced);
+
+  if (conversionPercent !== null) {
+    details.push(
+      `converted ${converted} of ${opportunities} break-point chances (${conversionPercent}%)`,
+    );
+    sampleSizes.push(opportunities);
+  }
+  if (savedPercent !== null) {
+    details.push(
+      `saved ${saved} of ${faced} break points faced (${savedPercent}%)`,
+    );
+    sampleSizes.push(faced);
+  }
+  if (details.length === 0) return null;
+
+  const pattern = `the opponent ${details.join(' and ')}`;
+  if (sampleSizes.some((sampleSize) => sampleSize < 5)) {
+    return `Directional only, not conclusive: ${pattern}.`;
+  }
+  return `Opponent break-point pattern: ${pattern}.`;
+}
+
 function summarizeContext<T extends string>(
   options: readonly { value: T; label: string }[],
   records: readonly LocalContextInsight<T>[],
@@ -539,6 +571,12 @@ export function summarizePlayerPerformance(
       insights.breakPoints.tracked.saved,
       insights.breakPoints.tracked.faced,
     ),
+    opponentBreakPointFeedback(
+      insights.breakPoints.opponent.opportunities,
+      insights.breakPoints.opponent.converted,
+      insights.breakPoints.opponent.faced,
+      insights.breakPoints.opponent.saved,
+    ),
   ].filter((item): item is string => item !== null);
   const feedback: string[] = [];
   const shotFeedback: string[] = [];
@@ -673,6 +711,6 @@ export function summarizePlayerPerformance(
       ...breakPointFeedbackItems,
       ...feedback.slice(0, 2),
       ...shotFeedback,
-    ].slice(0, 5),
+    ].slice(0, 6),
   };
 }

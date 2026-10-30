@@ -817,7 +817,7 @@ export function buildPlayerReportHtml(
     ` : ''}
 
     ${includes('coaching') ? `
-    <h2>Coaching notes from this sample</h2>
+    <h2>Match feedback from this sample</h2>
     <ul class="feedback">${feedbackRows}</ul>
     ` : ''}
 

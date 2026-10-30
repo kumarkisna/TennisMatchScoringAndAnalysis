@@ -1474,7 +1474,7 @@ test('player feedback interprets break-point results and marks small samples dir
     ...calculateLocalInsights(match),
     breakPoints: {
       tracked: { opportunities: 3, converted: 2, faced: 4, saved: 3 },
-      opponent: { ...emptyBreakPoints },
+      opponent: { opportunities: 3, converted: 2, faced: 4, saved: 3 },
     },
   };
   const directional = summarizePlayerPerformance(insights);
@@ -1488,6 +1488,11 @@ test('player feedback interprets break-point results and marks small samples dir
       'Directional only, not conclusive: the tracked player saved 3 of 4 break points faced (75%).',
     ),
   );
+  assert.ok(
+    directional.feedback.includes(
+      'Directional only, not conclusive: the opponent converted 2 of 3 break-point chances (67%) and saved 3 of 4 break points faced (75%).',
+    ),
+  );
 
   const reportHtml = buildPlayerReportHtml(
     match,
@@ -1497,12 +1502,23 @@ test('player feedback interprets break-point results and marks small samples dir
   assert.match(reportHtml, /Directional only, not conclusive/);
   assert.match(reportHtml, /converted 2 of 3 break-point chances \(67%\)/);
   assert.match(reportHtml, /saved 3 of 4 break points faced \(75%\)/);
+  assert.match(
+    reportHtml,
+    /Directional only, not conclusive: the opponent converted 2 of 3 break-point chances \(67%\) and saved 3 of 4 break points faced \(75%\)/,
+  );
+  assert.match(reportHtml, /Match feedback from this sample/);
+  const matchScreenSource = fs.readFileSync(
+    path.join(__dirname, '../app/matches/[id].tsx'),
+    'utf8',
+  );
+  assert.match(matchScreenSource, /MATCH FEEDBACK/);
+  assert.match(matchScreenSource, /performance\.feedback\.map/);
 
   const establishedSample = summarizePlayerPerformance({
     ...insights,
     breakPoints: {
       tracked: { opportunities: 6, converted: 2, faced: 5, saved: 2 },
-      opponent: { ...emptyBreakPoints },
+      opponent: { opportunities: 6, converted: 4, faced: 6, saved: 4 },
     },
   });
   assert.ok(
@@ -1514,6 +1530,38 @@ test('player feedback interprets break-point results and marks small samples dir
     establishedSample.feedback.includes(
       'Break-point defense is an area to work on: the tracked player saved 2 of 5 break points faced (40%).',
     ),
+  );
+  assert.ok(
+    establishedSample.feedback.includes(
+      'Opponent break-point pattern: the opponent converted 4 of 6 break-point chances (67%) and saved 4 of 6 break points faced (67%).',
+    ),
+  );
+
+  const mixedOpponentSample = summarizePlayerPerformance({
+    ...insights,
+    breakPoints: {
+      tracked: { ...emptyBreakPoints },
+      opponent: { opportunities: 3, converted: 2, faced: 6, saved: 4 },
+    },
+  });
+  assert.ok(
+    mixedOpponentSample.feedback.includes(
+      'Directional only, not conclusive: the opponent converted 2 of 3 break-point chances (67%) and saved 4 of 6 break points faced (67%).',
+    ),
+  );
+
+  const noBreakPointChances = summarizePlayerPerformance({
+    ...insights,
+    breakPoints: {
+      tracked: { ...emptyBreakPoints },
+      opponent: { ...emptyBreakPoints },
+    },
+  });
+  assert.equal(
+    noBreakPointChances.feedback.some((item) =>
+      item.toLowerCase().includes('break-point'),
+    ),
+    false,
   );
 });
 
