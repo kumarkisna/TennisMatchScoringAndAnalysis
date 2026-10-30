@@ -2550,7 +2550,18 @@ test('anonymized single-match reports replace names in headings and match notes'
   match.opponent = 'Bailey';
   match.event = 'Alex vs Bailey';
   match.gameNotes = [
-    { setNumber: 1, gameNumber: 1, note: 'Alex moved Bailey wide' },
+    { setNumber: 1, gameNumber: 1, note: 'Game note: Alex moved Bailey wide' },
+  ];
+  match.review.tacticalNote = 'Set observation: Alex targeted Bailey’s backhand';
+  match.review.mentalNote = 'Set observation: Bailey looked composed against Alex';
+  match.points[0].strokes = [
+    {
+      id: 'privacy-point-note',
+      player: 'tracked',
+      strokeType: 'forehand_drive',
+      result: 'winner',
+      note: 'Point note: Alex changed direction past Bailey',
+    },
   ];
   const originalMatch = structuredClone(match);
   const insights = calculateLocalInsights(match);
@@ -2591,6 +2602,13 @@ test('anonymized single-match reports replace names in headings and match notes'
   assert.match(anonymousHtml, /Player A/);
   assert.match(anonymousHtml, /Player B/);
   assert.doesNotMatch(anonymousHtml, /Alex|Bailey/i);
+  assert.match(anonymousHtml, /Set observation: Player A targeted Player B/);
+  assert.match(anonymousHtml, /Game note: Player A moved Player B wide/);
+  assert.match(anonymousHtml, /Point note: Player A changed direction past Player B/);
+  assert.match(namedHtml, /Set observation: Alex targeted Bailey/);
+  assert.match(namedHtml, /Game note: Alex moved Bailey wide/);
+  assert.match(namedHtml, /Point note: Alex changed direction past Bailey/);
+  assert.match(namedHtml, /Bailey looked composed against Alex/);
   assert.match(customHtml, /Main athlete/);
   assert.match(customHtml, /Visitor/);
   assert.doesNotMatch(customHtml, /Alex|Bailey/i);
@@ -2629,6 +2647,11 @@ test('anonymized head-to-head reports hide player names in match results', () =>
     '2026-10-01',
   );
   const report = buildHeadToHeadReport('Alex', 'Bailey', [meeting], [meeting]);
+  report.performance.feedback = [
+    'Set observation: Alex adjusted to Bailey’s deep returns',
+    'Point note: Bailey’s forehand pressured Alex',
+    'Game note: Alex served wide to Bailey',
+  ];
   const originalReport = structuredClone(report);
 
   const anonymousHtml = buildHeadToHeadReportHtml(
@@ -2657,6 +2680,12 @@ test('anonymized head-to-head reports hide player names in match results', () =>
   assert.match(anonymousHtml, /Player A/);
   assert.match(anonymousHtml, /Player B/);
   assert.doesNotMatch(anonymousHtml, /Alex|Bailey/i);
+  assert.match(anonymousHtml, /Set observation: Player A adjusted to Player B/);
+  assert.match(anonymousHtml, /Point note: Player B’s forehand pressured Player A/);
+  assert.match(anonymousHtml, /Game note: Player A served wide to Player B/);
+  assert.match(namedHtml, /Set observation: Alex adjusted to Bailey/);
+  assert.match(namedHtml, /Point note: Bailey’s forehand pressured Alex/);
+  assert.match(namedHtml, /Game note: Alex served wide to Bailey/);
   assert.match(customHtml, /Main athlete/);
   assert.match(customHtml, /Visitor/);
   assert.doesNotMatch(customHtml, /Alex|Bailey/i);
