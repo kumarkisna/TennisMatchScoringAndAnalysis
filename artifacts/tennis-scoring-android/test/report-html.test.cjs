@@ -107,7 +107,14 @@ const {
 const { summarizePlayerPerformance } = playerInsightsExports;
 const { buildHeadToHeadReport, getHeadToHeadOpponentOptions } = headToHeadExports;
 Module._load = originalLoad;
-const { createAndPreviewLocalPdf } = require('../lib/report-pdf.ts');
+const {
+  createAndPreviewLocalPdf,
+  shareReviewedLocalPdf,
+} = require('../lib/report-pdf.ts');
+const headToHeadScreenSource = fs.readFileSync(
+  path.join(__dirname, '../app/head-to-head.tsx'),
+  'utf8',
+);
 const {
   calculateBreakPointStats,
   calculateLocalInsights,
@@ -2945,6 +2952,89 @@ test('native report preview creates a local PDF before opening that same file', 
     { action: 'generate', options: { html } },
     { action: 'preview', options: { uri } },
   ]);
+});
+
+test('head-to-head sharing reuses the exact reviewed local PDF URI', async () => {
+  const events = [];
+  const uri = 'file:///app/cache/head-to-head-report.pdf';
+
+  await shareReviewedLocalPdf(uri, 'Share head-to-head report', {
+    async isAvailableAsync() {
+      events.push({ action: 'check-sharing' });
+      return true;
+    },
+    async shareAsync(sharedUri, options) {
+      events.push({ action: 'share', uri: sharedUri, options });
+    },
+  });
+
+  assert.deepEqual(events, [
+    { action: 'check-sharing' },
+    {
+      action: 'share',
+      uri,
+      options: {
+        mimeType: 'application/pdf',
+        dialogTitle: 'Share head-to-head report',
+        UTI: 'com.adobe.pdf',
+      },
+    },
+  ]);
+});
+
+test('head-to-head sharing refuses to open without a reviewed PDF URI', async () => {
+  let availabilityChecks = 0;
+  await assert.rejects(
+    () =>
+      shareReviewedLocalPdf('', 'Share head-to-head report', {
+        async isAvailableAsync() {
+          availabilityChecks += 1;
+          return true;
+        },
+        async shareAsync() {},
+      }),
+    /Review the PDF before sharing it/,
+  );
+  assert.equal(availabilityChecks, 0);
+});
+
+test('head-to-head share requires the current reviewed PDF and never creates a new file', () => {
+  const previewStart =
+    headToHeadScreenSource.indexOf('async function previewReport()');
+  const previewEnd =
+    headToHeadScreenSource.indexOf('async function shareReport()', previewStart);
+  const shareStart = headToHeadScreenSource.indexOf('async function shareReport()');
+  const shareEnd = headToHeadScreenSource.indexOf(
+    'function toggleReportSection',
+    shareStart,
+  );
+  assert.notEqual(previewStart, -1);
+  assert.notEqual(previewEnd, -1);
+  assert.notEqual(shareStart, -1);
+  assert.notEqual(shareEnd, -1);
+  const previewBody = headToHeadScreenSource.slice(previewStart, previewEnd);
+  const shareBody = headToHeadScreenSource.slice(shareStart, shareEnd);
+
+  assert.match(previewBody, /createAndPreviewLocalPdf\(html, Platform\.OS, Print\)/);
+  assert.doesNotMatch(previewBody, /shareReviewedLocalPdf|shareReport\(/);
+  assert.match(
+    headToHeadScreenSource,
+    /setReviewedReport\(\{ version: reviewVersion, uri \}\)/,
+  );
+  assert.match(
+    headToHeadScreenSource,
+    /isReportReviewCurrent\(reviewedReport\?\.version, reportReviewVersion\)/,
+  );
+  assert.match(headToHeadScreenSource, /Boolean\(reviewedReport\?\.uri\)/);
+  assert.match(headToHeadScreenSource, /\{hasReviewedReport \? \(/);
+  assert.match(
+    headToHeadScreenSource,
+    /disabled=\{isReportBusy \|\| !reviewedReport\?\.uri\}/,
+  );
+  assert.match(shareBody, /const fileUri = reviewedReport\?\.uri/);
+  assert.match(shareBody, /!fileUri\s*\|\|\s*!hasReviewedReport/);
+  assert.match(shareBody, /shareReviewedLocalPdf\(/);
+  assert.doesNotMatch(shareBody, /printToFileAsync|printAsync|shareAsync/);
 });
 
 test('web report preview keeps using the HTML print dialog without a local share file', async () => {

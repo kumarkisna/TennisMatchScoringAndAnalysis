@@ -45,6 +45,10 @@ import {
   getReportNameVisibilityVersion,
   isReportReviewCurrent,
 } from '@/lib/report-review';
+import {
+  createAndPreviewLocalPdf,
+  shareReviewedLocalPdf,
+} from '@/lib/report-pdf';
 import { POINT_CODE_LABELS } from '@/lib/player-report-html';
 import type { ContextPerformanceInsight } from '@/lib/player-insights';
 import {
@@ -334,7 +338,10 @@ export default function HeadToHeadScreen() {
   const [opponentOverride, setOpponentOverride] = useState('');
   const [showSurfaceBreakPoints, setShowSurfaceBreakPoints] = useState(false);
   const [reportAction, setReportAction] = useState<'review' | 'share' | null>(null);
-  const [reviewedVersion, setReviewedVersion] = useState('');
+  const [reviewedReport, setReviewedReport] = useState<{
+    version: string;
+    uri: string | null;
+  } | null>(null);
   const [reportError, setReportError] = useState('');
   const [selectedReportSections, setSelectedReportSections] =
     useState<HeadToHeadReportSection[]>(allHeadToHeadReportSections);
@@ -454,7 +461,8 @@ export default function HeadToHeadScreen() {
   const hasReviewedReport =
     Boolean(reportReviewVersion) &&
     reportBenchmarksReady &&
-    isReportReviewCurrent(reviewedVersion, reportReviewVersion);
+    isReportReviewCurrent(reviewedReport?.version, reportReviewVersion) &&
+    (Platform.OS === 'web' || Boolean(reviewedReport?.uri));
   const reportHtml = report && reportBenchmarksQuery.data
     ? buildHeadToHeadReportHtml(report, selectedReportSections, {
         hidePlayerNames,
@@ -749,9 +757,11 @@ export default function HeadToHeadScreen() {
     })) ?? [];
 
   async function previewReport() {
+    const html = reportHtml;
+    const reviewVersion = reportReviewVersion;
     if (
-      !reportHtml ||
-      !reportReviewVersion ||
+      !html ||
+      !reviewVersion ||
       !reportBenchmarksReady ||
       !reportLabelsReady ||
       isReportBusy
@@ -762,8 +772,8 @@ export default function HeadToHeadScreen() {
     setReportError('');
     try {
       const Print = await import('expo-print');
-      await Print.printAsync({ html: reportHtml });
-      setReviewedVersion(reportReviewVersion);
+      const uri = await createAndPreviewLocalPdf(html, Platform.OS, Print);
+      setReviewedReport({ version: reviewVersion, uri });
     } catch (error) {
       setReportError(
         error instanceof Error ? error.message : 'Could not open the report preview.',
@@ -774,8 +784,9 @@ export default function HeadToHeadScreen() {
   }
 
   async function shareReport() {
+    const fileUri = reviewedReport?.uri;
     if (
-      !reportHtml ||
+      !fileUri ||
       !hasReviewedReport ||
       !reportBenchmarksReady ||
       isReportBusy ||
@@ -786,19 +797,12 @@ export default function HeadToHeadScreen() {
     setReportAction('share');
     setReportError('');
     try {
-      const [Print, Sharing] = await Promise.all([
-        import('expo-print'),
-        import('expo-sharing'),
-      ]);
-      if (!(await Sharing.isAvailableAsync())) {
-        throw new Error('Sharing is not available on this device.');
-      }
-      const file = await Print.printToFileAsync({ html: reportHtml });
-      await Sharing.shareAsync(file.uri, {
-        mimeType: 'application/pdf',
-        dialogTitle: 'Share head-to-head report',
-        UTI: 'com.adobe.pdf',
-      });
+      const Sharing = await import('expo-sharing');
+      await shareReviewedLocalPdf(
+        fileUri,
+        'Share head-to-head report',
+        Sharing,
+      );
     } catch (error) {
       setReportError(
         error instanceof Error ? error.message : 'Could not prepare the PDF report.',
@@ -873,7 +877,7 @@ export default function HeadToHeadScreen() {
             onSelect={(name) => {
               setTrackedOverride(name);
               setOpponentOverride('');
-              setReviewedVersion('');
+              setReviewedReport(null);
               setReportError('');
             }}
             prefix="tracked-player"
@@ -886,7 +890,7 @@ export default function HeadToHeadScreen() {
             selected={selectedOpponent}
             onSelect={(name) => {
               setOpponentOverride(name);
-              setReviewedVersion('');
+              setReviewedReport(null);
               setReportError('');
             }}
             prefix="opponent"
@@ -1517,7 +1521,7 @@ export default function HeadToHeadScreen() {
                     testID="button-share-head-to-head-pdf"
                     accessibilityRole="button"
                     accessibilityLabel="Share reviewed head-to-head report as PDF"
-                    disabled={isReportBusy}
+                    disabled={isReportBusy || !reviewedReport?.uri}
                     onPress={() => void shareReport()}
                     style={[
                       styles.shareButton,
@@ -1525,7 +1529,7 @@ export default function HeadToHeadScreen() {
                         backgroundColor: colors.card,
                         borderColor: colors.border,
                         borderRadius: colors.radius,
-                        opacity: isReportBusy ? 0.5 : 1,
+                        opacity: isReportBusy || !reviewedReport?.uri ? 0.5 : 1,
                       },
                     ]}
                   >
