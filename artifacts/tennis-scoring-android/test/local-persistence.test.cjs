@@ -1272,7 +1272,48 @@ test('saved player choices relink both match sides without changing recorded poi
 test('renaming a saved player keeps trend history after restart and preserves match data', async () => {
   storageValues.clear();
   const { localMatches, localPlayers } = loadStorageModulesAfterRestart();
-  const trackedPlayer = await localPlayers.addLocalPlayer('Sana Iyer');
+  const trackedPlayer = await localPlayers.addLocalPlayer('Sana Iyer', {
+    dateOfBirth: '2005-07-09',
+    atpPlayerId: 'ATP-12345',
+    itfPlayerId: 'ITF-54321',
+    atpRanking: 287,
+    itfRanking: 121,
+    nationality: 'India',
+    playingHand: 'right',
+    heightCm: 176,
+    weightKg: 68,
+    phoneNumbers: ['+91 98765 43210'],
+    profileUrls: ['https://example.org/players/sana-iyer'],
+    profileUrlLabels: ['ATP profile'],
+  });
+  const expectedProfile = {
+    dateOfBirth: '2005-07-09',
+    atpPlayerId: 'ATP-12345',
+    itfPlayerId: 'ITF-54321',
+    atpRanking: 287,
+    itfRanking: 121,
+    nationality: 'India',
+    playingHand: 'right',
+    heightCm: 176,
+    weightKg: 68,
+    phoneNumbers: ['+91 98765 43210'],
+    profileUrls: ['https://example.org/players/sana-iyer'],
+    profileUrlLabels: ['ATP profile'],
+  };
+  const getProfileDetails = (player) => ({
+    dateOfBirth: player.dateOfBirth,
+    atpPlayerId: player.atpPlayerId,
+    itfPlayerId: player.itfPlayerId,
+    atpRanking: player.atpRanking,
+    itfRanking: player.itfRanking,
+    nationality: player.nationality,
+    playingHand: player.playingHand,
+    heightCm: player.heightCm,
+    weightKg: player.weightKg,
+    phoneNumbers: player.phoneNumbers,
+    profileUrls: player.profileUrls,
+    profileUrlLabels: player.profileUrlLabels,
+  });
   const opponentPlayer = await localPlayers.addLocalPlayer('Maya Rao');
 
   const trackedMatch = await localMatches.createLocalMatch({
@@ -1357,6 +1398,9 @@ test('renaming a saved player keeps trend history after restart and preserves ma
 
   const afterRestart = loadStorageModulesAfterRestart();
   const rosterAfter = await afterRestart.localPlayers.listLocalPlayers();
+  const savedRenamedPlayer = rosterAfter.find(
+    (player) => player.id === trackedPlayer.id,
+  );
   const historyAfter = await afterRestart.localMatches.listLocalPlayerMatchInsights(
     renamedPlayer.id,
     rosterAfter,
@@ -1370,6 +1414,11 @@ test('renaming a saved player keeps trend history after restart and preserves ma
 
   assert.equal(renamedPlayer.id, trackedPlayer.id);
   assert.equal(renamedPlayer.name, 'Sana Iyer Renamed');
+  assert.ok(savedRenamedPlayer);
+  assert.deepEqual(getProfileDetails(renamedPlayer), expectedProfile);
+  assert.equal(renamedPlayer.createdAt, trackedPlayer.createdAt);
+  assert.deepEqual(getProfileDetails(savedRenamedPlayer), expectedProfile);
+  assert.equal(savedRenamedPlayer.createdAt, trackedPlayer.createdAt);
   assert.equal(
     rosterAfter.find((player) => player.id === trackedPlayer.id)?.name,
     'Sana Iyer Renamed',
