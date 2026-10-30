@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
+import { ReportSectionPicker } from '@/components/ReportSectionPicker';
 import {
   getLocalInsights,
   listLocalMatches,
@@ -36,6 +37,11 @@ import {
 import { buildHeadToHeadReportHtml } from '@/lib/head-to-head-report-html';
 import { POINT_CODE_LABELS } from '@/lib/player-report-html';
 import type { ContextPerformanceInsight } from '@/lib/player-insights';
+import {
+  allHeadToHeadReportSections,
+  HEAD_TO_HEAD_REPORT_SECTIONS,
+  type HeadToHeadReportSection,
+} from '@/lib/report-sections';
 
 type Theme = ReturnType<typeof useColors>;
 
@@ -278,6 +284,8 @@ export default function HeadToHeadScreen() {
   const [reportAction, setReportAction] = useState<'review' | 'share' | null>(null);
   const [reviewedVersion, setReviewedVersion] = useState('');
   const [reportError, setReportError] = useState('');
+  const [selectedReportSections, setSelectedReportSections] =
+    useState<HeadToHeadReportSection[]>(allHeadToHeadReportSections);
 
   const matchesQuery = useQuery({
     queryKey: LOCAL_MATCH_LIST_KEY,
@@ -364,10 +372,13 @@ export default function HeadToHeadScreen() {
     report?.meetings
       .map(({ summary }) => `${summary.id}:${summary.updatedAt}`)
       .join('|') ?? '';
+  const reportReviewVersion = reportVersion
+    ? `${reportVersion}:${selectedReportSections.join(',')}`
+    : '';
   const hasReviewedReport =
-    Boolean(reportVersion) && reviewedVersion === reportVersion;
+    Boolean(reportReviewVersion) && reviewedVersion === reportReviewVersion;
   const reportHtml = report
-    ? buildHeadToHeadReportHtml(report)
+    ? buildHeadToHeadReportHtml(report, selectedReportSections)
     : null;
   const isReportBusy = reportAction !== null;
 
@@ -666,13 +677,13 @@ export default function HeadToHeadScreen() {
     : [];
 
   async function previewReport() {
-    if (!reportHtml || !reportVersion || isReportBusy) return;
+    if (!reportHtml || !reportReviewVersion || isReportBusy) return;
     setReportAction('review');
     setReportError('');
     try {
       const Print = await import('expo-print');
       await Print.printAsync({ html: reportHtml });
-      setReviewedVersion(reportVersion);
+      setReviewedVersion(reportReviewVersion);
     } catch (error) {
       setReportError(
         error instanceof Error ? error.message : 'Could not open the report preview.',
@@ -714,6 +725,16 @@ export default function HeadToHeadScreen() {
     } finally {
       setReportAction(null);
     }
+  }
+
+  function toggleReportSection(section: string) {
+    if (!HEAD_TO_HEAD_REPORT_SECTIONS.some((item) => item.id === section)) return;
+    const selectedSection = section as HeadToHeadReportSection;
+    setSelectedReportSections((current) =>
+      current.includes(selectedSection)
+        ? current.filter((item) => item !== selectedSection)
+        : [...current, selectedSection],
+    );
   }
 
   return (
@@ -882,6 +903,17 @@ export default function HeadToHeadScreen() {
           </View>
         ) : (
           <>
+            <ReportSectionPicker
+              testID="head-to-head-report-sections"
+              sections={HEAD_TO_HEAD_REPORT_SECTIONS}
+              selected={selectedReportSections}
+              onToggle={toggleReportSection}
+              onSelectAll={() =>
+                setSelectedReportSections(allHeadToHeadReportSections())
+              }
+              onClear={() => setSelectedReportSections([])}
+            />
+
             <View
               testID="head-to-head-summary"
               style={[

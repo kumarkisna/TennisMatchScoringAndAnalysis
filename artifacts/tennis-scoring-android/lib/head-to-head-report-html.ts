@@ -4,6 +4,10 @@ import {
 } from '@/lib/head-to-head';
 import { POINT_CODE_LABELS } from '@/lib/player-report-html';
 import { escapeReportHtml as escapeHtml } from '@/lib/report-html-utils';
+import {
+  allHeadToHeadReportSections,
+  type HeadToHeadReportSection,
+} from '@/lib/report-sections';
 
 function formatDate(value: string): string {
   const [year, month, day] = value.slice(0, 10).split('-').map(Number);
@@ -67,7 +71,13 @@ function tableRows(rows: readonly (readonly string[])[]): string {
     .join('');
 }
 
-export function buildHeadToHeadReportHtml(report: HeadToHeadReport): string {
+export function buildHeadToHeadReportHtml(
+  report: HeadToHeadReport,
+  selectedSections: readonly HeadToHeadReportSection[] =
+    allHeadToHeadReportSections(),
+): string {
+  const includes = (section: HeadToHeadReportSection) =>
+    selectedSections.includes(section);
   const { insights, trackedPlayer, opponent } = report;
   const trackedServe = insights.serveStats.tracked;
   const opponentServe = insights.serveStats.opponent;
@@ -413,39 +423,54 @@ export function buildHeadToHeadReportHtml(report: HeadToHeadReport): string {
         <div class="versus">VS</div>
         <div><div class="player-label">OPPONENT</div><div class="player-name">${escapeHtml(opponent)}</div></div>
       </div>
-      <div class="cards">
+      ${includes('overview') ? `<div class="cards">
         <div class="card"><div class="label">MATCH RECORD</div><div class="value">${winsAndLosses}</div><div class="sample">${report.matchesRecorded} recorded · ${report.completedMatches} complete</div></div>
         <div class="card"><div class="label">SET RECORD</div><div class="value">${setRecord}</div><div class="sample">${report.setsRecorded} recorded · ${report.completedSets} complete</div></div>
         <div class="card"><div class="label">POINTS WON</div><div class="value">${rate(insights.trackedPointsWon, insights.pointCount)}</div><div class="sample">${insights.pointCount} recorded points</div></div>
         <div class="card"><div class="label">IN PROGRESS</div><div class="value">${report.matchesInProgress}</div><div class="sample">not included in match W–L</div></div>
       </div>
+      ` : ''}
       <p class="note"><strong>Report basis:</strong> Only matches recorded with ${escapeHtml(trackedPlayer)} as the tracked player are included. Reverse-oriented records are excluded. Rates show wins and attempts; optional tags describe only what was entered and their absence does not mean an event did not occur. Coaching notes are based on this local sample, not outside player data.</p>
 
+      ${includes('meetings') ? `
       <h2>Meetings and set scores</h2>
       <table class="matches-table">
         <thead><tr><th>Match date</th><th>Result</th><th>Set scores · tracked player first</th><th>Points logged</th></tr></thead>
         <tbody>${matchRows || '<tr><td colspan="4">No matches recorded.</td></tr>'}</tbody>
       </table>
+      ` : ''}
 
+      ${includes('serve') ? `
       <h2>Serve</h2>
       <table><thead><tr><th>Statistic</th><th>${escapeHtml(trackedPlayer)}</th><th>${escapeHtml(opponent)}</th></tr></thead><tbody>${serveRows}</tbody></table>
+      ` : ''}
+      ${includes('return-points') ? `
       <h2>Return and points</h2>
       <table><thead><tr><th>Statistic</th><th>${escapeHtml(trackedPlayer)}</th><th>${escapeHtml(opponent)}</th></tr></thead><tbody>${returnRows}</tbody></table>
       <p class="note">Rally-shot winner points use recorded forehand, backhand, volley, overhead, and drop-shot tags; aces are excluded. Unforced errors count tagged net, long, or wide errors that awarded the point to the opponent; forced errors and double faults are separate.</p>
+      ` : ''}
+      ${includes('break-points') ? `
       <h2>Break points</h2>
       <p class="note">“Missed” means a break-point opportunity was not converted. “Lost while serving” means a faced break point was not saved. Only recorded chances are included; tie-break points are excluded.</p>
       <table><thead><tr><th>Statistic</th><th>${escapeHtml(trackedPlayer)}</th><th>${escapeHtml(opponent)}</th></tr></thead><tbody>${breakPointRows}</tbody></table>
       <h3>${escapeHtml(trackedPlayer)} · personal average</h3>
       <p class="note">Pooled break-point chances across ${report.personalAverageMatches} saved ${report.personalAverageMatches === 1 ? 'match' : 'matches'} where this player was recorded as the tracked player, including this pairing when present.</p>
       <table><thead><tr><th>Statistic</th><th>Personal average</th></tr></thead><tbody>${personalBreakPointRows}</tbody></table>
+      ` : ''}
 
+      ${includes('point-ending') ? `
       <h2>Recorded point-ending tags</h2>
       <p class="note">${report.performance.taggedPointCount} of ${insights.pointCount} points had a tag. Each row shows the tracked player's wins among points with that tag.</p>
       <table><thead><tr><th>Tag</th><th>Occurrences</th><th>Tracked-player wins</th></tr></thead><tbody>${tagRows}</tbody></table>
+      ` : ''}
+      ${includes('point-context') ? `
       ${contextTables}
+      ` : ''}
 
+      ${includes('coaching') ? `
       <h2>Coaching observations</h2>
       <ul class="feedback">${feedbackRows || '<li>More recorded points and tags are needed for an evidence-based observation.</li>'}</ul>
+      ` : ''}
       <p class="note">All figures were calculated on this device from the saved match records shown above.</p>
     </main>
   </body>

@@ -28,6 +28,14 @@ Module._load = function (request, parent, isMain) {
       isMain,
     );
   }
+  if (request === '@/lib/report-sections') {
+    return originalLoad.call(
+      this,
+      path.join(__dirname, '../lib/report-sections.ts'),
+      parent,
+      isMain,
+    );
+  }
   if (request === '@/lib/player-report-html') {
     return playerReportExports;
   }
@@ -191,4 +199,114 @@ test('head-to-head report removes URL-like text and keeps names and statistics',
   assert.match(html, />Return and points</);
   assert.match(html, /HEAD-TO-HEAD · MATCH ANALYSIS/);
   assert.doesNotMatch(html, /TENNISSCORING|LOCAL MATCH ANALYSIS/i);
+});
+
+test('single-match PDF includes only selected analysis sections', () => {
+  const insights = {
+    ...emptyInsight,
+    serveStats: {
+      tracked: { ...emptySide },
+      opponent: { ...emptySide },
+    },
+  };
+  const html = buildPlayerReportHtml(
+    {
+      matchDate: '2026-10-30',
+      trackedPlayer: 'Alex',
+      opponent: 'Jordan',
+      surface: 'Hard',
+      matchStatus: 'complete',
+    },
+    insights,
+    emptyPerformance,
+    ['serve'],
+  );
+
+  assert.match(html, /<h2>Serve<\/h2>/);
+  assert.doesNotMatch(html, /<h2>Return<\/h2>/);
+  assert.doesNotMatch(html, /<h2>Set scores and winners<\/h2>/);
+  assert.match(html, /<strong>Points logged:<\/strong> 4/);
+});
+
+test('head-to-head PDF includes only selected analysis sections', () => {
+  const html = buildHeadToHeadReportHtml(
+    {
+      trackedPlayer: 'Alex',
+      opponent: 'Jordan',
+      meetings: [],
+      matchesRecorded: 1,
+      completedMatches: 1,
+      matchesWon: 1,
+      matchesLost: 0,
+      completedMatchesWithoutWinner: 0,
+      matchesInProgress: 0,
+      setsRecorded: 1,
+      completedSets: 1,
+      setsWon: 1,
+      setsLost: 0,
+      completedSetsWithoutWinner: 0,
+      insights: emptyInsight,
+      performance: emptyPerformance,
+      personalAverageInsights: emptyInsight,
+      personalAveragePerformance: emptyPerformance,
+      personalAverageMatches: 1,
+    },
+    ['serve'],
+  );
+
+  assert.match(html, /<h2>Serve<\/h2>/);
+  assert.doesNotMatch(html, /<h2>Meetings and set scores<\/h2>/);
+  assert.doesNotMatch(html, /<h2>Return and points<\/h2>/);
+});
+
+test('clearing all sections keeps match details without analysis sections', () => {
+  const playerHtml = buildPlayerReportHtml(
+    {
+      matchDate: '2026-10-30',
+      trackedPlayer: 'Alex',
+      opponent: 'Jordan',
+      surface: 'Hard',
+      matchStatus: 'complete',
+    },
+    {
+      ...emptyInsight,
+      serveStats: {
+        tracked: { ...emptySide },
+        opponent: { ...emptySide },
+      },
+    },
+    emptyPerformance,
+    [],
+  );
+  const headToHeadHtml = buildHeadToHeadReportHtml(
+    {
+      trackedPlayer: 'Alex',
+      opponent: 'Jordan',
+      meetings: [],
+      matchesRecorded: 1,
+      completedMatches: 1,
+      matchesWon: 1,
+      matchesLost: 0,
+      completedMatchesWithoutWinner: 0,
+      matchesInProgress: 0,
+      setsRecorded: 1,
+      completedSets: 1,
+      setsWon: 1,
+      setsLost: 0,
+      completedSetsWithoutWinner: 0,
+      insights: emptyInsight,
+      performance: emptyPerformance,
+      personalAverageInsights: emptyInsight,
+      personalAveragePerformance: emptyPerformance,
+      personalAverageMatches: 1,
+    },
+    [],
+  );
+
+  assert.match(playerHtml, /Tennis Match Report/);
+  assert.match(playerHtml, /Alex/);
+  assert.doesNotMatch(playerHtml, /<h2>/);
+  assert.match(headToHeadHtml, /Head-to-Head Report/);
+  assert.match(headToHeadHtml, /Jordan/);
+  assert.doesNotMatch(headToHeadHtml, /<h2>/);
 });

@@ -20,6 +20,7 @@ import {
 } from '@tanstack/react-query';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
+import { ReportSectionPicker } from '@/components/ReportSectionPicker';
 import { useColors } from '@/hooks/useColors';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -58,6 +59,11 @@ import {
 } from '@/lib/local-matches';
 import { summarizePlayerPerformance } from '@/lib/player-insights';
 import { buildPlayerReportHtml } from '@/lib/player-report-html';
+import {
+  allPlayerReportSections,
+  PLAYER_REPORT_SECTIONS,
+  type PlayerReportSection,
+} from '@/lib/report-sections';
 
 type Side = PlayerSide;
 type NoteEditorTarget =
@@ -236,6 +242,8 @@ export default function MatchScreen() {
   const [rallyLength, setRallyLength] = useState<RallyLength | null>(null);
   const [reportAction, setReportAction] = useState<'preview' | 'share' | null>(null);
   const [reviewedReportVersion, setReviewedReportVersion] = useState<string | null>(null);
+  const [selectedReportSections, setSelectedReportSections] =
+    useState<PlayerReportSection[]>(allPlayerReportSections);
   const [reportExportError, setReportExportError] = useState('');
   const [customTiebreakTarget, setCustomTiebreakTarget] = useState('');
   const [selectedReviewSetNumber, setSelectedReviewSetNumber] = useState<number | null>(null);
@@ -333,8 +341,12 @@ export default function MatchScreen() {
     match && insightsQuery.data
       ? `${match.id}:${match.updatedAt}:${insightsQuery.dataUpdatedAt}`
       : null;
+  const reportReviewVersion = reportVersion
+    ? `${reportVersion}:${selectedReportSections.join(',')}`
+    : null;
   const hasReviewedReport =
-    reportVersion !== null && reviewedReportVersion === reportVersion;
+    reportReviewVersion !== null &&
+    reviewedReportVersion === reportReviewVersion;
   const isReportBusy = reportAction !== null;
   const setHistory = match ? getLocalSetHistory(match) : [];
   const currentSet = setHistory.find((set) => set.isCurrent);
@@ -527,18 +539,19 @@ export default function MatchScreen() {
       match,
       insightsQuery.data,
       summarizePlayerPerformance(insightsQuery.data),
+      selectedReportSections,
     );
   }
 
   async function previewPlayerReport() {
     const html = buildCurrentReportHtml();
-    if (!html || !reportVersion || insightsQuery.isFetching || isReportBusy) return;
+    if (!html || !reportReviewVersion || insightsQuery.isFetching || isReportBusy) return;
 
     setReportAction('preview');
     setReportExportError('');
     try {
       await Print.printAsync({ html });
-      setReviewedReportVersion(reportVersion);
+      setReviewedReportVersion(reportReviewVersion);
     } catch (error) {
       setReportExportError(
         error instanceof Error ? error.message : 'Could not open the report preview.',
@@ -571,6 +584,16 @@ export default function MatchScreen() {
     } finally {
       setReportAction(null);
     }
+  }
+
+  function toggleReportSection(section: string) {
+    if (!PLAYER_REPORT_SECTIONS.some((item) => item.id === section)) return;
+    const selectedSection = section as PlayerReportSection;
+    setSelectedReportSections((current) =>
+      current.includes(selectedSection)
+        ? current.filter((item) => item !== selectedSection)
+        : [...current, selectedSection],
+    );
   }
 
   if (matchQuery.isLoading) {
@@ -1975,6 +1998,15 @@ export default function MatchScreen() {
             ) : null}
           </View>
         </View>
+
+        <ReportSectionPicker
+          testID="player-report-sections"
+          sections={PLAYER_REPORT_SECTIONS}
+          selected={selectedReportSections}
+          onToggle={toggleReportSection}
+          onSelectAll={() => setSelectedReportSections(allPlayerReportSections())}
+          onClear={() => setSelectedReportSections([])}
+        />
 
         {reportExportError ? (
           <View accessibilityRole="alert" style={styles.exportError}>

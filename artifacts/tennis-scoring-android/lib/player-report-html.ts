@@ -5,6 +5,10 @@ import type {
   PlayerReportInsights,
 } from '@/lib/player-insights';
 import { escapeReportHtml as escapeHtml } from '@/lib/report-html-utils';
+import {
+  allPlayerReportSections,
+  type PlayerReportSection,
+} from '@/lib/report-sections';
 
 interface ReportMatch {
   matchDate: string;
@@ -136,7 +140,10 @@ export function buildPlayerReportHtml(
   match: ReportMatch,
   insights: PlayerReportInsights,
   summary: PlayerPerformanceSummary,
+  selectedSections: readonly PlayerReportSection[] = allPlayerReportSections(),
 ): string {
+  const includes = (section: PlayerReportSection) =>
+    selectedSections.includes(section);
   const escape = escapeHtml;
   const shotRows = summary.codeInsights.length
     ? summary.codeInsights
@@ -596,7 +603,7 @@ export function buildPlayerReportHtml(
       <strong>Report basis:</strong> Generated from saved match points. Rates include denominators; small samples are directional, not conclusions. Break-point counts are reconstructed from regular games; standard tie-break points and match tie-break sets are excluded. Reference values are user-provided.
     </p>
 
-    <h2>Match performance at a glance</h2>
+    ${includes('overview') ? `<h2>Match performance at a glance</h2>
     <div class="stats">
       <div class="tile">
         <div class="tile-label">POINTS WON</div>
@@ -635,9 +642,9 @@ export function buildPlayerReportHtml(
       ${insights.pointCount === 0
         ? 'No points have been recorded yet, so performance percentages are not available.'
         : `${escape(match.trackedPlayer)} won ${rate(insights.trackedPointsWon, insights.pointCount)} of logged points. The serve rate was ${rate(insights.servicePointsWon, insights.trackedServicePoints)} and the return rate was ${rate(insights.returnPointsWon, insights.trackedReturnPoints)}.`}
-    </div>
+    </div>` : ''}
 
-    <h2>Serve</h2>
+    ${includes('serve') ? `<h2>Serve</h2>
     <table class="metric-table serve-table">
       <thead>
         <tr>
@@ -652,23 +659,25 @@ export function buildPlayerReportHtml(
     </table>
     <p class="context-coverage">
       Reference values are user-provided. Service-game percentages use completed regular games; tie-breaks are excluded.
-    </p>
+    </p>` : ''}
 
-    <h2>Return</h2>
+    ${includes('return') ? `<h2>Return</h2>
     <table class="metric-table return-table">
       <thead>
         <tr><th>Stat</th><th>${escape(match.trackedPlayer)} · match</th><th>${escape(match.opponent)} · match</th></tr>
       </thead>
       <tbody>${returnRows}</tbody>
-    </table>
+    </table>` : ''}
+    ${includes('sets') ? `
     <h2>Set scores and winners</h2>
     <table>
       <thead>
         <tr><th>Set</th><th>Score / format</th><th>Set winner</th></tr>
       </thead>
       <tbody>${setRows}</tbody>
-    </table>
+    </table>` : ''}
 
+    ${includes('break-points') ? `
     <h2>Break-point pressure</h2>
     <h3>Returning · opportunities created</h3>
     <table>
@@ -685,10 +694,14 @@ export function buildPlayerReportHtml(
       <tbody>${breakPointDefenseRows}${breakPointDefenseMatchRow}</tbody>
     </table>
     <p class="note" style="margin-top: 7px">Each value shows count/available chances and percentage. Missed = created opportunities not converted; lost = faced break points not saved. Repeated advantages in one game count separately. Tie-break points and match tie-break sets are excluded.</p>
+    ` : ''}
 
+    ${includes('coaching') ? `
     <h2>Coaching notes from this sample</h2>
     <ul class="feedback">${feedbackRows}</ul>
+    ` : ''}
 
+    ${includes('point-ending') ? `
     <h2>Shot and point-ending analysis</h2>
     <table>
       <thead>
@@ -703,6 +716,8 @@ export function buildPlayerReportHtml(
       </thead>
       <tbody>${codeLegendRows}</tbody>
     </table>
+    ` : ''}
+    ${includes('strokes') ? `
     <h2>Recorded stroke counts</h2>
     <p class="context-coverage">Only strokes explicitly recorded during point entry are counted. Each row’s total is the sample size for its in-play, error, and winner counts.</p>
     <table>
@@ -715,14 +730,19 @@ export function buildPlayerReportHtml(
         <thead><tr><th>Point</th><th>Player</th><th>Stroke</th><th>Result</th><th>Note</th></tr></thead>
         <tbody>${strokeNoteRows}</tbody>
       </table>` : ''}
+    ` : ''}
+    ${includes('observations') ? `
     <h2>Game and set observations</h2>
     ${setObservations}
+    ` : ''}
+    ${includes('tactical-context') ? `
     <h2>Tactical context</h2>
     <p class="context-coverage">
       Direction records the tracked player's last shot on a point. Rally length counts shots including the serve.
       A category's win rate is shown only after at least 3 tagged points.
     </p>
     ${contextSections}
+    ` : ''}
     </main>
   </body>
 </html>`;

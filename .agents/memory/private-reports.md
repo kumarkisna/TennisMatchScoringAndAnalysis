@@ -10,6 +10,13 @@ TennisScoring is a private app. Reports must not include the Replit app URL or m
 
 **How to apply:** Check generated report HTML and PDF output for print headers, source URLs, and third-party branding. Keep user-provided match and event details readable; use generic benchmark headings when a label carries outside-company attribution.
 
+## Selectable report sections
+Report section choices affect generated report content only. Keep the full report selected by default, and do not change match statistics, calculations, or saved records based on those choices.
+
+**Why:** Users may want a focused report, while the complete report remains the expected default and saved match history stays authoritative.
+
+**How to apply:** Pass the current selection into preview and PDF generation; keep report analytics and local match storage independent of the selection.
+
 ## Generic statistics remain visible
 Reports must always retain the existing generic match statistics, even when point, game, and set-level coaching notes or shot analysis are added.
 
