@@ -7,17 +7,24 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useColors } from '@/hooks/useColors';
 import {
   ACTIVE_LOCAL_PLAYER_KEY,
+  addLocalPlayerProfileLink,
   addLocalPlayer,
   deleteLocalPlayer,
   formatDateOfBirthInput,
   getActiveLocalPlayerId,
   getDateOfBirthValidationError,
+  getLocalPlayerProfileLinkPresentation,
   listLocalPlayers,
   LOCAL_PLAYERS_KEY,
+  pairLocalPlayerProfileLinks,
+  removeLocalPlayerProfileLink,
+  serializeLocalPlayerProfileLinks,
   setActiveLocalPlayerId,
+  updateLocalPlayerProfileLink,
   updateLocalPlayer,
   type LocalPlayerDetailsInput,
   type LocalPlayer,
+  type LocalPlayerProfileLink,
   type PlayerHand,
 } from '@/lib/local-players';
 
@@ -53,8 +60,7 @@ export default function PlayersScreen() {
   const [heightCm, setHeightCm] = useState('');
   const [weightKg, setWeightKg] = useState('');
   const [phoneNumbers, setPhoneNumbers] = useState<string[]>([]);
-  const [profileUrls, setProfileUrls] = useState<string[]>([]);
-  const [profileUrlLabels, setProfileUrlLabels] = useState<string[]>([]);
+  const [profileLinks, setProfileLinks] = useState<LocalPlayerProfileLink[]>([]);
   const dateOfBirthError = getDateOfBirthValidationError(dateOfBirth);
   const playersQuery = useQuery({
     queryKey: LOCAL_PLAYERS_KEY,
@@ -133,8 +139,7 @@ export default function PlayersScreen() {
         heightCm,
         weightKg,
         phoneNumbers,
-        profileUrls,
-        profileUrlLabels,
+        ...serializeLocalPlayerProfileLinks(profileLinks),
       },
     });
   }
@@ -153,8 +158,7 @@ export default function PlayersScreen() {
     setHeightCm('');
     setWeightKg('');
     setPhoneNumbers([]);
-    setProfileUrls([]);
-    setProfileUrlLabels([]);
+    setProfileLinks([]);
   }
 
   function beginEditing(player: LocalPlayer) {
@@ -171,8 +175,12 @@ export default function PlayersScreen() {
     setHeightCm(player.heightCm?.toString() ?? '');
     setWeightKg(player.weightKg?.toString() ?? '');
     setPhoneNumbers(player.phoneNumbers ?? []);
-    setProfileUrls(player.profileUrls ?? []);
-    setProfileUrlLabels(player.profileUrlLabels ?? []);
+    setProfileLinks(
+      pairLocalPlayerProfileLinks(
+        player.profileUrls ?? [],
+        player.profileUrlLabels ?? [],
+      ),
+    );
     savePlayer.reset();
   }
 
@@ -262,8 +270,7 @@ export default function PlayersScreen() {
               accessibilityRole="button"
               accessibilityLabel="Add profile link"
               onPress={() => {
-                setProfileUrls((urls) => [...urls, '']);
-                setProfileUrlLabels((labels) => [...labels, '']);
+                setProfileLinks((links) => addLocalPlayerProfileLink(links));
               }}
               style={({ pressed }) => [
                 styles.addLinkButton,
@@ -277,18 +284,16 @@ export default function PlayersScreen() {
           <Text style={[styles.profileLinksHint, { color: colors.mutedForeground }]}>
             Saved with this player on your device. Tap a saved link below their name to open it.
           </Text>
-          {profileUrls.map((url, index) => (
+          {profileLinks.map((link, index) => (
             <View key={`profile-url-${index}`} style={styles.profileLinkInputGroup}>
               <View style={styles.profileLinkInputRow}>
                 <TextInput
                   testID={`input-player-profile-link-${index}`}
                   accessibilityLabel={`Player profile link ${index + 1}`}
-                  value={url}
+                  value={link.url}
                   onChangeText={(value) =>
-                    setProfileUrls((urls) =>
-                      urls.map((item, itemIndex) =>
-                        itemIndex === index ? value : item,
-                      ),
+                    setProfileLinks((links) =>
+                      updateLocalPlayerProfileLink(links, index, { url: value }),
                     )
                   }
                   placeholder="https://example.com/player"
@@ -310,14 +315,11 @@ export default function PlayersScreen() {
                   testID={`button-remove-player-profile-link-${index}`}
                   accessibilityRole="button"
                   accessibilityLabel={`Remove profile link ${index + 1}`}
-                  onPress={() => {
-                    setProfileUrls((urls) =>
-                      urls.filter((_, itemIndex) => itemIndex !== index),
-                    );
-                    setProfileUrlLabels((labels) =>
-                      labels.filter((_, itemIndex) => itemIndex !== index),
-                    );
-                  }}
+                  onPress={() =>
+                    setProfileLinks((links) =>
+                      removeLocalPlayerProfileLink(links, index),
+                    )
+                  }
                   style={({ pressed }) => [
                     styles.removeLinkButton,
                     { opacity: pressed ? 0.6 : 1 },
@@ -333,12 +335,10 @@ export default function PlayersScreen() {
               <TextInput
                 testID={`input-player-profile-link-label-${index}`}
                 accessibilityLabel={`Profile link label ${index + 1}, optional`}
-                value={profileUrlLabels[index] ?? ''}
+                value={link.label}
                 onChangeText={(value) =>
-                  setProfileUrlLabels((labels) =>
-                    labels.map((item, itemIndex) =>
-                      itemIndex === index ? value : item,
-                    ),
+                  setProfileLinks((links) =>
+                    updateLocalPlayerProfileLink(links, index, { label: value }),
                   )
                 }
                 placeholder="Label (optional), e.g. ATP profile"
@@ -828,22 +828,27 @@ export default function PlayersScreen() {
                         </Pressable>
                       </View>
                     ))}
-                    {player.profileUrls?.map((url, linkIndex) => {
-                      const host = new URL(url).hostname;
-                      const label = player.profileUrlLabels?.[linkIndex]?.trim();
+                    {pairLocalPlayerProfileLinks(
+                      player.profileUrls,
+                      player.profileUrlLabels,
+                    ).map((link, linkIndex) => {
+                      const presentation = getLocalPlayerProfileLinkPresentation(
+                        link,
+                        linkIndex,
+                      );
                       return (
                         <Pressable
-                          key={`${url}-${linkIndex}`}
+                          key={`${presentation.url}-${linkIndex}`}
                           testID={`button-open-player-profile-${player.id}-${linkIndex}`}
                           accessibilityRole="link"
-                          accessibilityLabel={`Open ${player.name} ${label || `profile ${linkIndex + 1}`} at ${host}`}
+                          accessibilityLabel={`Open ${player.name} ${presentation.displayLabel} at ${presentation.host}`}
                           accessibilityHint="Opens this profile in your device browser"
-                          onPress={() => void openProfileLink(url)}
+                          onPress={() => void openProfileLink(presentation.url)}
                           style={({ pressed }) => [styles.profileLink, { opacity: pressed ? 0.65 : 1 }]}
                         >
                           <Ionicons name="open-outline" size={12} color={colors.primary} />
                           <Text numberOfLines={1} style={[styles.profileLinkText, { color: colors.primary }]}>
-                            {label ? `${label} · ${host}` : `Profile ${linkIndex + 1} · ${host}`}
+                            {presentation.displayText}
                           </Text>
                         </Pressable>
                       );

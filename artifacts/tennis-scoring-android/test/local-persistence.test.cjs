@@ -294,6 +294,125 @@ test('profile links accept HTTP(S), normalize bare domains, and ignore blank row
   );
 });
 
+test('profile link edits and removals keep each label with its URL', async () => {
+  storageValues.clear();
+  const { localPlayers } = loadStorageModulesAfterRestart();
+  const links = localPlayers.pairLocalPlayerProfileLinks(
+    [
+      'https://atp.example.org/player/one',
+      'https://club.example.org/players/one',
+      'https://itf.example.org/player/one',
+    ],
+    ['ATP profile', 'Club profile', 'ITF profile'],
+  );
+
+  const remainingByRemovedIndex = [
+    [
+      { url: 'https://club.example.org/players/one', label: 'Club profile' },
+      { url: 'https://itf.example.org/player/one', label: 'ITF profile' },
+    ],
+    [
+      { url: 'https://atp.example.org/player/one', label: 'ATP profile' },
+      { url: 'https://itf.example.org/player/one', label: 'ITF profile' },
+    ],
+    [
+      { url: 'https://atp.example.org/player/one', label: 'ATP profile' },
+      { url: 'https://club.example.org/players/one', label: 'Club profile' },
+    ],
+  ];
+  for (let removedIndex = 0; removedIndex < links.length; removedIndex += 1) {
+    const remaining = remainingByRemovedIndex[removedIndex];
+    const removedLinks = localPlayers.removeLocalPlayerProfileLink(
+      links,
+      removedIndex,
+    );
+    assert.deepEqual(
+      removedLinks,
+      remaining,
+    );
+    assert.deepEqual(
+      localPlayers.serializeLocalPlayerProfileLinks(removedLinks),
+      {
+        profileUrls: remaining.map((link) => link.url),
+        profileUrlLabels: remaining.map((link) => link.label),
+      },
+    );
+  }
+
+  const edited = localPlayers.updateLocalPlayerProfileLink(links, 1, {
+    url: 'https://academy.example.net/players/one',
+  });
+  assert.deepEqual(edited, [
+    { url: 'https://atp.example.org/player/one', label: 'ATP profile' },
+    { url: 'https://academy.example.net/players/one', label: 'Club profile' },
+    { url: 'https://itf.example.org/player/one', label: 'ITF profile' },
+  ]);
+
+  const saved = await localPlayers.addLocalPlayer(
+    'Profile link alignment player',
+    localPlayers.serializeLocalPlayerProfileLinks(links),
+  );
+  await localPlayers.updateLocalPlayer(
+    saved.id,
+    'Renamed profile link alignment player',
+    localPlayers.serializeLocalPlayerProfileLinks(edited),
+  );
+  const afterRestart = loadStorageModulesAfterRestart();
+  const restored = (await afterRestart.localPlayers.listLocalPlayers()).find(
+    (player) => player.id === saved.id,
+  );
+  assert.ok(restored);
+  assert.deepEqual(
+    afterRestart.localPlayers.pairLocalPlayerProfileLinks(
+      restored.profileUrls,
+      restored.profileUrlLabels,
+    ),
+    edited,
+  );
+
+  const presentation =
+    afterRestart.localPlayers.getLocalPlayerProfileLinkPresentation(
+      edited[1],
+      1,
+    );
+  assert.deepEqual(presentation, {
+    url: 'https://academy.example.net/players/one',
+    host: 'academy.example.net',
+    displayLabel: 'Club profile',
+    displayText: 'Club profile · academy.example.net',
+  });
+
+  const playersScreen = fs.readFileSync(
+    path.join(__dirname, '../app/players.tsx'),
+    'utf8',
+  );
+  assert.match(
+    playersScreen,
+    /pairLocalPlayerProfileLinks\(\s*player\.profileUrls,\s*player\.profileUrlLabels,\s*\)\.map\(\(link, linkIndex\) =>/,
+  );
+  assert.match(
+    playersScreen,
+    /onPress=\{\(\) => void openProfileLink\(presentation\.url\)\}/,
+  );
+  assert.match(playersScreen, /\{presentation\.displayText\}/);
+  assert.match(
+    playersScreen,
+    /updateLocalPlayerProfileLink\(links, index, \{ url: value \}\)/,
+  );
+  assert.match(
+    playersScreen,
+    /updateLocalPlayerProfileLink\(links, index, \{ label: value \}\)/,
+  );
+  assert.match(
+    playersScreen,
+    /serializeLocalPlayerProfileLinks\(profileLinks\)/,
+  );
+  assert.match(
+    playersScreen,
+    /removeLocalPlayerProfileLink\(links, index\)/,
+  );
+});
+
 test('profile links reject unsupported, malformed, credentialed, spaced, and duplicate URLs', async () => {
   storageValues.clear();
   const { localPlayers } = loadStorageModulesAfterRestart();

@@ -35,6 +35,75 @@ export interface LocalPlayerDetailsInput {
   profileUrlLabels?: string[] | null;
 }
 
+export interface LocalPlayerProfileLink {
+  url: string;
+  label: string;
+}
+
+export interface LocalPlayerProfileLinkPresentation {
+  url: string;
+  host: string;
+  displayLabel: string;
+  displayText: string;
+}
+
+export function pairLocalPlayerProfileLinks(
+  urls: readonly string[] | null | undefined,
+  labels: readonly string[] | null | undefined,
+): LocalPlayerProfileLink[] {
+  return (urls ?? []).map((url, index) => ({
+    url,
+    label: labels?.[index] ?? '',
+  }));
+}
+
+export function getLocalPlayerProfileLinkPresentation(
+  link: LocalPlayerProfileLink,
+  index: number,
+): LocalPlayerProfileLinkPresentation {
+  const host = new URL(link.url).hostname;
+  const label = link.label.trim();
+  const displayLabel = label || `Profile ${index + 1}`;
+  return {
+    url: link.url,
+    host,
+    displayLabel,
+    displayText: `${displayLabel} · ${host}`,
+  };
+}
+
+export function addLocalPlayerProfileLink(
+  links: readonly LocalPlayerProfileLink[],
+): LocalPlayerProfileLink[] {
+  return [...links, { url: '', label: '' }];
+}
+
+export function updateLocalPlayerProfileLink(
+  links: readonly LocalPlayerProfileLink[],
+  index: number,
+  update: Partial<LocalPlayerProfileLink>,
+): LocalPlayerProfileLink[] {
+  return links.map((link, linkIndex) =>
+    linkIndex === index ? { ...link, ...update } : { ...link },
+  );
+}
+
+export function removeLocalPlayerProfileLink(
+  links: readonly LocalPlayerProfileLink[],
+  index: number,
+): LocalPlayerProfileLink[] {
+  return links.filter((_, linkIndex) => linkIndex !== index);
+}
+
+export function serializeLocalPlayerProfileLinks(
+  links: readonly LocalPlayerProfileLink[],
+): Pick<LocalPlayerDetailsInput, 'profileUrls' | 'profileUrlLabels'> {
+  return {
+    profileUrls: links.map((link) => link.url),
+    profileUrlLabels: links.map((link) => link.label),
+  };
+}
+
 export const LOCAL_PLAYERS_KEY = ['device-players'] as const;
 export const ACTIVE_LOCAL_PLAYER_KEY = ['device-active-player'] as const;
 
