@@ -504,7 +504,7 @@ export default function NewMatchScreen() {
         <View style={styles.localNote}>
           <Ionicons name="phone-portrait-outline" size={14} color={colors.mutedForeground} />
           <Text style={[styles.localNoteText, { color: colors.mutedForeground }]}>
-            Saved on this phone first. New matches sync privately when signed in.
+            Saved on this phone only. No account or internet is needed.
           </Text>
         </View>
       </KeyboardAwareScrollViewCompat>
