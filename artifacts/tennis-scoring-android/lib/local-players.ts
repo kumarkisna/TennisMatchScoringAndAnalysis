@@ -411,67 +411,101 @@ function normalizeDateOfBirth(value: string | null): string | null {
   return dateText;
 }
 
+interface NormalizedProfileLink extends LocalPlayerProfileLink {
+  dedupeKey: string;
+}
+
+function normalizeSingleProfileLink(
+  link: LocalPlayerProfileLink,
+): NormalizedProfileLink | null {
+  const text = link.url.trim();
+  const label = link.label.trim();
+  if (label.length > 40) {
+    throw new Error('Profile link labels must be 40 characters or fewer.');
+  }
+  if (!text && label) {
+    throw new Error('Add a profile link before adding its label.');
+  }
+  if (!text) return null;
+  if (text.length > 2048) {
+    throw new Error('Profile links must be 2,048 characters or fewer.');
+  }
+  if (/\s/.test(text) || text.startsWith('//')) {
+    throw new Error('Enter a valid http:// or https:// profile link.');
+  }
+
+  const hasScheme = text.includes('://') && /^[a-z][a-z\d+.-]*:\/\//i.test(text);
+  const candidate = hasScheme ? text : `https://${text}`;
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    throw new Error('Enter a valid http:// or https:// profile link.');
+  }
+
+  if (
+    (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') ||
+    !parsed.hostname ||
+    parsed.username ||
+    parsed.password
+  ) {
+    throw new Error('Profile links must use http:// or https:// and include a web address.');
+  }
+
+  return {
+    url: parsed.toString(),
+    label,
+    dedupeKey: `${parsed.origin.toLowerCase()}${parsed.pathname}${parsed.search}${parsed.hash}`,
+  };
+}
+
+export function getLocalPlayerProfileLinkValidationErrors(
+  links: readonly LocalPlayerProfileLink[],
+): Array<string | null> {
+  const seen = new Set<string>();
+  return links.map((link) => {
+    try {
+      const normalized = normalizeSingleProfileLink(link);
+      if (!normalized) return null;
+      if (seen.has(normalized.dedupeKey)) {
+        throw new Error('Each profile link must be unique.');
+      }
+      seen.add(normalized.dedupeKey);
+      return null;
+    } catch (error) {
+      return error instanceof Error
+        ? error.message
+        : 'Enter a valid http:// or https:// profile link.';
+    }
+  });
+}
+
 function normalizeProfileLinks(
   values: string[] | null | undefined,
   labels: string[] | null | undefined,
 ): Pick<LocalPlayer, 'profileUrls' | 'profileUrlLabels'> {
-  const urls: string[] = [];
-  const normalizedLabels: string[] = [];
-  const seen = new Set<string>();
   const sourceUrls = values ?? [];
   const sourceLabels = labels ?? [];
-
-  for (let index = 0; index < sourceUrls.length; index += 1) {
-    const value = sourceUrls[index];
-    const text = value.trim();
-    const label = (sourceLabels[index] ?? '').trim();
-    if (label.length > 40) {
-      throw new Error('Profile link labels must be 40 characters or fewer.');
-    }
-    if (!text && label) {
-      throw new Error('Add a profile link before adding its label.');
-    }
-    if (!text) continue;
-    if (text.length > 2048) {
-      throw new Error('Profile links must be 2,048 characters or fewer.');
-    }
-    if (/\s/.test(text) || text.startsWith('//')) {
-      throw new Error('Enter a valid http:// or https:// profile link.');
-    }
-
-    const hasScheme = text.includes('://') && /^[a-z][a-z\d+.-]*:\/\//i.test(text);
-    const candidate = hasScheme ? text : `https://${text}`;
-    let parsed: URL;
-    try {
-      parsed = new URL(candidate);
-    } catch {
-      throw new Error('Enter a valid http:// or https:// profile link.');
-    }
-
-    if (
-      (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') ||
-      !parsed.hostname ||
-      parsed.username ||
-      parsed.password
-    ) {
-      throw new Error('Profile links must use http:// or https:// and include a web address.');
-    }
-
-    const normalized = parsed.toString();
-    const dedupeKey = `${parsed.origin.toLowerCase()}${parsed.pathname}${parsed.search}${parsed.hash}`;
-    if (seen.has(dedupeKey)) {
-      throw new Error('Each profile link must be unique.');
-    }
-    seen.add(dedupeKey);
-    urls.push(normalized);
-    normalizedLabels.push(label);
-  }
+  const links = sourceUrls.map((url, index) => ({
+    url,
+    label: sourceLabels[index] ?? '',
+  }));
+  const firstError = getLocalPlayerProfileLinkValidationErrors(links).find(
+    (error): error is string => Boolean(error),
+  );
+  if (firstError) throw new Error(firstError);
 
   if (sourceLabels.slice(sourceUrls.length).some((label) => label.trim())) {
     throw new Error('Add a profile link before adding its label.');
   }
 
-  return { profileUrls: urls, profileUrlLabels: normalizedLabels };
+  const normalizedLinks = links
+    .map(normalizeSingleProfileLink)
+    .filter((link): link is NormalizedProfileLink => link !== null);
+  return {
+    profileUrls: normalizedLinks.map((link) => link.url),
+    profileUrlLabels: normalizedLinks.map((link) => link.label),
+  };
 }
 
 function normalizePhoneNumbers(values: string[] | null | undefined): string[] {

@@ -13,6 +13,7 @@ import {
   formatDateOfBirthInput,
   getActiveLocalPlayerId,
   getDateOfBirthValidationError,
+  getLocalPlayerProfileLinkValidationErrors,
   getLocalPlayerProfileLinkPresentation,
   listLocalPlayers,
   LOCAL_PLAYERS_KEY,
@@ -63,6 +64,9 @@ export default function PlayersScreen() {
   const [phoneNumbers, setPhoneNumbers] = useState<string[]>([]);
   const [profileLinks, setProfileLinks] = useState<LocalPlayerProfileLink[]>([]);
   const dateOfBirthError = getDateOfBirthValidationError(dateOfBirth);
+  const profileLinkValidationErrors =
+    getLocalPlayerProfileLinkValidationErrors(profileLinks);
+  const hasProfileLinkErrors = profileLinkValidationErrors.some(Boolean);
   const playersQuery = useQuery({
     queryKey: LOCAL_PLAYERS_KEY,
     queryFn: listLocalPlayers,
@@ -125,7 +129,7 @@ export default function PlayersScreen() {
   }
 
   function submitPlayer() {
-    if (dateOfBirthError) return;
+    if (dateOfBirthError || hasProfileLinkErrors) return;
     savePlayer.mutate({
       id: editingPlayerId,
       name: playerName,
@@ -333,6 +337,18 @@ export default function PlayersScreen() {
                   />
                 </Pressable>
               </View>
+              {profileLinkValidationErrors[index] ? (
+                <Text
+                  testID={`error-player-profile-link-${index}`}
+                  accessibilityRole="alert"
+                  style={[
+                    styles.profileLinkError,
+                    { color: colors.destructive },
+                  ]}
+                >
+                  {profileLinkValidationErrors[index]}
+                </Text>
+              ) : null}
               <TextInput
                 testID={`input-player-profile-link-label-${index}`}
                 accessibilityLabel={`Profile link label ${index + 1}, optional`}
@@ -746,14 +762,22 @@ export default function PlayersScreen() {
             <Pressable
               testID="button-add-saved-player"
               accessibilityRole="button"
-              disabled={!playerName.trim() || Boolean(dateOfBirthError) || savePlayer.isPending}
+              disabled={
+                !playerName.trim() ||
+                Boolean(dateOfBirthError) ||
+                hasProfileLinkErrors ||
+                savePlayer.isPending
+              }
               onPress={submitPlayer}
               style={({ pressed }) => [
                 styles.addButton,
                 {
                   backgroundColor: colors.primary,
                   opacity:
-                    !playerName.trim() || Boolean(dateOfBirthError) || savePlayer.isPending
+                    !playerName.trim() ||
+                    Boolean(dateOfBirthError) ||
+                    hasProfileLinkErrors ||
+                    savePlayer.isPending
                       ? 0.5
                       : pressed
                         ? 0.82
@@ -1032,6 +1056,7 @@ const styles = StyleSheet.create({
   addLinkText: { fontFamily: 'DMSans_600SemiBold', fontSize: 11 },
   profileLinkInputRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   profileLinkInputGroup: { gap: 5 },
+  profileLinkError: { paddingHorizontal: 2, fontFamily: 'DMSans_500Medium', fontSize: 10, lineHeight: 14 },
   profileLinkReorderRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   profileLinkMoveButton: { minHeight: 30, borderWidth: 1, borderRadius: 7, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 4 },
   profileLinkMoveText: { fontFamily: 'DMSans_600SemiBold', fontSize: 9 },

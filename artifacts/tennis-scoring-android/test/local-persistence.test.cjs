@@ -518,6 +518,86 @@ test('profile links reject unsupported, malformed, credentialed, spaced, and dup
     /must be unique/,
   );
   assert.deepEqual(await localPlayers.listLocalPlayers(), []);
+
+  const savedPlayer = await localPlayers.addLocalPlayer(
+    'Player with a valid profile link',
+    { profileUrls: ['https://example.org/player'] },
+  );
+  await assert.rejects(
+    localPlayers.updateLocalPlayer(savedPlayer.id, savedPlayer.name, {
+      profileUrls: ['https://bad address.example/player'],
+    }),
+    /valid http:\/\/ or https:\/\//,
+  );
+  assert.deepEqual(await localPlayers.listLocalPlayers(), [savedPlayer]);
+});
+
+test('profile link validation errors stay with each field and clear after correction or removal', async () => {
+  const { localPlayers } = loadStorageModulesAfterRestart();
+  const invalidLinks = [
+    { url: 'https://bad address.example/player', label: 'ATP' },
+    { url: 'example.org/player', label: 'Club' },
+    { url: 'ftp://itf.example.org/player', label: 'ITF' },
+  ];
+  assert.deepEqual(
+    localPlayers.getLocalPlayerProfileLinkValidationErrors(invalidLinks),
+    [
+      'Enter a valid http:// or https:// profile link.',
+      null,
+      'Profile links must use http:// or https:// and include a web address.',
+    ],
+  );
+
+  const correctedLinks = localPlayers.updateLocalPlayerProfileLink(
+    invalidLinks,
+    0,
+    { url: 'https://atp.example.org/player' },
+  );
+  assert.deepEqual(
+    localPlayers.getLocalPlayerProfileLinkValidationErrors(correctedLinks),
+    [
+      null,
+      null,
+      'Profile links must use http:// or https:// and include a web address.',
+    ],
+  );
+  const removedInvalidLink = localPlayers.removeLocalPlayerProfileLink(
+    correctedLinks,
+    2,
+  );
+  assert.deepEqual(
+    localPlayers.getLocalPlayerProfileLinkValidationErrors(removedInvalidLink),
+    [null, null],
+  );
+  assert.deepEqual(
+    localPlayers.getLocalPlayerProfileLinkValidationErrors([
+      { url: '', label: '' },
+      { url: '', label: 'Missing URL' },
+    ]),
+    [null, 'Add a profile link before adding its label.'],
+  );
+  assert.deepEqual(
+    localPlayers.getLocalPlayerProfileLinkValidationErrors([
+      { url: 'https://example.org/player', label: 'First' },
+      { url: 'example.org/player', label: 'Duplicate' },
+    ]),
+    [null, 'Each profile link must be unique.'],
+  );
+
+  const playersScreen = fs.readFileSync(
+    path.join(__dirname, '../app/players.tsx'),
+    'utf8',
+  );
+  assert.match(
+    playersScreen,
+    /getLocalPlayerProfileLinkValidationErrors\(profileLinks\)/,
+  );
+  assert.match(
+    playersScreen,
+    /testID=\{`error-player-profile-link-\$\{index\}`\}/,
+  );
+  assert.match(playersScreen, /profileLinkValidationErrors\[index\]/);
+  assert.match(playersScreen, /if \(dateOfBirthError \|\| hasProfileLinkErrors\) return/);
 });
 
 test('older saved player records without profile URL fields remain readable', async () => {
