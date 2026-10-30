@@ -329,7 +329,9 @@ export interface LocalPlayerMatchInsight {
     | 'opponent'
     | 'trackedPlayerId'
     | 'opponentPlayerId'
-  >;
+    | 'matchStatus'
+    | 'matchOutcome'
+  > & { winner: PlayerSide | null };
   playerSide: PlayerSide;
   insights: LocalInsights;
 }
@@ -2092,22 +2094,27 @@ export async function listLocalPlayerMatchInsights(
   });
 
   return matches
-    .filter((match) => getLocalSetHistory(match).some((set) => set.points.length > 0))
-    .map((match) => ({
-      match: {
-        id: match.id,
-        matchDate: match.matchDate,
-        event: match.event,
-        round: match.round,
-        trackedPlayer: match.trackedPlayer,
-        opponent: match.opponent,
-        trackedPlayerId: match.trackedPlayerId,
-        opponentPlayerId: match.opponentPlayerId,
-      },
-      playerSide:
-        match.trackedPlayerId === playerId ? ('tracked' as const) : ('opponent' as const),
-      insights: calculateLocalInsights(match),
-    }))
+    .map((match) => {
+      const summary = summarizeLocalMatch(match);
+      return {
+        match: {
+          id: match.id,
+          matchDate: match.matchDate,
+          event: match.event,
+          round: match.round,
+          trackedPlayer: match.trackedPlayer,
+          opponent: match.opponent,
+          trackedPlayerId: match.trackedPlayerId,
+          opponentPlayerId: match.opponentPlayerId,
+          matchStatus: summary.status,
+          matchOutcome: summary.matchOutcome,
+          winner: summary.winner,
+        },
+        playerSide:
+          match.trackedPlayerId === playerId ? ('tracked' as const) : ('opponent' as const),
+        insights: calculateLocalInsights(match),
+      };
+    })
     .sort((left, right) =>
       left.match.matchDate.localeCompare(right.match.matchDate) ||
       left.match.id.localeCompare(right.match.id),

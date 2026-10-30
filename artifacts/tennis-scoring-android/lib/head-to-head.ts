@@ -15,7 +15,10 @@ import {
   type ShotDirection,
 } from '@/lib/local-matches';
 import {
+  summarizePlayerMatchOutcomes,
   summarizePlayerPerformance,
+  type PlayerMatchOutcomeRecord,
+  type PlayerMatchOutcomeSummary,
   type PlayerPerformanceSummary,
 } from '@/lib/player-insights';
 
@@ -49,6 +52,7 @@ export interface HeadToHeadReport {
   matchesLost: number;
   completedMatchesWithoutWinner: number;
   matchesInProgress: number;
+  matchOutcomeTotals: PlayerMatchOutcomeSummary;
   setsRecorded: number;
   completedSets: number;
   setsWon: number;
@@ -298,12 +302,18 @@ export function buildHeadToHeadReport(
     ({ summary }) =>
       normalizeName(summary.trackedPlayer) === trackedKey,
   );
+  const pointSampledMeetings = meetings.filter(
+    (meeting) => meeting.insights.pointCount > 0,
+  );
+  const pointSampledPersonalMeetings = personalMeetings.filter(
+    (meeting) => meeting.insights.pointCount > 0,
+  );
   const personalAverageInsights = aggregateLocalInsights(
     personalMeetings.map((meeting) => meeting.insights),
   );
   const personalAverageBreakPointsBySurface =
     PERSONAL_AVERAGE_COURT_SURFACES.map((surface) => {
-      const surfaceMeetings = personalMeetings.filter(
+      const surfaceMeetings = pointSampledPersonalMeetings.filter(
         ({ summary }) => summary.surface === surface,
       );
       const surfaceInsights = aggregateLocalInsights(
@@ -322,6 +332,23 @@ export function buildHeadToHeadReport(
     meeting.summary.setScores.filter((set) => set.isComplete),
   );
   const setWinners = completedSets.map(getSetWinner);
+  const matchOutcomeRecords: PlayerMatchOutcomeRecord[] = meetings.map(
+    ({ summary }) => ({
+      status: summary.status,
+      result:
+        summary.status !== 'complete'
+          ? null
+          : summary.winner === null
+            ? 'no_winner'
+            : summary.winner === 'tracked'
+              ? 'win'
+              : 'loss',
+      outcomeType:
+        summary.status !== 'complete'
+          ? null
+          : summary.matchOutcome?.reason ?? 'ordinary',
+    }),
+  );
 
   return {
     trackedPlayer: trackedPlayer.trim(),
@@ -341,6 +368,7 @@ export function buildHeadToHeadReport(
     matchesInProgress: meetings.filter(
       (meeting) => meeting.summary.status !== 'complete',
     ).length,
+    matchOutcomeTotals: summarizePlayerMatchOutcomes(matchOutcomeRecords),
     setsRecorded: meetings.reduce(
       (count, meeting) => count + meeting.summary.setScores.length,
       0,
@@ -350,13 +378,13 @@ export function buildHeadToHeadReport(
     setsLost: setWinners.filter((winner) => winner === 'opponent').length,
     completedSetsWithoutWinner: setWinners.filter((winner) => winner === null).length,
     insights,
-    performance: summarizePlayerPerformance(insights, meetings.length),
+    performance: summarizePlayerPerformance(insights, pointSampledMeetings.length),
     personalAverageInsights,
     personalAveragePerformance: summarizePlayerPerformance(
       personalAverageInsights,
-      personalMeetings.length,
+      pointSampledPersonalMeetings.length,
     ),
-    personalAverageMatches: personalMeetings.length,
+    personalAverageMatches: pointSampledPersonalMeetings.length,
     personalAverageBreakPointsBySurface,
   };
 }

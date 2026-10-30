@@ -5,6 +5,8 @@ import {
   type LocalContextInsight,
   type LocalSetInsights,
   type PointCode,
+  type PlayerSide,
+  type LocalMatchOutcome,
   type RallyLength,
   type ServiceGameStats,
   type ServeSideStats,
@@ -160,7 +162,72 @@ export interface PlayerTrendMatch {
   round: string | null;
   trackedPlayer: string;
   opponent: string;
+  status: 'in_progress' | 'complete';
+  result: 'win' | 'loss' | 'no_winner' | null;
+  outcomeType: 'ordinary' | 'retirement' | 'walkover' | null;
   metrics: Record<PlayerTrendMetricKey, PlayerTrendMetricValue>;
+}
+
+export interface PlayerMatchOutcomeRecord {
+  status: 'in_progress' | 'complete';
+  result: 'win' | 'loss' | 'no_winner' | null;
+  outcomeType: 'ordinary' | 'retirement' | 'walkover' | null;
+}
+
+export interface PlayerMatchOutcomeCategory {
+  count: number;
+  wins: number;
+  losses: number;
+  noWinner: number;
+}
+
+export interface PlayerMatchOutcomeSummary {
+  ordinary: PlayerMatchOutcomeCategory;
+  retirements: PlayerMatchOutcomeCategory;
+  walkovers: PlayerMatchOutcomeCategory;
+  inProgress: number;
+}
+
+function summarizeOutcomeCategory(
+  records: readonly PlayerMatchOutcomeRecord[],
+  outcomeType: 'ordinary' | 'retirement' | 'walkover',
+): PlayerMatchOutcomeCategory {
+  const matches = records.filter(
+    (record) =>
+      record.status === 'complete' &&
+      (record.outcomeType ?? 'ordinary') === outcomeType,
+  );
+  return {
+    count: matches.length,
+    wins: matches.filter((match) => match.result === 'win').length,
+    losses: matches.filter((match) => match.result === 'loss').length,
+    noWinner: matches.filter((match) => match.result === 'no_winner').length,
+  };
+}
+
+export function summarizePlayerMatchOutcomes(
+  records: readonly PlayerMatchOutcomeRecord[],
+): PlayerMatchOutcomeSummary {
+  return {
+    ordinary: summarizeOutcomeCategory(records, 'ordinary'),
+    retirements: summarizeOutcomeCategory(records, 'retirement'),
+    walkovers: summarizeOutcomeCategory(records, 'walkover'),
+    inProgress: records.filter((record) => record.status === 'in_progress').length,
+  };
+}
+
+export function formatPlayerMatchOutcomeSummary(
+  summary: PlayerMatchOutcomeSummary,
+): string {
+  const formatCategory = (label: string, category: PlayerMatchOutcomeCategory) =>
+    `${label} ${category.count} (${category.wins}–${category.losses})${
+      category.noWinner > 0 ? ` · ${category.noWinner} without a clear winner` : ''
+    }`;
+  return [
+    formatCategory('Ordinary', summary.ordinary),
+    formatCategory('Retirements', summary.retirements),
+    formatCategory('Walkovers', summary.walkovers),
+  ].join(' · ');
 }
 
 export function isValidPlayerTrendDate(value: string): boolean {
@@ -263,6 +330,18 @@ export function buildPlayerPerformanceHistory(
         ];
       }),
     ) as Record<PlayerTrendMetricKey, PlayerTrendMetricValue>;
+    const result: PlayerTrendMatch['result'] =
+      match.matchStatus !== 'complete'
+        ? null
+        : match.winner === null
+          ? 'no_winner'
+          : match.winner === playerSide
+            ? 'win'
+            : 'loss';
+    const outcomeType: PlayerTrendMatch['outcomeType'] =
+      match.matchStatus !== 'complete'
+        ? null
+        : match.matchOutcome?.reason ?? 'ordinary';
 
     return {
       id: match.id,
@@ -273,6 +352,9 @@ export function buildPlayerPerformanceHistory(
         playerSide === 'tracked' ? match.trackedPlayer : match.opponent,
       opponent:
         playerSide === 'tracked' ? match.opponent : match.trackedPlayer,
+      status: match.matchStatus,
+      result,
+      outcomeType,
       metrics,
     };
   }).sort(

@@ -19,9 +19,11 @@ import { listLocalPlayerMatchInsights } from '@/lib/local-matches';
 import { listLocalPlayers } from '@/lib/local-players';
 import {
   buildPlayerPerformanceHistory,
+  formatPlayerMatchOutcomeSummary,
   filterPlayerTrendMatchesByDateRange,
   isValidPlayerTrendDate,
   PLAYER_TREND_METRICS,
+  summarizePlayerMatchOutcomes,
   summarizePlayerTrendMetric,
   type PlayerTrendMatch,
   type PlayerTrendMetricKey,
@@ -515,6 +517,51 @@ function TrendSummaryCard({
   );
 }
 
+function matchOutcomeLabel(match: PlayerTrendMatch): string {
+  if (match.status !== 'complete') return 'In progress';
+  if (match.outcomeType === 'retirement') {
+    return match.result === 'win' ? 'Won by retirement' : 'Lost by retirement';
+  }
+  if (match.outcomeType === 'walkover') {
+    return match.result === 'win' ? 'Won by walkover' : 'Lost by walkover';
+  }
+  if (match.result === 'no_winner') return 'Ordinary · no clear winner';
+  return match.result === 'win' ? 'Ordinary · win' : 'Ordinary · loss';
+}
+
+function MatchOutcomeSummaryCard({
+  playerName,
+  matches,
+  testID,
+}: {
+  playerName: string;
+  matches: PlayerTrendMatch[];
+  testID: string;
+}) {
+  const colors = useColors();
+  if (matches.length === 0) return null;
+  const summary = summarizePlayerMatchOutcomes(matches);
+  return (
+    <View
+      testID={testID}
+      style={[
+        styles.summaryCard,
+        { backgroundColor: colors.card, borderColor: colors.border },
+      ]}
+    >
+      <Text numberOfLines={1} style={[styles.summaryName, { color: colors.foreground }]}>
+        Match results · {playerName}
+      </Text>
+      <Text style={[styles.summaryMeta, { color: colors.mutedForeground }]}>
+        {formatPlayerMatchOutcomeSummary(summary)}
+      </Text>
+      <Text style={[styles.summaryMeta, { color: colors.mutedForeground }]}>
+        In progress: {summary.inProgress}
+      </Text>
+    </View>
+  );
+}
+
 function PlayerTrendHistory({
   playerName,
   matches,
@@ -548,7 +595,7 @@ function PlayerTrendHistory({
           ]}
         >
           <Text style={[styles.matchMeta, { color: colors.mutedForeground }]}>
-            No point-recorded matches for this player yet.
+            No saved matches in this date range.
           </Text>
         </View>
       ) : (
@@ -576,6 +623,9 @@ function PlayerTrendHistory({
                 <Text style={[styles.matchMeta, { color: colors.mutedForeground }]}>
                   {`vs ${match.opponent} · ${formatDate(match.date)}`}
                   {match.round ? ` · ${match.round}` : ''}
+                </Text>
+                <Text style={[styles.matchMeta, { color: colors.mutedForeground }]}>
+                  {matchOutcomeLabel(match)}
                 </Text>
                 <Text style={[styles.matchCount, { color: colors.mutedForeground }]}>
                   {countText}
@@ -789,12 +839,24 @@ export default function PlayerDevelopmentScreen() {
     dateRangeError ? null : startDate || null,
     dateRangeError ? null : endDate || null,
   );
-  const comparisonRangeMatchCount = matches.length + comparisonMatches.length;
-  const comparisonAllMatchCount =
-    allMatches.length + allComparisonMatches.length;
-  const chartHasEnoughHistory = matches.length >= 2;
-  const comparisonHasEnoughHistory =
-    comparisonRangeMatchCount >= 2;
+  const pointSampledMatches = matches.filter(
+    (match) => match.metrics.overall.total > 0,
+  );
+  const allPointSampledMatches = allMatches.filter(
+    (match) => match.metrics.overall.total > 0,
+  );
+  const comparisonPointSampledMatches = comparisonMatches.filter(
+    (match) => match.metrics.overall.total > 0,
+  );
+  const allComparisonPointSampledMatches = allComparisonMatches.filter(
+    (match) => match.metrics.overall.total > 0,
+  );
+  const comparisonRangePointSampleCount =
+    pointSampledMatches.length + comparisonPointSampledMatches.length;
+  const comparisonAllPointSampleCount =
+    allPointSampledMatches.length + allComparisonPointSampledMatches.length;
+  const chartHasEnoughHistory = pointSampledMatches.length >= 2;
+  const comparisonHasEnoughHistory = comparisonRangePointSampleCount >= 2;
 
   function selectPlayer(playerId: string) {
     if (pickerTarget === 'primary') {
@@ -912,7 +974,7 @@ export default function PlayerDevelopmentScreen() {
               No recorded match points yet
             </Text>
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              Matches appear here after points are recorded. Matches without point samples are left out.
+              Match outcomes are counted separately. Point percentages use only points recorded on this device.
             </Text>
           </View>
         ) : (
@@ -928,6 +990,20 @@ export default function PlayerDevelopmentScreen() {
                 setEndDateInput('');
               }}
             />
+            <View style={styles.outcomeSummaryCards}>
+              <MatchOutcomeSummaryCard
+                testID="player-match-outcomes-primary"
+                playerName={player.name}
+                matches={matches}
+              />
+              {comparisonPlayerId && comparisonPlayer ? (
+                <MatchOutcomeSummaryCard
+                  testID="player-match-outcomes-comparison"
+                  playerName={comparisonPlayer.name}
+                  matches={comparisonMatches}
+                />
+              ) : null}
+            </View>
             <View style={styles.metricHeader}>
               <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
                 Percentage over time
@@ -935,9 +1011,9 @@ export default function PlayerDevelopmentScreen() {
               <Text style={[styles.sampleCount, { color: colors.mutedForeground }]}>
                 {comparisonPlayerId
                   ? comparisonQuery.isSuccess
-                    ? `${matches.length} vs ${comparisonMatches.length} matches`
+                    ? `${matches.length} (${pointSampledMatches.length} with points) vs ${comparisonMatches.length} (${comparisonPointSampledMatches.length} with points)`
                     : 'Comparing players'
-                  : `${matches.length} ${matches.length === 1 ? 'match' : 'matches'}`}
+                  : `${matches.length} matches · ${pointSampledMatches.length} with points`}
               </Text>
             </View>
             <View style={styles.metricChoices}>
@@ -1033,9 +1109,9 @@ export default function PlayerDevelopmentScreen() {
                     {comparisonHasEnoughHistory ? (
                       <ComparisonPerformanceChart
                         primaryName={player.name}
-                        primaryMatches={matches}
+                        primaryMatches={pointSampledMatches}
                         comparisonName={comparisonPlayer.name}
-                        comparisonMatches={comparisonMatches}
+                        comparisonMatches={comparisonPointSampledMatches}
                         metric={selectedMetric}
                         primaryColor={colors.primary}
                         comparisonColor={colors.accent}
@@ -1053,13 +1129,13 @@ export default function PlayerDevelopmentScreen() {
                             { color: colors.foreground },
                           ]}
                         >
-                          {comparisonRangeMatchCount === 0 &&
-                          comparisonAllMatchCount > 0
-                            ? 'No matches in this date range'
-                            : comparisonRangeMatchCount < 2 &&
-                                comparisonAllMatchCount >
-                                  comparisonRangeMatchCount
-                              ? 'Not enough matches in this date range'
+                          {comparisonRangePointSampleCount === 0 &&
+                          comparisonAllPointSampleCount > 0
+                            ? 'No point-recorded matches in this date range'
+                            : comparisonRangePointSampleCount < 2 &&
+                                comparisonAllPointSampleCount >
+                                  comparisonRangePointSampleCount
+                              ? 'Not enough point-recorded matches in this date range'
                               : 'Record another match to compare trends'}
                         </Text>
                         <Text
@@ -1068,11 +1144,11 @@ export default function PlayerDevelopmentScreen() {
                             { color: colors.mutedForeground },
                           ]}
                         >
-                          {comparisonRangeMatchCount < 2 &&
-                          comparisonAllMatchCount >
-                            comparisonRangeMatchCount
+                          {comparisonRangePointSampleCount < 2 &&
+                          comparisonAllPointSampleCount >
+                            comparisonRangePointSampleCount
                             ? 'Expand or clear the date range to include more point-recorded matches.'
-                            : 'The graph needs at least two point-recorded matches between the selected players.'}
+                            : 'Outcome totals remain visible above. The graph needs at least two point-recorded matches between the selected players.'}
                         </Text>
                       </View>
                     )}
@@ -1128,7 +1204,10 @@ export default function PlayerDevelopmentScreen() {
                   ]}
                 >
                   {chartHasEnoughHistory ? (
-                    <PerformanceChart matches={matches} metric={selectedMetric} />
+                    <PerformanceChart
+                      matches={pointSampledMatches}
+                      metric={selectedMetric}
+                    />
                   ) : (
                     <View style={styles.chartEmpty}>
                       <Ionicons
@@ -1142,10 +1221,12 @@ export default function PlayerDevelopmentScreen() {
                           { color: colors.foreground },
                         ]}
                       >
-                        {matches.length === 0 && allMatches.length > 0
-                          ? 'No matches in this date range'
-                          : matches.length === 1 && allMatches.length > 1
-                            ? 'One match in this date range'
+                        {pointSampledMatches.length === 0 &&
+                        allPointSampledMatches.length > 0
+                          ? 'No point-recorded matches in this date range'
+                          : pointSampledMatches.length === 1 &&
+                              allPointSampledMatches.length > 1
+                            ? 'One point-recorded match in this date range'
                             : 'Record another match to see a trend'}
                       </Text>
                       <Text
@@ -1154,9 +1235,11 @@ export default function PlayerDevelopmentScreen() {
                           { color: colors.mutedForeground },
                         ]}
                       >
-                        {matches.length < 2 && allMatches.length > matches.length
+                        {pointSampledMatches.length < 2 &&
+                        allPointSampledMatches.length >
+                          pointSampledMatches.length
                           ? 'Expand or clear the date range to include more point-recorded matches.'
-                          : 'The graph needs at least two point-recorded matches.'}
+                          : 'Outcome totals remain visible above. The graph uses only recorded points and needs at least two point-recorded matches.'}
                       </Text>
                     </View>
                   )}
@@ -1270,6 +1353,7 @@ const styles = StyleSheet.create({
   legendLine: { width: 13, height: 3, borderRadius: 2 },
   legendText: { flex: 1, fontFamily: 'DMSans_600SemiBold', fontSize: 9 },
   summaryCards: { flexDirection: 'row', gap: 8, marginTop: 9 },
+  outcomeSummaryCards: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   summaryCard: { flex: 1, minWidth: 0, borderWidth: 1, borderRadius: 11, padding: 10, gap: 4 },
   summaryNameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   playerDot: { width: 8, height: 8, borderRadius: 4 },

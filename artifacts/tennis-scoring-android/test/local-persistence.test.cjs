@@ -2297,6 +2297,131 @@ test('legacy match links preserve names and trend metrics count points from ever
   assert.equal(noSecondServeSummary.sampledMatchCount, 0);
 });
 
+test('player trend summaries separate match outcomes without inventing point samples', async () => {
+  storageValues.clear();
+  const { localMatches, localPlayers } = loadStorageModulesAfterRestart();
+  const trackedPlayer = await localPlayers.addLocalPlayer('Trend Player');
+  const opponent = await localPlayers.addLocalPlayer('Trend Opponent');
+
+  async function createMatch(date, trackedPlayerId, opponentPlayerId) {
+    return localMatches.createLocalMatch({
+      matchDate: date,
+      event: null,
+      round: null,
+      trackedPlayer:
+        trackedPlayerId === trackedPlayer.id ? trackedPlayer.name : opponent.name,
+      opponent:
+        opponentPlayerId === trackedPlayer.id ? trackedPlayer.name : opponent.name,
+      trackedPlayerId,
+      opponentPlayerId,
+      chairCoach: null,
+      surface: 'Hard',
+      firstServer: 'tracked',
+      setNumber: 1,
+    });
+  }
+
+  const ordinaryWin = await createMatch(
+    '2026-10-27',
+    trackedPlayer.id,
+    opponent.id,
+  );
+  for (let point = 0; point < 24; point += 1) {
+    await localMatches.recordLocalPoint(ordinaryWin.id, { winner: 'tracked' });
+  }
+  await localMatches.finishLocalMatch(ordinaryWin.id);
+
+  const ordinaryTie = await createMatch(
+    '2026-10-28',
+    trackedPlayer.id,
+    opponent.id,
+  );
+  for (let point = 0; point < 24; point += 1) {
+    await localMatches.recordLocalPoint(ordinaryTie.id, { winner: 'tracked' });
+  }
+  await localMatches.addLocalSet(ordinaryTie.id, 'standard');
+  for (let point = 0; point < 24; point += 1) {
+    await localMatches.recordLocalPoint(ordinaryTie.id, { winner: 'opponent' });
+  }
+  await localMatches.finishLocalMatch(ordinaryTie.id);
+
+  const retirement = await createMatch(
+    '2026-10-29',
+    trackedPlayer.id,
+    opponent.id,
+  );
+  await localMatches.recordLocalPoint(retirement.id, { winner: 'tracked' });
+  await localMatches.recordLocalMatchOutcome(retirement.id, {
+    reason: 'retirement',
+    winner: 'tracked',
+  });
+
+  const walkover = await createMatch(
+    '2026-10-30',
+    opponent.id,
+    trackedPlayer.id,
+  );
+  await localMatches.recordLocalMatchOutcome(walkover.id, {
+    reason: 'walkover',
+    winner: 'tracked',
+  });
+
+  const inProgress = await createMatch(
+    '2026-10-31',
+    trackedPlayer.id,
+    opponent.id,
+  );
+  const roster = await localPlayers.listLocalPlayers();
+  const records = await localMatches.listLocalPlayerMatchInsights(
+    trackedPlayer.id,
+    roster,
+  );
+  const playerInsights = loadPlayerInsights();
+  const trends = playerInsights.buildPlayerPerformanceHistory(records);
+
+  assert.equal(trends.length, 5);
+  assert.deepEqual(playerInsights.summarizePlayerMatchOutcomes(trends), {
+    ordinary: { count: 2, wins: 1, losses: 0, noWinner: 1 },
+    retirements: { count: 1, wins: 1, losses: 0, noWinner: 0 },
+    walkovers: { count: 1, wins: 0, losses: 1, noWinner: 0 },
+    inProgress: 1,
+  });
+  assert.equal(
+    trends.find((match) => match.id === walkover.id).metrics.overall.total,
+    0,
+  );
+  assert.equal(
+    trends.find((match) => match.id === walkover.id).metrics.overall.percent,
+    null,
+  );
+  assert.deepEqual(
+    playerInsights.summarizePlayerTrendMetric(trends, 'overall'),
+    {
+      percent: 67,
+      won: 49,
+      total: 73,
+      countLabel: 'points',
+      matchCount: 5,
+      sampledMatchCount: 3,
+    },
+  );
+  assert.equal(
+    playerInsights.formatPlayerMatchOutcomeSummary(
+      playerInsights.summarizePlayerMatchOutcomes(trends),
+    ),
+    'Ordinary 2 (1–0) · 1 without a clear winner · Retirements 1 (1–0) · Walkovers 1 (0–1)',
+  );
+
+  const developmentScreen = fs.readFileSync(
+    path.join(__dirname, '../app/players/[id]/development.tsx'),
+    'utf8',
+  );
+  assert.match(developmentScreen, /testID="player-match-outcomes-primary"/);
+  assert.match(developmentScreen, /formatPlayerMatchOutcomeSummary\(summary\)/);
+  assert.match(developmentScreen, /matches=\{pointSampledMatches\}/);
+  assert.match(developmentScreen, /No \$\{value\.countLabel\} recorded/);
+});
+
 test('legacy match names that match multiple saved identities stay unlinked', async () => {
   storageValues.clear();
   const { localMatches } = loadStorageModulesAfterRestart();

@@ -8,6 +8,7 @@ import {
   anonymizeReportPlayerNames,
   escapeReportHtml as escapeHtml,
 } from '@/lib/report-html-utils';
+import { formatPlayerMatchOutcomeSummary } from '@/lib/player-insights';
 import type { LocalReportBenchmarkPreset } from '@/lib/local-benchmarks';
 import {
   allHeadToHeadReportSections,
@@ -269,12 +270,12 @@ export function buildHeadToHeadReportHtml(
       'Aces per match',
       averageAces(
         trackedServe.aces,
-        insights.pointCount > 0 ? report.matchesRecorded : 0,
+        report.performance.matchesInSample,
         'matches',
       ),
       averageAces(
         opponentServe.aces,
-        insights.pointCount > 0 ? report.matchesRecorded : 0,
+        report.performance.matchesInSample,
         'matches',
       ),
       ...noBenchmarkValues,
@@ -522,6 +523,9 @@ export function buildHeadToHeadReportHtml(
     (report.completedMatchesWithoutWinner > 0
       ? ` · ${report.completedMatchesWithoutWinner} complete without a clear winner`
       : '');
+  const matchOutcomeBreakdown = formatPlayerMatchOutcomeSummary(
+    report.matchOutcomeTotals,
+  );
   const setRecord =
     `${report.setsWon}–${report.setsLost}` +
     (report.completedSetsWithoutWinner > 0
@@ -598,7 +602,7 @@ export function buildHeadToHeadReportHtml(
         <div><div class="player-label">OPPONENT</div><div class="player-name">${escapeHtml(opponent)}</div></div>
       </div>
       ${includes('overview') ? `<div class="cards">
-        <div class="card"><div class="label">MATCH RECORD</div><div class="value">${winsAndLosses}</div><div class="sample">${report.matchesRecorded} recorded · ${report.completedMatches} complete</div></div>
+        <div class="card"><div class="label">MATCH RECORD</div><div class="value">${winsAndLosses}</div><div class="sample">${report.matchesRecorded} recorded · ${report.completedMatches} complete</div><div class="sample">${escapeHtml(matchOutcomeBreakdown)}</div></div>
         <div class="card"><div class="label">SET RECORD</div><div class="value">${setRecord}</div><div class="sample">${report.setsRecorded} recorded · ${report.completedSets} complete</div></div>
         <div class="card"><div class="label">POINTS WON</div><div class="value">${rate(insights.trackedPointsWon, insights.pointCount)}</div><div class="sample">${insights.pointCount} recorded points</div></div>
         <div class="card"><div class="label">IN PROGRESS</div><div class="value">${report.matchesInProgress}</div><div class="sample">not included in match W–L</div></div>

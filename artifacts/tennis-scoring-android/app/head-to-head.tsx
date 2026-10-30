@@ -50,7 +50,10 @@ import {
   shareReviewedLocalPdf,
 } from '@/lib/report-pdf';
 import { POINT_CODE_LABELS } from '@/lib/player-report-html';
-import type { ContextPerformanceInsight } from '@/lib/player-insights';
+import {
+  formatPlayerMatchOutcomeSummary,
+  type ContextPerformanceInsight,
+} from '@/lib/player-insights';
 import {
   getLocalReportBenchmarkSettings,
   LOCAL_REPORT_BENCHMARKS_KEY,
@@ -583,12 +586,12 @@ export default function HeadToHeadScreen() {
           label: 'Aces / match',
           tracked: averageValue(
             trackedServe.aces,
-            report.matchesRecorded,
+            report.performance.matchesInSample,
             'matches',
           ),
           opponent: averageValue(
             opponentServe.aces,
-            report.matchesRecorded,
+            report.performance.matchesInSample,
             'matches',
           ),
         },
@@ -1057,6 +1060,12 @@ export default function HeadToHeadScreen() {
                   colors={colors}
                 />
               </View>
+              <Text
+                testID="head-to-head-match-outcome-totals"
+                style={[styles.summaryFootnote, { color: colors.primaryForeground }]}
+              >
+                {formatPlayerMatchOutcomeSummary(report.matchOutcomeTotals)}
+              </Text>
               <Text style={[styles.summaryFootnote, { color: colors.primaryForeground }]}>
                 Only records captured with this tracked-player orientation are included. Results with tied set counts are not assigned a winner.
               </Text>

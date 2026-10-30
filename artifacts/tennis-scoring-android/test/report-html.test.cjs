@@ -521,6 +521,16 @@ function emptySurfaceBreakPointBaselines() {
   }));
 }
 
+function emptyMatchOutcomeTotals() {
+  const emptyCategory = { count: 0, wins: 0, losses: 0, noWinner: 0 };
+  return {
+    ordinary: { ...emptyCategory },
+    retirements: { ...emptyCategory },
+    walkovers: { ...emptyCategory },
+    inProgress: 0,
+  };
+}
+
 function headToHeadReportFixture(insights, performance, matchesRecorded = 1) {
   return {
     trackedPlayer: 'Tracked',
@@ -532,6 +542,7 @@ function headToHeadReportFixture(insights, performance, matchesRecorded = 1) {
     matchesLost: 0,
     completedMatchesWithoutWinner: 0,
     matchesInProgress: 0,
+    matchOutcomeTotals: emptyMatchOutcomeTotals(),
     setsRecorded: matchesRecorded,
     completedSets: matchesRecorded,
     setsWon: matchesRecorded,
@@ -2534,6 +2545,7 @@ test('head-to-head report removes URL-like text and keeps names and statistics',
     matchesLost: 0,
     completedMatchesWithoutWinner: 0,
     matchesInProgress: 0,
+    matchOutcomeTotals: emptyMatchOutcomeTotals(),
     setsRecorded: 1,
     completedSets: 1,
     setsWon: 1,
@@ -2586,6 +2598,78 @@ test('head-to-head match rows identify retirement and walkover winners', () => {
   assert.match(retirementHtml, /Winner by retirement: Bailey/);
 });
 
+test('head-to-head summaries separate ordinary results, retirements, and walkovers', () => {
+  const ordinaryWin = breakPointMeeting(
+    'ordinary-win',
+    'Alex',
+    'Bailey',
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    '2026-10-28',
+  );
+  const ordinaryTie = breakPointMeeting(
+    'ordinary-tie',
+    'Alex',
+    'Bailey',
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    '2026-10-29',
+  );
+  ordinaryTie.summary.winner = null;
+  const retirement = breakPointMeeting(
+    'retirement-loss',
+    'Alex',
+    'Bailey',
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    '2026-10-30',
+  );
+  retirement.summary.winner = 'opponent';
+  retirement.summary.matchOutcome = { reason: 'retirement', winner: 'opponent' };
+  const walkover = breakPointMeeting(
+    'walkover-win',
+    'Alex',
+    'Bailey',
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    '2026-10-31',
+  );
+  walkover.summary.matchOutcome = { reason: 'walkover', winner: 'tracked' };
+  walkover.insights.pointCount = 0;
+  walkover.summary.pointCount = 0;
+  const inProgress = breakPointMeeting(
+    'in-progress',
+    'Alex',
+    'Bailey',
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    '2026-11-01',
+  );
+  inProgress.summary.status = 'in_progress';
+  inProgress.summary.winner = null;
+  inProgress.summary.matchOutcome = null;
+  inProgress.insights.pointCount = 0;
+  inProgress.summary.pointCount = 0;
+
+  const report = buildHeadToHeadReport(
+    'Alex',
+    'Bailey',
+    [ordinaryWin, ordinaryTie, retirement, walkover, inProgress],
+  );
+
+  assert.deepEqual(report.matchOutcomeTotals, {
+    ordinary: { count: 2, wins: 1, losses: 0, noWinner: 1 },
+    retirements: { count: 1, wins: 0, losses: 1, noWinner: 0 },
+    walkovers: { count: 1, wins: 1, losses: 0, noWinner: 0 },
+    inProgress: 1,
+  });
+  assert.equal(report.performance.matchesInSample, 4);
+  const html = buildHeadToHeadReportHtml(report);
+  assert.match(html, /Ordinary 2 \(1–0\) · 1 without a clear winner/);
+  assert.match(html, /Retirements 1 \(0–1\)/);
+  assert.match(html, /Walkovers 1 \(1–0\)/);
+});
+
 test('head-to-head reports compare selected local benchmarks without exposing preset names', () => {
   const report = {
     trackedPlayer: 'Alex',
@@ -2597,6 +2681,7 @@ test('head-to-head reports compare selected local benchmarks without exposing pr
     matchesLost: 0,
     completedMatchesWithoutWinner: 0,
     matchesInProgress: 0,
+    matchOutcomeTotals: emptyMatchOutcomeTotals(),
     setsRecorded: 1,
     completedSets: 1,
     setsWon: 1,
@@ -2988,6 +3073,7 @@ test('head-to-head PDF includes only selected analysis sections', () => {
       matchesLost: 0,
       completedMatchesWithoutWinner: 0,
       matchesInProgress: 0,
+      matchOutcomeTotals: emptyMatchOutcomeTotals(),
       setsRecorded: 1,
       completedSets: 1,
       setsWon: 1,
@@ -3147,6 +3233,7 @@ test('clearing all sections keeps match details without analysis sections', () =
       matchesLost: 0,
       completedMatchesWithoutWinner: 0,
       matchesInProgress: 0,
+      matchOutcomeTotals: emptyMatchOutcomeTotals(),
       setsRecorded: 1,
       completedSets: 1,
       setsWon: 1,
