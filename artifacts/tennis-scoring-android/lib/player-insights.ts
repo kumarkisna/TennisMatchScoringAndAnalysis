@@ -161,6 +161,51 @@ export interface PlayerTrendMatch {
   metrics: Record<PlayerTrendMetricKey, PlayerTrendMetricValue>;
 }
 
+export function isValidPlayerTrendDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > 31) {
+    return false;
+  }
+
+  const parsed = new Date(0);
+  parsed.setUTCHours(0, 0, 0, 0);
+  parsed.setUTCFullYear(year, month - 1, day);
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
+  );
+}
+
+export function filterPlayerTrendMatchesByDateRange(
+  matches: readonly PlayerTrendMatch[],
+  startDate?: string | null,
+  endDate?: string | null,
+): PlayerTrendMatch[] {
+  const start = startDate?.trim() ?? '';
+  const end = endDate?.trim() ?? '';
+  if (
+    (start && !isValidPlayerTrendDate(start)) ||
+    (end && !isValidPlayerTrendDate(end)) ||
+    (start && end && start > end)
+  ) {
+    return [];
+  }
+  if (!start && !end) return [...matches];
+
+  return matches.filter((match) => {
+    const date = match.date.slice(0, 10);
+    if (!isValidPlayerTrendDate(date)) return false;
+    return (!start || date >= start) && (!end || date <= end);
+  });
+}
+
 export function buildPlayerPerformanceHistory(
   records: readonly LocalPlayerMatchInsight[],
 ): PlayerTrendMatch[] {

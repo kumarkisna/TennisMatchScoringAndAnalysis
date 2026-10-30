@@ -9,6 +9,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import Svg, { Circle, G, Line, Path, Text as SvgText } from 'react-native-svg';
@@ -18,6 +19,8 @@ import { listLocalPlayerMatchInsights } from '@/lib/local-matches';
 import { listLocalPlayers } from '@/lib/local-players';
 import {
   buildPlayerPerformanceHistory,
+  filterPlayerTrendMatchesByDateRange,
+  isValidPlayerTrendDate,
   PLAYER_TREND_METRICS,
   summarizePlayerTrendMetric,
   type PlayerTrendMatch,
@@ -592,6 +595,120 @@ function PlayerTrendHistory({
   );
 }
 
+function TrendDateRangeFilter({
+  startDate,
+  endDate,
+  error,
+  onStartDateChange,
+  onEndDateChange,
+  onClear,
+}: {
+  startDate: string;
+  endDate: string;
+  error: string | null;
+  onStartDateChange: (value: string) => void;
+  onEndDateChange: (value: string) => void;
+  onClear: () => void;
+}) {
+  const colors = useColors();
+  const hasDate = Boolean(startDate || endDate);
+  return (
+    <View
+      style={[
+        styles.dateRangeCard,
+        { backgroundColor: colors.card, borderColor: colors.border },
+      ]}
+    >
+      <View style={styles.dateRangeHeader}>
+        <Text style={[styles.dateRangeTitle, { color: colors.foreground }]}>
+          Filter by match date
+        </Text>
+        {hasDate ? (
+          <Pressable
+            testID="button-clear-trend-date-range"
+            accessibilityRole="button"
+            onPress={onClear}
+            style={styles.dateRangeClear}
+          >
+            <Text style={[styles.dateRangeClearText, { color: colors.primary }]}>
+              Clear
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
+      <Text style={[styles.dateRangeHint, { color: colors.mutedForeground }]}>
+        Dates use YYYY-MM-DD. Leave either date blank for an open-ended range.
+      </Text>
+      <View style={styles.dateRangeFields}>
+        <View style={styles.dateRangeField}>
+          <Text style={[styles.dateRangeLabel, { color: colors.mutedForeground }]}>
+            From
+          </Text>
+          <TextInput
+            testID="input-trend-date-start"
+            accessibilityLabel="Start date, YYYY-MM-DD"
+            value={startDate}
+            onChangeText={onStartDateChange}
+            placeholder="YYYY-MM-DD"
+            placeholderTextColor={colors.mutedForeground}
+            keyboardType="numbers-and-punctuation"
+            autoCapitalize="none"
+            autoCorrect={false}
+            maxLength={10}
+            returnKeyType="done"
+            style={[
+              styles.dateRangeInput,
+              {
+                backgroundColor: colors.background,
+                borderColor: colors.border,
+                color: colors.foreground,
+              },
+            ]}
+          />
+        </View>
+        <View style={styles.dateRangeField}>
+          <Text style={[styles.dateRangeLabel, { color: colors.mutedForeground }]}>
+            To
+          </Text>
+          <TextInput
+            testID="input-trend-date-end"
+            accessibilityLabel="End date, YYYY-MM-DD"
+            value={endDate}
+            onChangeText={onEndDateChange}
+            placeholder="YYYY-MM-DD"
+            placeholderTextColor={colors.mutedForeground}
+            keyboardType="numbers-and-punctuation"
+            autoCapitalize="none"
+            autoCorrect={false}
+            maxLength={10}
+            returnKeyType="done"
+            style={[
+              styles.dateRangeInput,
+              {
+                backgroundColor: colors.background,
+                borderColor: colors.border,
+                color: colors.foreground,
+              },
+            ]}
+          />
+        </View>
+      </View>
+      <Text
+        testID={error ? 'trend-date-range-error' : 'trend-date-range-hint'}
+        accessibilityRole={error ? 'alert' : undefined}
+        style={[
+          styles.dateRangeHint,
+          { color: error ? colors.destructive : colors.mutedForeground },
+        ]}
+      >
+        {error
+          ? `${error} All matches remain visible until corrected.`
+          : 'The selected start and end dates are both included.'}
+      </Text>
+    </View>
+  );
+}
+
 async function loadPlayerTrendHistory(playerId: string) {
   const players = await listLocalPlayers();
   const player = players.find((item) => item.id === playerId);
@@ -616,6 +733,8 @@ export default function PlayerDevelopmentScreen() {
   >(null);
   const [selectedMetric, setSelectedMetric] =
     useState<PlayerTrendMetricKey>('overall');
+  const [startDateInput, setStartDateInput] = useState('');
+  const [endDateInput, setEndDateInput] = useState('');
   const playersQuery = useQuery({
     queryKey: ['player-development-saved-players'],
     queryFn: listLocalPlayers,
@@ -646,11 +765,36 @@ export default function PlayerDevelopmentScreen() {
   const comparisonPlayer =
     players.find((item) => item.id === comparisonPlayerId) ??
     comparisonQuery.data?.player;
-  const matches = historyQuery.data?.matches ?? [];
-  const comparisonMatches = comparisonQuery.data?.matches ?? [];
+  const allMatches = historyQuery.data?.matches ?? [];
+  const allComparisonMatches = comparisonQuery.data?.matches ?? [];
+  const startDate = startDateInput.trim();
+  const endDate = endDateInput.trim();
+  const dateRangeError =
+    (startDate && !isValidPlayerTrendDate(startDate)
+      ? 'Enter a valid start date in YYYY-MM-DD format.'
+      : null) ??
+    (endDate && !isValidPlayerTrendDate(endDate)
+      ? 'Enter a valid end date in YYYY-MM-DD format.'
+      : null) ??
+    (startDate && endDate && startDate > endDate
+      ? 'Start date must be on or before end date.'
+      : null);
+  const matches = filterPlayerTrendMatchesByDateRange(
+    allMatches,
+    dateRangeError ? null : startDate || null,
+    dateRangeError ? null : endDate || null,
+  );
+  const comparisonMatches = filterPlayerTrendMatchesByDateRange(
+    allComparisonMatches,
+    dateRangeError ? null : startDate || null,
+    dateRangeError ? null : endDate || null,
+  );
+  const comparisonRangeMatchCount = matches.length + comparisonMatches.length;
+  const comparisonAllMatchCount =
+    allMatches.length + allComparisonMatches.length;
   const chartHasEnoughHistory = matches.length >= 2;
   const comparisonHasEnoughHistory =
-    matches.length + comparisonMatches.length >= 2;
+    comparisonRangeMatchCount >= 2;
 
   function selectPlayer(playerId: string) {
     if (pickerTarget === 'primary') {
@@ -759,7 +903,7 @@ export default function PlayerDevelopmentScreen() {
               Select Player 1 above to view a point-recorded history.
             </Text>
           </View>
-        ) : matches.length === 0 && !comparisonPlayerId ? (
+        ) : allMatches.length === 0 && !comparisonPlayerId ? (
           <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={[styles.emptyIcon, { backgroundColor: colors.secondary }]}>
               <Ionicons name="stats-chart-outline" size={23} color={colors.primary} />
@@ -773,6 +917,17 @@ export default function PlayerDevelopmentScreen() {
           </View>
         ) : (
           <>
+            <TrendDateRangeFilter
+              startDate={startDateInput}
+              endDate={endDateInput}
+              error={dateRangeError}
+              onStartDateChange={setStartDateInput}
+              onEndDateChange={setEndDateInput}
+              onClear={() => {
+                setStartDateInput('');
+                setEndDateInput('');
+              }}
+            />
             <View style={styles.metricHeader}>
               <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
                 Percentage over time
@@ -898,7 +1053,14 @@ export default function PlayerDevelopmentScreen() {
                             { color: colors.foreground },
                           ]}
                         >
-                          Record another match to compare trends
+                          {comparisonRangeMatchCount === 0 &&
+                          comparisonAllMatchCount > 0
+                            ? 'No matches in this date range'
+                            : comparisonRangeMatchCount < 2 &&
+                                comparisonAllMatchCount >
+                                  comparisonRangeMatchCount
+                              ? 'Not enough matches in this date range'
+                              : 'Record another match to compare trends'}
                         </Text>
                         <Text
                           style={[
@@ -906,7 +1068,11 @@ export default function PlayerDevelopmentScreen() {
                             { color: colors.mutedForeground },
                           ]}
                         >
-                          The graph needs at least two point-recorded matches between the selected players.
+                          {comparisonRangeMatchCount < 2 &&
+                          comparisonAllMatchCount >
+                            comparisonRangeMatchCount
+                            ? 'Expand or clear the date range to include more point-recorded matches.'
+                            : 'The graph needs at least two point-recorded matches between the selected players.'}
                         </Text>
                       </View>
                     )}
@@ -976,7 +1142,11 @@ export default function PlayerDevelopmentScreen() {
                           { color: colors.foreground },
                         ]}
                       >
-                        Record another match to see a trend
+                        {matches.length === 0 && allMatches.length > 0
+                          ? 'No matches in this date range'
+                          : matches.length === 1 && allMatches.length > 1
+                            ? 'One match in this date range'
+                            : 'Record another match to see a trend'}
                       </Text>
                       <Text
                         style={[
@@ -984,7 +1154,9 @@ export default function PlayerDevelopmentScreen() {
                           { color: colors.mutedForeground },
                         ]}
                       >
-                        One match is available below. The graph needs at least two point-recorded matches.
+                        {matches.length < 2 && allMatches.length > matches.length
+                          ? 'Expand or clear the date range to include more point-recorded matches.'
+                          : 'The graph needs at least two point-recorded matches.'}
                       </Text>
                     </View>
                   )}
@@ -1078,6 +1250,16 @@ const styles = StyleSheet.create({
   metricHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 11 },
   sectionTitle: { fontFamily: 'Manrope_700Bold', fontSize: 17 },
   sampleCount: { fontFamily: 'DMSans_600SemiBold', fontSize: 11 },
+  dateRangeCard: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 9, marginBottom: 14 },
+  dateRangeHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  dateRangeTitle: { fontFamily: 'Manrope_700Bold', fontSize: 14 },
+  dateRangeClear: { minHeight: 30, justifyContent: 'center', paddingHorizontal: 5 },
+  dateRangeClearText: { fontFamily: 'DMSans_700Bold', fontSize: 11 },
+  dateRangeHint: { fontFamily: 'DMSans_400Regular', fontSize: 10, lineHeight: 15 },
+  dateRangeFields: { flexDirection: 'row', gap: 8 },
+  dateRangeField: { flex: 1, minWidth: 0, gap: 5 },
+  dateRangeLabel: { fontFamily: 'DMSans_700Bold', fontSize: 9, letterSpacing: 0.4, textTransform: 'uppercase' },
+  dateRangeInput: { minHeight: 42, borderWidth: 1, borderRadius: 8, paddingHorizontal: 9, fontFamily: 'DMSans_500Medium', fontSize: 12 },
   metricChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 13 },
   metricChip: { minHeight: 34, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, justifyContent: 'center' },
   metricChipText: { fontFamily: 'DMSans_600SemiBold', fontSize: 10 },

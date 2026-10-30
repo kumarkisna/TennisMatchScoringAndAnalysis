@@ -1630,6 +1630,64 @@ test('legacy match links preserve names and trend metrics count points from ever
       sampledMatchCount: 2,
     },
   );
+  const trendHelpers = loadPlayerInsights();
+  const filteredTrends =
+    trendHelpers.filterPlayerTrendMatchesByDateRange(
+      trends,
+      '2026-10-29',
+      '2026-10-29',
+    );
+  assert.deepEqual(
+    filteredTrends.map((trend) => trend.date),
+    ['2026-10-29'],
+  );
+  assert.deepEqual(
+    trends.map((trend) => trend.date),
+    ['2026-10-29', '2026-10-31'],
+  );
+  const filteredSummary = trendHelpers.summarizePlayerTrendMetric(
+    filteredTrends,
+    'overall',
+  );
+  assert.deepEqual(
+    {
+      percent: filteredSummary.percent,
+      won: filteredSummary.won,
+      total: filteredSummary.total,
+      matchCount: filteredSummary.matchCount,
+      sampledMatchCount: filteredSummary.sampledMatchCount,
+    },
+    {
+      percent: 50,
+      won: 2,
+      total: 4,
+      matchCount: 1,
+      sampledMatchCount: 1,
+    },
+  );
+  assert.deepEqual(
+    trendHelpers
+      .filterPlayerTrendMatchesByDateRange(trends, null, '2026-10-30')
+      .map((trend) => trend.date),
+    ['2026-10-29'],
+  );
+  assert.deepEqual(
+    trendHelpers
+      .filterPlayerTrendMatchesByDateRange(trends, '2026-10-30', null)
+      .map((trend) => trend.date),
+    ['2026-10-31'],
+  );
+  assert.deepEqual(
+    trendHelpers.filterPlayerTrendMatchesByDateRange(
+      trends,
+      '2026-10-31',
+      '2026-10-29',
+    ),
+    [],
+  );
+  assert.equal(trendHelpers.isValidPlayerTrendDate('2024-02-29'), true);
+  assert.equal(trendHelpers.isValidPlayerTrendDate('2026-02-29'), false);
+  assert.equal(trendHelpers.isValidPlayerTrendDate('2026-2-09'), false);
 
   const opponentHistory = await localMatches.listLocalPlayerMatchInsights(
     opponentPlayer.id,
@@ -1638,6 +1696,14 @@ test('legacy match links preserve names and trend metrics count points from ever
   const opponentTrend = loadPlayerInsights().buildPlayerPerformanceHistory(
     opponentHistory,
   )[0];
+  const filteredOpponentTrends =
+    trendHelpers.filterPlayerTrendMatchesByDateRange(
+      loadPlayerInsights().buildPlayerPerformanceHistory(opponentHistory),
+      '2026-10-29',
+      '2026-10-29',
+    );
+  assert.equal(filteredOpponentTrends.length, 1);
+  assert.equal(filteredOpponentTrends[0].date, '2026-10-29');
   assert.equal(opponentTrend.trackedPlayer, 'Maya Rao');
   assert.equal(opponentTrend.opponent, 'Sana Iyer');
   assert.equal(opponentTrend.metrics.secondServe.percent, null);
