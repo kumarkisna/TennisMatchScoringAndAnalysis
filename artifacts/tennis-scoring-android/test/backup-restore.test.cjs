@@ -309,6 +309,15 @@ test('backup save, share, and restore preserve all players and sets without netw
   assert.equal(repeatedImport.matchesSkipped, 1);
 
   const beforeInvalidImport = [...storageValues.entries()];
+  const duplicateBackup = JSON.parse(savedDeviceBackup.contents);
+  duplicateBackup.matches.push(duplicateBackup.matches[0]);
+  selectedBackupContents = JSON.stringify(duplicateBackup);
+  await assert.rejects(
+    loadBackupModule().loadLocalBackupFromDevice(),
+    /duplicate or invalid record references/,
+  );
+  assert.deepEqual([...storageValues.entries()], beforeInvalidImport);
+
   const invalidBackup = JSON.parse(savedDeviceBackup.contents);
   invalidBackup.matches[0].matchDate = 'not-a-date';
   selectedBackupContents = JSON.stringify(invalidBackup);

@@ -14,3 +14,9 @@ description: Product requirements for multi-set tennis records, tiebreak-only se
 **Why:** Match details can be corrected after play, but recorded scoring history must remain trustworthy.
 
 **How to apply:** Treat match-detail edits as metadata-only updates. Preserve historical set records and point arrays; recalculate only the current next-server indicator when the current first server changes.
+
+**Rule:** Backup score validation must distinguish active tiebreak scores from regular game scores. During a tiebreak, the displayed score strings are numeric point counts that match the numeric tiebreak counters; regular games use tennis labels.
+
+**Why:** A valid backup from an in-progress match tiebreak was rejected when the validator accepted only regular tennis score labels.
+
+**How to apply:** Keep backup validation aligned with the scoring engine for standard games, standard-set tiebreaks, and match-tiebreak sets.
