@@ -543,6 +543,131 @@ test('saved player choices relink both match sides without changing recorded poi
   assert.equal(networkRequestCount, 0);
 });
 
+test('renaming a saved player keeps trend history after restart and preserves match data', async () => {
+  storageValues.clear();
+  const { localMatches, localPlayers } = loadStorageModulesAfterRestart();
+  const trackedPlayer = await localPlayers.addLocalPlayer('Sana Iyer');
+  const opponentPlayer = await localPlayers.addLocalPlayer('Maya Rao');
+
+  const trackedMatch = await localMatches.createLocalMatch({
+    matchDate: '2026-10-25',
+    event: 'Fall Invitational',
+    round: 'Semifinal',
+    trackedPlayer: trackedPlayer.name,
+    trackedPlayerId: trackedPlayer.id,
+    opponent: opponentPlayer.name,
+    opponentPlayerId: opponentPlayer.id,
+    chairCoach: null,
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+  await localMatches.recordLocalPoint(trackedMatch.id, {
+    winner: 'tracked',
+    endingCode: 'A',
+  });
+
+  const opponentMatch = await localMatches.createLocalMatch({
+    matchDate: '2026-10-27',
+    event: 'Fall Invitational',
+    round: 'Final',
+    trackedPlayer: opponentPlayer.name,
+    trackedPlayerId: opponentPlayer.id,
+    opponent: trackedPlayer.name,
+    opponentPlayerId: trackedPlayer.id,
+    chairCoach: null,
+    surface: 'Clay',
+    firstServer: 'opponent',
+    setNumber: 1,
+  });
+  await localMatches.recordLocalPoint(opponentMatch.id, {
+    winner: 'opponent',
+    endingCode: 'F',
+  });
+
+  const rosterBefore = await localPlayers.listLocalPlayers();
+  const historyBefore = await localMatches.listLocalPlayerMatchInsights(
+    trackedPlayer.id,
+    rosterBefore,
+  );
+  const insights = loadPlayerInsights();
+  const trendsBefore = insights.buildPlayerPerformanceHistory(historyBefore);
+  const matchesBefore = await Promise.all(
+    [trackedMatch.id, opponentMatch.id].map((id) =>
+      localMatches.getLocalMatch(id),
+    ),
+  );
+  assert.ok(matchesBefore.every(Boolean));
+  assert.deepEqual(
+    historyBefore.map((record) => record.playerSide),
+    ['tracked', 'opponent'],
+  );
+  assert.deepEqual(
+    trendsBefore.map((trend) => [trend.trackedPlayer, trend.opponent]),
+    [
+      ['Sana Iyer', 'Maya Rao'],
+      ['Sana Iyer', 'Maya Rao'],
+    ],
+  );
+
+  const renamedPlayer = await localPlayers.updateLocalPlayer(
+    trackedPlayer.id,
+    'Sana Iyer Renamed',
+    {
+      dateOfBirth: trackedPlayer.dateOfBirth,
+      atpPlayerId: trackedPlayer.atpPlayerId,
+      itfPlayerId: trackedPlayer.itfPlayerId,
+      atpRanking: trackedPlayer.atpRanking,
+      itfRanking: trackedPlayer.itfRanking,
+      nationality: trackedPlayer.nationality,
+      playingHand: trackedPlayer.playingHand,
+      heightCm: trackedPlayer.heightCm,
+      weightKg: trackedPlayer.weightKg,
+      phoneNumbers: trackedPlayer.phoneNumbers,
+      profileUrls: trackedPlayer.profileUrls,
+      profileUrlLabels: trackedPlayer.profileUrlLabels,
+    },
+  );
+
+  const afterRestart = loadStorageModulesAfterRestart();
+  const rosterAfter = await afterRestart.localPlayers.listLocalPlayers();
+  const historyAfter = await afterRestart.localMatches.listLocalPlayerMatchInsights(
+    renamedPlayer.id,
+    rosterAfter,
+  );
+  const trendsAfter = insights.buildPlayerPerformanceHistory(historyAfter);
+  const matchesAfter = await Promise.all(
+    [trackedMatch.id, opponentMatch.id].map((id) =>
+      afterRestart.localMatches.getLocalMatch(id),
+    ),
+  );
+
+  assert.equal(renamedPlayer.id, trackedPlayer.id);
+  assert.equal(renamedPlayer.name, 'Sana Iyer Renamed');
+  assert.equal(
+    rosterAfter.find((player) => player.id === trackedPlayer.id)?.name,
+    'Sana Iyer Renamed',
+  );
+  assert.equal(
+    await afterRestart.localPlayers.getActiveLocalPlayerId(),
+    trackedPlayer.id,
+  );
+  assert.deepEqual(historyAfter, historyBefore);
+  assert.deepEqual(trendsAfter, trendsBefore);
+  assert.deepEqual(matchesAfter, matchesBefore);
+  assert.deepEqual(
+    matchesAfter.map((match) => [
+      match.trackedPlayer,
+      match.opponent,
+      match.points,
+    ]),
+    [
+      ['Sana Iyer', 'Maya Rao', matchesBefore[0].points],
+      ['Maya Rao', 'Sana Iyer', matchesBefore[1].points],
+    ],
+  );
+});
+
 test('legacy match links preserve names and trend metrics count points from every set', async () => {
   storageValues.clear();
   const { localMatches, localPlayers } = loadStorageModulesAfterRestart();
