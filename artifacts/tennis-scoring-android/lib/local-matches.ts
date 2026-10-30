@@ -1057,6 +1057,51 @@ export async function listLocalMatches(): Promise<LocalMatchSummary[]> {
   });
 }
 
+export async function countLocalPlayerMatchRecords(
+  playerId: string,
+  players: readonly { id: string; name: string }[],
+): Promise<number> {
+  const uniquePlayersByName = new Map<string, string | null>();
+  for (const player of players) {
+    const key = normalizePlayerName(player.name);
+    if (uniquePlayersByName.has(key)) {
+      uniquePlayersByName.set(key, null);
+    } else {
+      uniquePlayersByName.set(key, player.id);
+    }
+  }
+
+  return withWriteLock(async () => {
+    const ids = await readIndex();
+    const records = await AsyncStorage.multiGet(ids.map(matchStorageKey));
+    let count = 0;
+
+    for (const [key, raw] of records) {
+      if (raw === null) continue;
+      const value: unknown = JSON.parse(raw);
+      if (!value || typeof value !== 'object' || !('id' in value)) {
+        throw new Error(`A local match record could not be read (${key}).`);
+      }
+
+      const match = normalizeLocalMatch(value as Record<string, unknown>);
+      const trackedPlayerId =
+        match.trackedPlayerId ??
+        uniquePlayersByName.get(normalizePlayerName(match.trackedPlayer)) ??
+        null;
+      const opponentPlayerId =
+        match.opponentPlayerId ??
+        uniquePlayersByName.get(normalizePlayerName(match.opponent)) ??
+        null;
+
+      if (trackedPlayerId === playerId || opponentPlayerId === playerId) {
+        count += 1;
+      }
+    }
+
+    return count;
+  });
+}
+
 export async function getLocalMatch(id: string): Promise<LocalMatch | null> {
   return withWriteLock(() => readMatch(id));
 }

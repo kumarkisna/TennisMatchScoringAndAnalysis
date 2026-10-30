@@ -5,6 +5,7 @@ import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, Vie
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
+import { countLocalPlayerMatchRecords } from '@/lib/local-matches';
 import {
   ACTIVE_LOCAL_PLAYER_KEY,
   addLocalPlayerProfileLink,
@@ -113,19 +114,34 @@ export default function PlayersScreen() {
     },
   });
 
-  function confirmRemove(player: LocalPlayer) {
-    Alert.alert(
-      'Remove saved player?',
-      `${player.name} will be removed from your player list. Existing match records will not change.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () => removePlayer.mutate(player.id),
-        },
-      ],
-    );
+  async function confirmRemove(player: LocalPlayer) {
+    try {
+      const players = await listLocalPlayers();
+      const linkedMatchCount = await countLocalPlayerMatchRecords(
+        player.id,
+        players,
+      );
+      const matchLabel = linkedMatchCount === 1 ? 'saved match' : 'saved matches';
+      Alert.alert(
+        'Remove saved player?',
+        `${player.name} is linked to ${linkedMatchCount} ${matchLabel}. Removing this profile will not delete any match records, sets, points, or stats. Saved matches will remain on this device with the player names recorded in each match.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Remove',
+            style: 'destructive',
+            onPress: () => removePlayer.mutate(player.id),
+          },
+        ],
+      );
+    } catch (error) {
+      Alert.alert(
+        'Could not check match history',
+        `${player.name} was not removed. ${
+          error instanceof Error ? error.message : 'Try again.'
+        }`,
+      );
+    }
   }
 
   function submitPlayer() {

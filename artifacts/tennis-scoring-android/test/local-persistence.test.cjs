@@ -1443,6 +1443,156 @@ test('renaming a saved player keeps trend history after restart and preserves ma
   );
 });
 
+test('player deletion warns about linked matches and keeps their data on device', async () => {
+  storageValues.clear();
+  const { localMatches, localPlayers } = loadStorageModulesAfterRestart();
+  const player = await localPlayers.addLocalPlayer('Sana Iyer');
+  const opponent = await localPlayers.addLocalPlayer('Maya Rao');
+  await localPlayers.setActiveLocalPlayerId(player.id);
+
+  const trackedMatch = await localMatches.createLocalMatch({
+    matchDate: '2026-10-25',
+    event: 'Fall Invitational',
+    round: 'Semifinal',
+    trackedPlayer: player.name,
+    trackedPlayerId: player.id,
+    opponent: opponent.name,
+    opponentPlayerId: opponent.id,
+    chairCoach: null,
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+  await localMatches.recordLocalPoint(trackedMatch.id, {
+    winner: 'tracked',
+    endingCode: 'A',
+  });
+  const opponentMatch = await localMatches.createLocalMatch({
+    matchDate: '2026-10-27',
+    event: 'Fall Invitational',
+    round: 'Final',
+    trackedPlayer: opponent.name,
+    trackedPlayerId: opponent.id,
+    opponent: player.name,
+    opponentPlayerId: player.id,
+    chairCoach: null,
+    surface: 'Clay',
+    firstServer: 'opponent',
+    setNumber: 1,
+  });
+  await localMatches.recordLocalPoint(opponentMatch.id, {
+    winner: 'opponent',
+    endingCode: 'F',
+  });
+
+  const rosterBefore = await localPlayers.listLocalPlayers();
+  const matchIds = [trackedMatch.id, opponentMatch.id];
+  const matchesBefore = await Promise.all(
+    matchIds.map((id) => localMatches.getLocalMatch(id)),
+  );
+  const insightsBefore = await Promise.all(
+    matchIds.map((id) => localMatches.getLocalInsights(id)),
+  );
+  const playerHistoryBefore = await localMatches.listLocalPlayerMatchInsights(
+    player.id,
+    rosterBefore,
+  );
+  assert.deepEqual(
+    await localMatches.countLocalPlayerMatchRecords(player.id, rosterBefore),
+    2,
+  );
+
+  const matchesAfterCount = await Promise.all(
+    matchIds.map((id) => localMatches.getLocalMatch(id)),
+  );
+  const insightsAfterCount = await Promise.all(
+    matchIds.map((id) => localMatches.getLocalInsights(id)),
+  );
+  assert.deepEqual(matchesAfterCount, matchesBefore);
+  assert.deepEqual(insightsAfterCount, insightsBefore);
+  assert.deepEqual(await localPlayers.listLocalPlayers(), rosterBefore);
+  assert.equal(await localPlayers.getActiveLocalPlayerId(), player.id);
+  assert.deepEqual(
+    await localMatches.listLocalPlayerMatchInsights(player.id, rosterBefore),
+    playerHistoryBefore,
+  );
+
+  const playersScreen = fs.readFileSync(
+    path.join(__dirname, '../app/players.tsx'),
+    'utf8',
+  );
+  assert.match(playersScreen, /countLocalPlayerMatchRecords/);
+  assert.match(playersScreen, /linkedMatchCount/);
+  assert.match(
+    playersScreen,
+    /will not delete any match records, sets, points, or stats/,
+  );
+  const cancelButton = playersScreen.match(
+    /\{\s*text: 'Cancel',\s*style: 'cancel'\s*\}/,
+  );
+  assert.ok(cancelButton);
+  assert.doesNotMatch(cancelButton[0], /onPress/);
+  assert.match(
+    playersScreen,
+    /text: 'Remove',\s*style: 'destructive',\s*onPress: \(\) => removePlayer\.mutate\(player\.id\)/,
+  );
+
+  assert.equal(await localPlayers.deleteLocalPlayer(player.id), true);
+  const afterRestart = loadStorageModulesAfterRestart();
+  const rosterAfter = await afterRestart.localPlayers.listLocalPlayers();
+  const matchesAfterDelete = await Promise.all(
+    matchIds.map((id) => afterRestart.localMatches.getLocalMatch(id)),
+  );
+  const insightsAfterDelete = await Promise.all(
+    matchIds.map((id) => afterRestart.localMatches.getLocalInsights(id)),
+  );
+  const playerHistoryAfterDelete =
+    await afterRestart.localMatches.listLocalPlayerMatchInsights(
+      player.id,
+      rosterAfter,
+    );
+
+  assert.equal(rosterAfter.some((savedPlayer) => savedPlayer.id === player.id), false);
+  assert.equal(
+    await afterRestart.localPlayers.getActiveLocalPlayerId(),
+    opponent.id,
+  );
+  assert.deepEqual(matchesAfterDelete, matchesBefore);
+  assert.deepEqual(insightsAfterDelete, insightsBefore);
+  assert.deepEqual(playerHistoryAfterDelete, playerHistoryBefore);
+});
+
+test('player deletion count includes unique legacy-name matches without relinking them', async () => {
+  storageValues.clear();
+  const { localMatches, localPlayers } = loadStorageModulesAfterRestart();
+  const player = await localPlayers.addLocalPlayer('Legacy Player');
+  const opponent = await localPlayers.addLocalPlayer('Local Opponent');
+  const legacyMatch = await localMatches.createLocalMatch({
+    matchDate: '2026-10-29',
+    event: 'Club Match',
+    round: 'Round 1',
+    trackedPlayer: player.name,
+    opponent: opponent.name,
+    chairCoach: null,
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+  const players = await localPlayers.listLocalPlayers();
+  const beforeCount = await localMatches.getLocalMatch(legacyMatch.id);
+
+  assert.equal(
+    await localMatches.countLocalPlayerMatchRecords(player.id, players),
+    1,
+  );
+  assert.deepEqual(
+    await localMatches.getLocalMatch(legacyMatch.id),
+    beforeCount,
+  );
+  assert.equal(beforeCount.trackedPlayerId, null);
+  assert.equal(beforeCount.opponentPlayerId, null);
+});
+
 test('game notes stay with their set and game after restart and can be edited', async () => {
   storageValues.clear();
   const { localMatches } = loadStorageModulesAfterRestart();
