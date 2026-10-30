@@ -219,6 +219,131 @@ test('saved match points and editable player profiles survive offline app restar
   assert.equal(networkRequestCount, 0);
 });
 
+test('match detail edits preserve multi-set point history, score totals, and analytics', async () => {
+  storageValues.clear();
+  const { localMatches } = loadStorageModulesAfterRestart();
+  const match = await localMatches.createLocalMatch({
+    matchDate: '2026-10-30',
+    event: 'City Open',
+    round: 'Final',
+    trackedPlayer: 'Sana Iyer',
+    opponent: 'Maya Rao',
+    chairCoach: 'Coach Lee',
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+
+  await localMatches.recordLocalPoint(match.id, {
+    winner: 'tracked',
+    endingCode: 'A',
+    strokes: [
+      {
+        player: 'tracked',
+        strokeType: 'first_serve',
+        result: 'winner',
+        note: 'Wide serve',
+      },
+    ],
+  });
+  for (let point = 1; point < 24; point += 1) {
+    await localMatches.recordLocalPoint(match.id, { winner: 'tracked' });
+  }
+  await localMatches.addLocalSet(match.id, 'match_tiebreak', 7);
+  await localMatches.recordLocalPoint(match.id, { winner: 'tracked' });
+  await localMatches.recordLocalPoint(match.id, { winner: 'opponent' });
+
+  const before = await localMatches.getLocalMatch(match.id);
+  assert.ok(before);
+  assert.equal(before.completedSets.length, 1);
+  assert.equal(before.completedSets[0].points.length, 24);
+  assert.equal(before.setFormat, 'match_tiebreak');
+  assert.equal(before.tiebreakTarget, 7);
+  assert.deepEqual(
+    before.points.map((point) => point.server),
+    ['tracked', 'opponent'],
+  );
+  assert.equal(before.score.nextServer, 'opponent');
+  const beforeInsights = localMatches.calculateLocalInsights(before);
+  const beforeScoreTotals = { ...before.score };
+  delete beforeScoreTotals.nextServer;
+
+  const edited = await localMatches.updateLocalMatchDetails(match.id, {
+    matchDate: '2026-11-02',
+    trackedPlayer: 'Sana Iyer Updated',
+    opponent: 'Maya Rao Updated',
+    event: 'Winter Championships',
+    round: 'Semi-final',
+    chairCoach: 'Coach Patel',
+    surface: 'Clay',
+    firstServer: 'opponent',
+  });
+
+  assert.equal(edited.matchDate, '2026-11-02');
+  assert.equal(edited.trackedPlayer, 'Sana Iyer Updated');
+  assert.equal(edited.opponent, 'Maya Rao Updated');
+  assert.equal(edited.event, 'Winter Championships');
+  assert.equal(edited.round, 'Semi-final');
+  assert.equal(edited.chairCoach, 'Coach Patel');
+  assert.equal(edited.surface, 'Clay');
+  assert.equal(edited.firstServer, 'opponent');
+  assert.deepEqual(edited.completedSets, before.completedSets);
+  assert.deepEqual(edited.points, before.points);
+  assert.equal(edited.setFormat, 'match_tiebreak');
+  assert.equal(edited.tiebreakTarget, 7);
+  assert.deepEqual(
+    edited.points.map((point) => point.server),
+    ['tracked', 'opponent'],
+  );
+  assert.equal(edited.score.nextServer, 'tracked');
+  const editedScoreTotals = { ...edited.score };
+  delete editedScoreTotals.nextServer;
+  assert.deepEqual(editedScoreTotals, beforeScoreTotals);
+  assert.deepEqual(
+    localMatches.calculateLocalInsights(edited),
+    beforeInsights,
+  );
+
+  const standardMatch = await localMatches.createLocalMatch({
+    matchDate: '2026-10-30',
+    event: null,
+    round: null,
+    trackedPlayer: 'Sana Iyer',
+    opponent: 'Maya Rao',
+    chairCoach: null,
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+  await localMatches.recordLocalPoint(standardMatch.id, { winner: 'tracked' });
+  await localMatches.recordLocalPoint(standardMatch.id, { winner: 'opponent' });
+  const standardBefore = await localMatches.getLocalMatch(standardMatch.id);
+  assert.ok(standardBefore);
+  assert.equal(standardBefore.score.nextServer, 'tracked');
+  const standardInsights = localMatches.calculateLocalInsights(standardBefore);
+
+  const standardEdited = await localMatches.updateLocalMatchDetails(
+    standardMatch.id,
+    {
+      matchDate: standardBefore.matchDate,
+      event: standardBefore.event,
+      round: standardBefore.round,
+      trackedPlayer: standardBefore.trackedPlayer,
+      opponent: standardBefore.opponent,
+      chairCoach: standardBefore.chairCoach,
+      surface: standardBefore.surface,
+      firstServer: 'opponent',
+    },
+  );
+  assert.deepEqual(standardEdited.points, standardBefore.points);
+  assert.deepEqual(
+    standardEdited.points.map((point) => point.server),
+    ['tracked', 'tracked'],
+  );
+  assert.equal(standardEdited.score.nextServer, 'opponent');
+  assert.deepEqual(localMatches.calculateLocalInsights(standardEdited), standardInsights);
+});
+
 test('legacy match links preserve names and trend metrics count points from every set', async () => {
   storageValues.clear();
   const { localMatches, localPlayers } = loadStorageModulesAfterRestart();
