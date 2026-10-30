@@ -783,11 +783,23 @@ test('editing a point cannot leave recorded points after a newly completed set',
   });
 
   let current = match;
-  for (let index = 0; index < 24; index += 1) {
-    current = await localMatches.recordLocalPoint(match.id, { winner: 'tracked' });
-  }
-  for (let index = 0; index < 20; index += 1) {
-    current = await localMatches.recordLocalPoint(match.id, { winner: 'opponent' });
+  const completedGameWinners = [
+    'tracked',
+    'opponent',
+    'tracked',
+    'opponent',
+    'tracked',
+    'opponent',
+    'tracked',
+    'opponent',
+    'tracked',
+    'opponent',
+    'tracked',
+  ];
+  for (const winner of completedGameWinners) {
+    for (let point = 0; point < 4; point += 1) {
+      current = await localMatches.recordLocalPoint(match.id, { winner });
+    }
   }
   for (const winner of ['tracked', 'tracked', 'opponent', 'tracked', 'tracked']) {
     current = await localMatches.recordLocalPoint(match.id, { winner });

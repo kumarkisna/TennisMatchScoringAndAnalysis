@@ -2266,12 +2266,12 @@ export default function MatchScreen() {
             </Text>
             <Text style={[styles.sectionCaption, { color: colors.mutedForeground }]}>
               {isReviewingHistoricalSet
-              ? `History · live scoring stays in Set ${match.setNumber} · tap T-row points to edit winners`
+                ? `History · live scoring stays in Set ${match.setNumber} · tap T-row points to edit winners`
                 : viewedSet.score.isComplete
                   ? 'Completed games in order · both scores after each point · tap T-row points to edit winners'
-                : viewedSet.format === 'match_tiebreak'
-                  ? 'Tiebreak first · both point totals after each point · tap T-row points to edit winners'
-                  : 'Current game first · each point in order · tap T-row points to edit winners'
+                  : viewedSet.format === 'match_tiebreak'
+                    ? 'Tiebreak first · both point totals after each point · tap T-row points to edit winners'
+                    : 'Current game first · each point in order · tap T-row points to edit winners'}
             </Text>
           </View>
           <View style={styles.matrixLegend}>

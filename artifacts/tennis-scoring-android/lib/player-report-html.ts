@@ -455,7 +455,7 @@ export function buildPlayerReportHtml(
     metric.count === null || metric.percent === null
       ? `<span>—</span><span class="sub">No ${escape(sampleLabel)} recorded</span>`
       : `<span>${metric.percent}%</span><span class="sub">${metric.count} of ${metric.total} ${escape(sampleLabel)}</span>`;
-  const setPerformanceRows = performance.setBreakdown
+  const setPerformanceRows = (summary.setBreakdown ?? [])
     .filter((set) => reportSets.some((reportSet) => reportSet.setNumber === set.setNumber))
     .map((set) => {
       const rallyWinnerCell =

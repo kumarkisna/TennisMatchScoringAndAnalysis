@@ -3,17 +3,23 @@ name: Tennis match set structure and reporting
 description: Product requirements for multi-set tennis records, tiebreak-only sets, and whole-match analysis.
 ---
 
-**Rule:** A match record may contain any number of sequential sets. Each set can be standard or a match tiebreak with its own target; match tiebreaks are won by two. Prior sets open in read-only review, while statistics and the PDF cover the whole match.
+**Rule:** A match record may contain any number of sequential sets. Each set can be standard or a match tiebreak with its own target; match tiebreaks are won by two. Prior sets are reviewable, and point-winner corrections can be made from their point matrices.
 
 **Why:** The user stated that matches may have many sets, sometimes including a tiebreak-only set with custom tournament targets, and asked to inspect any set without changing current scoring.
 
-**How to apply:** Preserve each set's points inside one match record; set review must not expose point-recording or set mutation controls. Calculate summaries and PDF output across all sets. Keep scoring data on-device as described in `android-scoring-storage.md`.
+**How to apply:** Preserve each set's points inside one match record; only the live set accepts new points, but any saved point can be explicitly corrected. Recalculate summaries and PDFs across all sets. Keep scoring data on-device as described in `android-scoring-storage.md`.
 
 **Rule:** Editing match details must not rewrite saved points, completed-set records, score totals, or analytics inputs. Correcting the first server may update the current set's server sequence, but must not alter server values already stored on individual points.
 
 **Why:** Match details can be corrected after play, but recorded scoring history must remain trustworthy.
 
 **How to apply:** Treat match-detail edits as metadata-only updates. Preserve historical set records and point arrays; recalculate only the current next-server indicator when the current first server changes.
+
+**Rule:** A point-winner correction must replay that set and every later set so point order, game numbers, tiebreak status, and serving order stay consistent. Reject a correction if it would leave recorded points after a completed set or make a completed set incomplete before later sets.
+
+**Why:** Changing an earlier winner can shift game boundaries and the server sequence; silently changing only the winner would corrupt saved scores and analysis.
+
+**How to apply:** Keep the point's notes and tags attached while rebuilding its derived scoring fields. Do not write any changes until the full replay passes these consistency checks.
 
 **Rule:** Backup score validation must distinguish active tiebreak scores from regular game scores. During a tiebreak, the displayed score strings are numeric point counts that match the numeric tiebreak counters; regular games use tennis labels.
 

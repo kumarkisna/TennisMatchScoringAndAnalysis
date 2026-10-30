@@ -1218,7 +1218,7 @@ test('single-match reports show per-set samples and keep unsupported metrics una
   ]);
 
   assert.match(html, /Set-by-set player performance · Tracked/);
-  assert.match(html, /70%<\/span><span class="sub">6 of 10 first serves/);
+  assert.match(html, /60%<\/span><span class="sub">6 of 10 first serves/);
   assert.match(html, /75%<\/span><span class="sub">3 of 4 second serves/);
   assert.match(html, /1 \(50%\)<\/span><span class="sub">1 of 2 tagged rally winners/);
   assert.match(html, /2 aces \/ 10 tracked service points/);
