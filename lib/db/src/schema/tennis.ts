@@ -12,11 +12,13 @@ import {
 } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 
+export const LEGACY_UNASSIGNED_OWNER_ID = "legacy-unassigned";
+
 export const tennisMatchesTable = pgTable(
   "tennis_matches",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    ownerId: text("owner_id").notNull().default("legacy-unassigned"),
+    ownerId: text("owner_id").notNull().default(LEGACY_UNASSIGNED_OWNER_ID),
     matchDate: date("match_date", { mode: "string" }).notNull(),
     event: text("event"),
     round: text("round"),

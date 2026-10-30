@@ -144,6 +144,19 @@ export interface DeviceSyncMatchResult {
   nextSequence: number;
 }
 
+export interface LegacyMatchOwnershipClaimInput {
+  /**
+     * @minLength 20
+     * @maxLength 256
+     */
+  syncToken: string;
+}
+
+export interface LegacyMatchOwnershipClaimResult {
+  id: string;
+  ownershipRecovered: true;
+}
+
 export type DeviceSyncPointServer = typeof DeviceSyncPointServer[keyof typeof DeviceSyncPointServer];
 
 

@@ -240,6 +240,37 @@ paths:
                 $ref: "#/components/schemas/MatchInsights"
         "404":
           description: Match not found
+  /matches/{id}/claim-ownership:
+    post:
+      operationId: claimLegacyMatchOwnership
+      tags: [tennis]
+      summary: Recover a legacy match using its device sync credential
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LegacyMatchOwnershipClaimInput"
+      responses:
+        "200":
+          description: Legacy match ownership recovered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyMatchOwnershipClaimResult"
+        "400":
+          description: Invalid match identifier or claim request
+        "401":
+          description: Authentication required
+        "404":
+          description: Match is unavailable or ownership could not be verified
   /matches/{id}/shares:
     get:
       operationId: listMatchShares
@@ -426,6 +457,24 @@ components:
         nextSequence:
           type: integer
       required: [id, clientMatchId, pointCount, nextSequence]
+    LegacyMatchOwnershipClaimInput:
+      type: object
+      properties:
+        syncToken:
+          type: string
+          minLength: 20
+          maxLength: 256
+      required: [syncToken]
+    LegacyMatchOwnershipClaimResult:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        ownershipRecovered:
+          type: boolean
+          enum: [true]
+      required: [id, ownershipRecovered]
     DeviceSyncPoint:
       type: object
       properties:

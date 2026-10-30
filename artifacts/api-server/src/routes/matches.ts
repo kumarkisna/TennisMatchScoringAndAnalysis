@@ -1,4 +1,3 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import { and, desc, eq, exists, inArray, or } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import { clerkClient, getAuth } from "@clerk/express";
@@ -9,6 +8,9 @@ import {
   tennisPointsTable,
 } from "@workspace/db";
 import {
+  ClaimLegacyMatchOwnershipBody,
+  ClaimLegacyMatchOwnershipParams,
+  ClaimLegacyMatchOwnershipResponse,
   CreateMatchShareBody,
   CreateMatchShareParams,
   CreateMatchShareResponse,
@@ -37,6 +39,11 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/require-auth";
 import { canReadMatch, normalizeInviteEmail } from "../lib/match-access";
+import {
+  claimLegacyMatchOwnership,
+  hashSyncToken,
+  matchesSyncToken,
+} from "../lib/legacy-match-recovery";
 import {
   calculateScore,
   getPointContext,
@@ -104,22 +111,71 @@ async function fetchMatch(matchId: string, userId: string) {
   return { match, points, isOwner };
 }
 
-function hashSyncToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
-}
+router.post(
+  "/matches/:id/claim-ownership",
+  async (req, res): Promise<void> => {
+    const params = ClaimLegacyMatchOwnershipParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const body = ClaimLegacyMatchOwnershipBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: body.error.message });
+      return;
+    }
 
-function matchesSyncToken(
-  storedHash: string | null,
-  suppliedToken: string | undefined,
-): boolean {
-  if (!storedHash || !suppliedToken) return false;
-  const expectedHash = Buffer.from(storedHash, "hex");
-  const suppliedHash = Buffer.from(hashSyncToken(suppliedToken), "hex");
-  return (
-    expectedHash.length === suppliedHash.length &&
-    timingSafeEqual(expectedHash, suppliedHash)
-  );
-}
+    const userId = getUserId(req);
+    const recovered = await db.transaction(async (tx) => {
+      const [match] = await tx
+        .select({
+          id: tennisMatchesTable.id,
+          ownerId: tennisMatchesTable.ownerId,
+          syncTokenHash: tennisMatchesTable.syncTokenHash,
+        })
+        .from(tennisMatchesTable)
+        .where(eq(tennisMatchesTable.id, params.data.id))
+        .for("update");
+
+      return claimLegacyMatchOwnership(
+        match ?? null,
+        userId,
+        body.data.syncToken,
+        async (update) => {
+          const [claimed] = await tx
+            .update(tennisMatchesTable)
+            .set({ ownerId: update.newOwnerId })
+            .where(
+              and(
+                eq(tennisMatchesTable.id, update.matchId),
+                eq(tennisMatchesTable.ownerId, update.expectedOwnerId),
+                eq(
+                  tennisMatchesTable.syncTokenHash,
+                  update.expectedSyncTokenHash,
+                ),
+              ),
+            )
+            .returning({ id: tennisMatchesTable.id });
+          return Boolean(claimed);
+        },
+      );
+    });
+
+    if (!recovered) {
+      res.status(404).json({
+        error: "Match not found or ownership could not be verified.",
+      });
+      return;
+    }
+
+    res.json(
+      ClaimLegacyMatchOwnershipResponse.parse({
+        id: params.data.id,
+        ownershipRecovered: true,
+      }),
+    );
+  },
+);
 
 router.post("/matches/device-sync", async (req, res): Promise<void> => {
   const parsed = SyncDeviceMatchBody.safeParse(req.body);

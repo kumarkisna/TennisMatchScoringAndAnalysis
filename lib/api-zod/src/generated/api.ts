@@ -377,6 +377,28 @@ export const GetMatchInsightsResponse = zod.object({
 
 
 /**
+ * @summary Recover a legacy match using its device sync credential
+ */
+export const ClaimLegacyMatchOwnershipParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const claimLegacyMatchOwnershipBodySyncTokenMin = 20;
+export const claimLegacyMatchOwnershipBodySyncTokenMax = 256;
+
+
+
+export const ClaimLegacyMatchOwnershipBody = zod.object({
+  "syncToken": zod.string().min(claimLegacyMatchOwnershipBodySyncTokenMin).max(claimLegacyMatchOwnershipBodySyncTokenMax)
+})
+
+export const ClaimLegacyMatchOwnershipResponse = zod.object({
+  "id": zod.string().uuid(),
+  "ownershipRecovered": zod.literal(true)
+})
+
+
+/**
  * @summary List viewers invited to a match
  */
 export const ListMatchSharesParams = zod.object({

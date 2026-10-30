@@ -20,6 +20,8 @@ export * from './deviceSyncPointsInput';
 export * from './deviceSyncPointsResult';
 export * from './deviceSyncPointWinner';
 export * from './healthStatus';
+export * from './legacyMatchOwnershipClaimInput';
+export * from './legacyMatchOwnershipClaimResult';
 export * from './match';
 export * from './matchFirstServer';
 export * from './matchInput';
