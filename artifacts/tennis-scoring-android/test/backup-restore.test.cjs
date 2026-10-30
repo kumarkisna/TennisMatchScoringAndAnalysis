@@ -34,6 +34,12 @@ let selectedBackupContents = '';
 let savedDeviceBackup = null;
 let sharedBackup = null;
 let sharedUri = '';
+let networkRequestCount = 0;
+const originalFetch = global.fetch;
+global.fetch = async () => {
+  networkRequestCount += 1;
+  throw new Error('A local backup flow must not make network requests.');
+};
 
 const fileSystem = {
   cacheDirectory: 'file://cache/',
@@ -135,8 +141,13 @@ async function createSampleRecords() {
   const player = await activeModules.localPlayers.addLocalPlayer('Sana Iyer', {
     dateOfBirth: '2005-07-09',
     atpPlayerId: 'ATP-12345',
+    itfPlayerId: 'ITF-54321',
+    atpRanking: 285,
+    itfRanking: 121,
     nationality: 'India',
     playingHand: 'right',
+    heightCm: 180,
+    weightKg: 75,
     phoneNumbers: ['+1 415 555 0123'],
     profileUrls: ['https://example.org/players/sana-iyer'],
   });
@@ -147,6 +158,7 @@ async function createSampleRecords() {
     event: 'City Open',
     round: 'Final',
     trackedPlayer: player.name,
+    trackedPlayerId: player.id,
     opponent: 'Maya Rao',
     chairCoach: 'Coach Lee',
     surface: 'Hard',
@@ -166,6 +178,21 @@ async function createSampleRecords() {
       },
     ],
   });
+  for (let point = 1; point < 24; point += 1) {
+    await activeModules.localMatches.recordLocalPoint(match.id, {
+      winner: 'tracked',
+    });
+  }
+  await activeModules.localMatches.updateLocalGameNote(
+    match.id,
+    1,
+    6,
+    'Stayed composed to close out the set.',
+  );
+  await activeModules.localMatches.addLocalSet(match.id, 'match_tiebreak', 7);
+  await activeModules.localMatches.recordLocalPoint(match.id, {
+    winner: 'opponent',
+  });
 
   return { player, match };
 }
@@ -177,13 +204,19 @@ test.after(() => {
   } else {
     delete require.extensions['.ts'];
   }
+  if (originalFetch) {
+    global.fetch = originalFetch;
+  } else {
+    delete global.fetch;
+  }
 });
 
-test('backup save, share, and restore preserve local players and full match history', async () => {
+test('backup save, share, and restore preserve all players and sets without network access', async () => {
   storageValues.clear();
   savedDeviceBackup = null;
   sharedBackup = null;
   sharedUri = '';
+  networkRequestCount = 0;
   loadLocalModules();
   const { player, match } = await createSampleRecords();
   const backup = loadBackupModule();
@@ -196,13 +229,32 @@ test('backup save, share, and restore preserve local players and full match hist
   assert.equal(exported.format, 'tennis-scoring-local-backup');
   assert.equal(exported.activePlayerId, player.id);
   assert.equal(exported.players[0].dateOfBirth, '2005-07-09');
+  assert.equal(exported.players[0].itfPlayerId, 'ITF-54321');
+  assert.equal(exported.players[0].atpRanking, 285);
+  assert.equal(exported.players[0].itfRanking, 121);
+  assert.equal(exported.players[0].heightCm, 180);
+  assert.equal(exported.players[0].weightKg, 75);
   assert.deepEqual(exported.players[0].phoneNumbers, ['+1 415 555 0123']);
   assert.equal(exported.matches[0].id, match.id);
-  assert.equal(exported.matches[0].points[0].strokes[0].note, 'Wide serve');
+  assert.equal(exported.matches[0].completedSets.length, 1);
+  assert.equal(exported.matches[0].completedSets[0].points.length, 24);
+  assert.equal(
+    exported.matches[0].completedSets[0].points[0].strokes[0].note,
+    'Wide serve',
+  );
+  assert.equal(
+    exported.matches[0].completedSets[0].gameNotes[0].note,
+    'Stayed composed to close out the set.',
+  );
+  assert.equal(exported.matches[0].setFormat, 'match_tiebreak');
+  assert.equal(exported.matches[0].tiebreakTarget, 7);
+  assert.equal(exported.matches[0].points.length, 1);
+  assert.equal(exported.matches[0].points[0].isTiebreak, true);
 
   await backup.shareLocalBackup();
   assert.ok(sharedUri.startsWith('file://cache/'));
-  assert.equal(JSON.parse(sharedBackup).matches[0].points.length, 1);
+  assert.equal(JSON.parse(sharedBackup).matches[0].completedSets[0].points.length, 24);
+  assert.equal(networkRequestCount, 0);
 
   storageValues.clear();
   loadLocalModules();
@@ -220,6 +272,11 @@ test('backup save, share, and restore preserve local players and full match hist
   const restoredMatch = await activeModules.localMatches.getLocalMatch(match.id);
   assert.equal(restoredPlayer.name, 'Sana Iyer');
   assert.equal(restoredPlayer.dateOfBirth, '2005-07-09');
+  assert.equal(restoredPlayer.itfPlayerId, 'ITF-54321');
+  assert.equal(restoredPlayer.atpRanking, 285);
+  assert.equal(restoredPlayer.itfRanking, 121);
+  assert.equal(restoredPlayer.heightCm, 180);
+  assert.equal(restoredPlayer.weightKg, 75);
   assert.deepEqual(restoredPlayer.profileUrls, [
     'https://example.org/players/sana-iyer',
   ]);
@@ -228,8 +285,22 @@ test('backup save, share, and restore preserve local players and full match hist
     restoredPlayer.id,
   );
   assert.ok(restoredMatch);
+  assert.equal(restoredMatch.trackedPlayerId, restoredPlayer.id);
   assert.equal(restoredMatch.syncStatus, 'local_only');
-  assert.equal(restoredMatch.points[0].strokes[0].note, 'Wide serve');
+  assert.equal(restoredMatch.completedSets.length, 1);
+  assert.equal(restoredMatch.completedSets[0].points.length, 24);
+  assert.equal(
+    restoredMatch.completedSets[0].points[0].strokes[0].note,
+    'Wide serve',
+  );
+  assert.equal(
+    restoredMatch.completedSets[0].gameNotes[0].note,
+    'Stayed composed to close out the set.',
+  );
+  assert.equal(restoredMatch.setFormat, 'match_tiebreak');
+  assert.equal(restoredMatch.tiebreakTarget, 7);
+  assert.equal(restoredMatch.points.length, 1);
+  assert.equal(restoredMatch.points[0].isTiebreak, true);
 
   const repeatedImport = await loadBackupModule().loadLocalBackupFromDevice();
   assert.equal(repeatedImport.playersAdded, 0);
@@ -246,4 +317,5 @@ test('backup save, share, and restore preserve local players and full match hist
     /invalid match or point history/,
   );
   assert.deepEqual([...storageValues.entries()], beforeInvalidImport);
+  assert.equal(networkRequestCount, 0);
 });

@@ -156,13 +156,17 @@ function isBackupPlayer(value: unknown): value is LocalPlayer {
 
 function isScore(value: unknown): boolean {
   if (!isRecord(value)) return false;
+  const hasValidPointLabels = value.isTiebreak
+    ? value.trackedPoints === String(value.trackedTiebreakPoints) &&
+      value.opponentPoints === String(value.opponentTiebreakPoints)
+    : ['0', '15', '30', '40', 'AD'].includes(String(value.trackedPoints)) &&
+      ['0', '15', '30', '40', 'AD'].includes(String(value.opponentPoints));
   return (
     isNonnegativeInteger(value.trackedGames) &&
     isNonnegativeInteger(value.opponentGames) &&
     typeof value.trackedPoints === 'string' &&
-    ['0', '15', '30', '40', 'AD'].includes(value.trackedPoints) &&
     typeof value.opponentPoints === 'string' &&
-    ['0', '15', '30', '40', 'AD'].includes(value.opponentPoints) &&
+    hasValidPointLabels &&
     isNonnegativeInteger(value.trackedTiebreakPoints) &&
     isNonnegativeInteger(value.opponentTiebreakPoints) &&
     sides.includes(value.nextServer as (typeof sides)[number]) &&

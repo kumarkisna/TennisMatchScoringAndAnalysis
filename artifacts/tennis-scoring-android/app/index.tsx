@@ -323,7 +323,7 @@ export default function HomeScreen() {
               </Pressable>
             </View>
             <Text style={[styles.backupNote, { color: colors.mutedForeground }]}>
-              Backups include players and full point history. Loading adds missing records and never overwrites existing ones.
+              Includes saved players and full match history. You choose where it goes; TennisScoring never uploads backups. Loading adds missing records and keeps existing data unchanged.
             </Text>
 
             <View style={styles.sectionHeader}>
