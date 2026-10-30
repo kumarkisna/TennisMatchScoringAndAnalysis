@@ -4,6 +4,7 @@ import type {
   PlayerPerformanceSummary,
   PlayerReportInsights,
 } from '@/lib/player-insights';
+import { escapeReportHtml as escapeHtml } from '@/lib/report-html-utils';
 
 interface ReportMatch {
   matchDate: string;
@@ -33,19 +34,6 @@ export const POINT_CODE_LABELS: Record<PointCode, string> = {
 const STROKE_LABELS = Object.fromEntries(
   STROKE_TYPE_OPTIONS.map(({ value, label }) => [value, label]),
 ) as Record<StrokeType, string>;
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => {
-    const replacements: Record<string, string> = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#39;',
-    };
-    return replacements[character] ?? character;
-  });
-}
 
 function formatReportDate(value: string): string {
   const [year, month, day] = value.slice(0, 10).split('-').map(Number);
@@ -564,7 +552,6 @@ export function buildPlayerReportHtml(
       .total-row { background: #f2f1e9; font-weight: 700; }
       .trend-note { background: #f7f4eb; border-radius: 6px; color: #53685f; font-size: 10px; line-height: 1.5; margin: 9px 0 0; padding: 9px 11px; }
       .note { break-inside: avoid; color: #718078; font-size: 8px; line-height: 1.5; margin-top: 8px; page-break-inside: avoid; }
-      .note a { color: #245d4b; }
       h3 { break-after: avoid; color: #183a30; font-size: 11px; margin: 14px 0 6px; }
       .context-coverage { color: #60746c; font-size: 9px; margin: 3px 0 7px; }
       .observation-list { font-size: 9px; line-height: 1.5; margin: 5px 0 8px; padding-left: 18px; }
@@ -606,7 +593,7 @@ export function buildPlayerReportHtml(
       <div><strong>Points logged:</strong> ${insights.pointCount}</div>
     </div>
     <p class="note">
-      <strong>Report basis:</strong> Generated offline from match points saved on this device. Rates include denominators; small samples are directional, not conclusions. Break-point counts are reconstructed from regular games; standard tie-break points and match tie-break sets are excluded. The 2026 and 2026 Cincinnati comparison figures are user-provided; no online data is used.
+      <strong>Report basis:</strong> Generated from saved match points. Rates include denominators; small samples are directional, not conclusions. Break-point counts are reconstructed from regular games; standard tie-break points and match tie-break sets are excluded. Reference values are user-provided.
     </p>
 
     <h2>Match performance at a glance</h2>
@@ -657,14 +644,14 @@ export function buildPlayerReportHtml(
           <th>Stat</th>
           <th>${escape(match.trackedPlayer)} · match</th>
           <th>${escape(match.opponent)} · match</th>
-          <th>2026</th>
-          <th>2026 Cincinnati</th>
+          <th>Reference 1</th>
+          <th>Reference 2</th>
         </tr>
       </thead>
       <tbody>${serveRows}</tbody>
     </table>
     <p class="context-coverage">
-      The 2026 comparison values were supplied by you. Service-game percentages use completed regular games; tie-breaks are excluded.
+      Reference values are user-provided. Service-game percentages use completed regular games; tie-breaks are excluded.
     </p>
 
     <h2>Return</h2>

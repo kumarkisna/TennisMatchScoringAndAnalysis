@@ -3,19 +3,7 @@ import {
   type HeadToHeadReport,
 } from '@/lib/head-to-head';
 import { POINT_CODE_LABELS } from '@/lib/player-report-html';
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => {
-    const replacements: Record<string, string> = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#39;',
-    };
-    return replacements[character] ?? character;
-  });
-}
+import { escapeReportHtml as escapeHtml } from '@/lib/report-html-utils';
 
 function formatDate(value: string): string {
   const [year, month, day] = value.slice(0, 10).split('-').map(Number);
@@ -418,7 +406,7 @@ export function buildHeadToHeadReportHtml(report: HeadToHeadReport): string {
   </head>
   <body>
     <main>
-      <div class="eyebrow">TENNISSCORING · LOCAL MATCH ANALYSIS</div>
+      <div class="eyebrow">HEAD-TO-HEAD · MATCH ANALYSIS</div>
       <h1>Head-to-Head Report</h1>
       <div class="pairing">
         <div><div class="player-label">TRACKED PLAYER</div><div class="player-name">${escapeHtml(trackedPlayer)}</div></div>
