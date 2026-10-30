@@ -59,6 +59,7 @@ localMatchExports = require('../lib/local-matches.ts');
 const { buildPlayerReportHtml } = require('../lib/player-report-html.ts');
 playerReportExports = { buildPlayerReportHtml };
 const { buildHeadToHeadReportHtml } = require('../lib/head-to-head-report-html.ts');
+const { summarizePlayerPerformance } = require('../lib/player-insights.ts');
 Module._load = originalLoad;
 const { createAndPreviewLocalPdf } = require('../lib/report-pdf.ts');
 const {
@@ -117,8 +118,10 @@ const emptyPerformance = {
   rallyLengths: [],
   feedback: ['Strong serve. https://coaching.example.com/private'],
   rallyWinnerCount: 0,
+  rallyWinnerTagCount: 0,
   trackedUnforcedErrors: 0,
   opponentUnforcedErrors: 0,
+  unforcedErrorTagCount: 0,
   opponentRallyWinnerCount: 0,
   shotDirectionTaggedCount: 0,
   rallyLengthTaggedCount: 0,
@@ -170,6 +173,21 @@ function gamePoints(setNumber, gameNumber, server, winners, isTiebreak = false, 
   );
 }
 
+function taggedGamePoints(setNumber, gameNumber, server, points, startAt = 1) {
+  return points.map(({ winner, endingCode = null, firstServeFault = false }, index) => ({
+    ...pointFixture(
+      setNumber,
+      gameNumber,
+      server,
+      winner,
+      false,
+      startAt + index,
+    ),
+    endingCode,
+    firstServeFault,
+  }));
+}
+
 function setFixture(setNumber, format, points) {
   const score = {
     trackedGames: format === 'standard' ? 6 : 0,
@@ -199,6 +217,68 @@ function setFixture(setNumber, format, points) {
     points,
     gameNotes: [],
     review,
+  };
+}
+
+function performanceSampleMatch() {
+  const points = [
+    ...taggedGamePoints(1, 1, 'tracked', [
+      { winner: 'tracked', endingCode: 'F', firstServeFault: true },
+      { winner: 'tracked', endingCode: 'A' },
+      { winner: 'opponent', endingCode: 'N' },
+      { winner: 'tracked', endingCode: 'B' },
+      { winner: 'tracked' },
+      { winner: 'opponent' },
+    ]),
+    ...taggedGamePoints(1, 2, 'opponent', [
+      { winner: 'opponent', endingCode: 'F' },
+      { winner: 'opponent', endingCode: 'A' },
+      { winner: 'tracked', endingCode: 'D' },
+      { winner: 'opponent' },
+      { winner: 'opponent' },
+      { winner: 'tracked' },
+    ], 7),
+    ...taggedGamePoints(1, 3, 'tracked', [
+      { winner: 'tracked', endingCode: 'V' },
+      { winner: 'tracked', endingCode: 'O' },
+      { winner: 'opponent', endingCode: 'D' },
+      { winner: 'tracked', endingCode: 'P' },
+      { winner: 'tracked' },
+      { winner: 'opponent' },
+    ], 13),
+    ...taggedGamePoints(1, 4, 'opponent', [
+      { winner: 'opponent', firstServeFault: true },
+      { winner: 'tracked', endingCode: 'W' },
+      { winner: 'opponent', endingCode: 'L' },
+      { winner: 'opponent', endingCode: 'A' },
+      { winner: 'tracked' },
+      { winner: 'opponent' },
+    ], 19),
+  ];
+  const set = setFixture(1, 'standard', points);
+  return {
+    id: 'player-performance-sample',
+    ownerUserId: null,
+    matchDate: '2026-10-30',
+    event: null,
+    round: null,
+    trackedPlayer: 'Tracked',
+    trackedPlayerId: null,
+    opponent: 'Opponent',
+    opponentPlayerId: null,
+    chairCoach: null,
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+    setFormat: 'standard',
+    tiebreakTarget: 10,
+    completedSets: [],
+    matchStatus: 'complete',
+    status: 'complete',
+    score: set.score,
+    points,
+    gameNotes: [],
+    review: set.review,
   };
 }
 
@@ -298,6 +378,197 @@ function reportRows(html, heading) {
   return [...html.slice(tableStart, tableEnd).matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/g)]
     .map((match) => match[1].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim());
 }
+
+function reportRowsAfterHeading(html, heading) {
+  const start = html.indexOf(`<h2>${heading}</h2>`);
+  assert.notEqual(start, -1, `Missing report section: ${heading}`);
+  const tableStart = html.indexOf('<tbody>', start) + '<tbody>'.length;
+  const tableEnd = html.indexOf('</tbody>', tableStart);
+  return [...html.slice(tableStart, tableEnd).matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/g)]
+    .map((match) => match[1].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim());
+}
+
+function headToHeadReportFixture(insights, performance, matchesRecorded = 1) {
+  return {
+    trackedPlayer: 'Tracked',
+    opponent: 'Opponent',
+    meetings: [],
+    matchesRecorded,
+    completedMatches: matchesRecorded,
+    matchesWon: matchesRecorded > 0 ? 1 : 0,
+    matchesLost: 0,
+    completedMatchesWithoutWinner: 0,
+    matchesInProgress: 0,
+    setsRecorded: matchesRecorded,
+    completedSets: matchesRecorded,
+    setsWon: matchesRecorded,
+    setsLost: 0,
+    completedSetsWithoutWinner: 0,
+    insights,
+    performance,
+    personalAverageInsights: insights,
+    personalAveragePerformance: performance,
+    personalAverageMatches: matchesRecorded,
+  };
+}
+
+test('player statistics match a deterministic four-game point log', () => {
+  const match = performanceSampleMatch();
+  const insights = calculateLocalInsights(match);
+  const performance = summarizePlayerPerformance(insights, 1);
+
+  assert.equal(insights.pointCount, 24);
+  assert.equal(insights.trackedServicePoints, 12);
+  assert.equal(insights.serveStats.tracked.firstServePoints, 10);
+  assert.equal(insights.serveStats.tracked.secondServePoints, 2);
+  assert.equal(insights.serveStats.tracked.doubleFaults, 1);
+  assert.equal(insights.serveStats.tracked.aces, 1);
+  assert.equal(insights.serveStats.opponent.firstServePoints, 10);
+  assert.equal(insights.serveStats.opponent.secondServePoints, 2);
+  assert.equal(insights.serveStats.opponent.doubleFaults, 1);
+  assert.equal(insights.serveStats.opponent.aces, 2);
+  assert.equal(insights.serviceGames.tracked.gamesPlayed, 2);
+  assert.equal(insights.serviceGames.opponent.gamesPlayed, 2);
+
+  assert.equal(performance.firstServeInPercent, 83);
+  assert.equal(performance.secondServeInCount, 1);
+  assert.equal(performance.secondServeAttemptCount, 2);
+  assert.equal(performance.secondServeInPercent, 50);
+  assert.equal(performance.rallyWinnerTagCount, 6);
+  assert.equal(performance.rallyWinnerCount, 5);
+  assert.equal(performance.rallyWinnerPercent, 21);
+  assert.equal(performance.opponentRallyWinnerCount, 1);
+  assert.equal(performance.opponentRallyWinnerPercent, 4);
+  assert.equal(performance.trackedUnforcedErrors, 2);
+  assert.equal(performance.opponentUnforcedErrors, 1);
+  assert.equal(performance.unforcedErrorTagCount, 3);
+  assert.equal(performance.acesPerServiceGame, 0.5);
+  assert.equal(performance.acesPerSet, 1);
+  assert.equal(performance.acesPerMatch, 1);
+
+  const playerHtml = buildPlayerReportHtml(match, insights, performance);
+  const playerServeRows = reportRowsAfterHeading(playerHtml, 'Serve');
+  assert.match(
+    playerServeRows.find((row) => row.startsWith('First serve in')),
+    /10\/12 \(83\.3%\).*10\/12 \(83\.3%\)/,
+  );
+  assert.match(
+    playerServeRows.find((row) => row.startsWith('Second serve in')),
+    /1\/2 \(50\.0%\).*1\/2 \(50\.0%\)/,
+  );
+  assert.match(
+    playerServeRows.find((row) => row.startsWith('Aces per service game')),
+    /0\.50.*1\.00/,
+  );
+  assert.match(
+    playerServeRows.find((row) => row.startsWith('Aces per set')),
+    /1\.00.*2\.00/,
+  );
+  assert.match(
+    playerServeRows.find((row) => row.startsWith('Aces per match')),
+    /1\.00.*2\.00/,
+  );
+  assert.match(playerHtml, /5\/24 \(20\.8%\)/);
+  assert.match(playerHtml, /UNFORCED ERRORS[\s\S]*?<div class="tile-value">2<\/div>/);
+
+  const headToHeadHtml = buildHeadToHeadReportHtml(
+    headToHeadReportFixture(insights, performance),
+  );
+  const headToHeadServeRows = reportRowsAfterHeading(headToHeadHtml, 'Serve');
+  assert.match(
+    headToHeadServeRows.find((row) => row.startsWith('First serve in')),
+    /10\/12 \(83\.3%\).*10\/12 \(83\.3%\)/,
+  );
+  assert.match(
+    headToHeadServeRows.find((row) => row.startsWith('Second serve in')),
+    /1\/2 \(50\.0%\).*1\/2 \(50\.0%\)/,
+  );
+  assert.match(
+    headToHeadServeRows.find((row) => row.startsWith('Aces per service game')),
+    /0\.50.*1\.00/,
+  );
+  assert.match(
+    headToHeadServeRows.find((row) => row.startsWith('Aces per set')),
+    /1\.00.*2\.00/,
+  );
+  assert.match(
+    headToHeadServeRows.find((row) => row.startsWith('Aces per match')),
+    /1\.00.*2\.00/,
+  );
+  assert.match(
+    headToHeadHtml,
+    /Rally-shot winner points<\/td>\s*<td>5\/24 \(20\.8%\)<\/td>\s*<td>1\/24 \(4\.2%\)<\/td>/,
+  );
+  assert.match(
+    headToHeadHtml,
+    /Unforced errors<\/td>\s*<td>2 · 24 recorded points<\/td>\s*<td>1 · 24 recorded points<\/td>/,
+  );
+});
+
+test('untagged or zero-denominator report statistics are unavailable', () => {
+  const match = {
+    ...performanceSampleMatch(),
+    id: 'empty-performance-sample',
+    points: [],
+  };
+  const insights = calculateLocalInsights(match);
+  const performance = summarizePlayerPerformance(insights, 0);
+
+  assert.equal(insights.pointCount, 0);
+  assert.equal(performance.firstServeInPercent, null);
+  assert.equal(performance.secondServeInPercent, null);
+  assert.equal(performance.rallyWinnerPercent, null);
+  assert.equal(performance.opponentRallyWinnerPercent, null);
+  assert.equal(performance.rallyWinnerTagCount, 0);
+  assert.equal(performance.unforcedErrorTagCount, 0);
+  assert.equal(performance.acesPerServiceGame, null);
+  assert.equal(performance.acesPerSet, null);
+  assert.equal(performance.acesPerMatch, null);
+
+  const playerHtml = buildPlayerReportHtml(match, insights, performance);
+  const playerServeRows = reportRowsAfterHeading(playerHtml, 'Serve');
+  for (const label of [
+    'First serve in',
+    'Second serve in',
+    'Aces per service game',
+    'Aces per set',
+    'Aces per match',
+  ]) {
+    assert.match(
+      playerServeRows.find((row) => row.startsWith(label)),
+      /—/,
+      `${label} should be unavailable with no recorded points`,
+    );
+  }
+  assert.match(playerHtml, /RALLY SHOT WINNERS[\s\S]*?<div class="tile-value">—<\/div>/);
+  assert.match(playerHtml, /UNFORCED ERRORS[\s\S]*?<div class="tile-value">—<\/div>/);
+
+  const headToHeadHtml = buildHeadToHeadReportHtml(
+    headToHeadReportFixture(insights, performance, 0),
+  );
+  const headToHeadServeRows = reportRowsAfterHeading(headToHeadHtml, 'Serve');
+  for (const label of [
+    'First serve in',
+    'Second serve in',
+    'Aces per service game',
+    'Aces per set',
+    'Aces per match',
+  ]) {
+    assert.match(
+      headToHeadServeRows.find((row) => row.startsWith(label)),
+      /—/,
+      `${label} should be unavailable with no recorded points`,
+    );
+  }
+  assert.match(
+    headToHeadHtml,
+    /Rally-shot winner points<\/td>\s*<td>—<\/td>\s*<td>—<\/td>/,
+  );
+  assert.match(
+    headToHeadHtml,
+    /Unforced errors<\/td>\s*<td>—<\/td>\s*<td>—<\/td>/,
+  );
+});
 
 function reportSetFixture({
   setNumber = 1,

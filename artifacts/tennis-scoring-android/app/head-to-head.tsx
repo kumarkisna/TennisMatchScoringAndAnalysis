@@ -563,27 +563,39 @@ export default function HeadToHeadScreen() {
         },
         {
           label: 'Rally-shot winners',
-          tracked: rateValue(
-            report.performance.rallyWinnerCount,
-            report.insights.pointCount,
-          ),
-          opponent: rateValue(
-            report.performance.opponentRallyWinnerCount,
-            report.insights.pointCount,
-          ),
+          tracked:
+            report.performance.rallyWinnerTagCount > 0
+              ? rateValue(
+                  report.performance.rallyWinnerCount,
+                  report.insights.pointCount,
+                )
+              : '—',
+          opponent:
+            report.performance.rallyWinnerTagCount > 0
+              ? rateValue(
+                  report.performance.opponentRallyWinnerCount,
+                  report.insights.pointCount,
+                )
+              : '—',
         },
         {
           label: 'Unforced errors',
-          tracked: countValue(
-            report.performance.trackedUnforcedErrors,
-            report.insights.pointCount,
-            'recorded points',
-          ),
-          opponent: countValue(
-            report.performance.opponentUnforcedErrors,
-            report.insights.pointCount,
-            'recorded points',
-          ),
+          tracked:
+            report.performance.unforcedErrorTagCount > 0
+              ? countValue(
+                  report.performance.trackedUnforcedErrors,
+                  report.insights.pointCount,
+                  'recorded points',
+                )
+              : '—',
+          opponent:
+            report.performance.unforcedErrorTagCount > 0
+              ? countValue(
+                  report.performance.opponentUnforcedErrors,
+                  report.insights.pointCount,
+                  'recorded points',
+                )
+              : '—',
         },
       ]
     : [];

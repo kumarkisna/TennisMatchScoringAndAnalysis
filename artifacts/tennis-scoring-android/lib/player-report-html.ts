@@ -261,6 +261,7 @@ export function buildPlayerReportHtml(
   const opponentReturnGamesPlayed = insights.serviceGames.tracked.gamesPlayed;
   const opponentReturnGamesWon =
     opponentReturnGamesPlayed - insights.serviceGames.tracked.gamesWon;
+  const matchesWithPointData = insights.pointCount > 0 ? 1 : 0;
   const benchmarkValues = (
     key: 'firstServePointsWon' | 'secondServePointsWon' | 'serviceGamesWon',
   ) =>
@@ -343,8 +344,8 @@ export function buildPlayerReportHtml(
     ],
     [
       'Aces per match',
-      averageAces(trackedServe.aces, 1, 'match'),
-      averageAces(opponentServe.aces, 1, 'match'),
+      averageAces(trackedServe.aces, matchesWithPointData, 'match'),
+      averageAces(opponentServe.aces, matchesWithPointData, 'match'),
       ...noBenchmarkValues,
     ],
     [
@@ -463,7 +464,22 @@ export function buildPlayerReportHtml(
       <td>${rate(matchBreakPoints.opponent.faced - matchBreakPoints.opponent.saved, matchBreakPoints.opponent.faced)}</td>
     </tr>`;
   const taggedPercent = exactPercent(summary.taggedPointCount, insights.pointCount);
-  const rallyWinnerRate = rate(summary.rallyWinnerCount, insights.pointCount);
+  const rallyWinnerRate =
+    summary.rallyWinnerTagCount > 0
+      ? rate(summary.rallyWinnerCount, insights.pointCount)
+      : '—';
+  const rallyWinnerDetail =
+    summary.rallyWinnerTagCount > 0
+      ? `${summary.rallyWinnerCount} tracked-player winner tags / ${insights.pointCount} points · aces excluded`
+      : 'No rally-shot winner tags recorded; aces are excluded.';
+  const unforcedErrorValue =
+    summary.unforcedErrorTagCount > 0
+      ? String(summary.trackedUnforcedErrors)
+      : '—';
+  const unforcedErrorDetail =
+    summary.unforcedErrorTagCount > 0
+      ? 'Net, long, and wide tags; double faults separate'
+      : 'No unforced-error tags recorded.';
   const directionRows = contextRows(
     summary.shotDirections,
     'No tracked-player shot directions recorded.',
@@ -633,12 +649,12 @@ export function buildPlayerReportHtml(
       <div class="tile">
         <div class="tile-label">RALLY SHOT WINNERS</div>
         <div class="tile-value">${rallyWinnerRate}</div>
-        <div class="tile-detail">${summary.rallyWinnerCount} tracked-player winner tags / ${insights.pointCount} points · aces excluded</div>
+        <div class="tile-detail">${rallyWinnerDetail}</div>
       </div>
       <div class="tile">
         <div class="tile-label">UNFORCED ERRORS</div>
-        <div class="tile-value">${summary.trackedUnforcedErrors}</div>
-        <div class="tile-detail">Net, long, and wide tags; double faults separate</div>
+        <div class="tile-value">${unforcedErrorValue}</div>
+        <div class="tile-detail">${unforcedErrorDetail}</div>
       </div>
     </div>
 

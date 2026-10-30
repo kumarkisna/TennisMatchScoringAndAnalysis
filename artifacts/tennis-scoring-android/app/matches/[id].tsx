@@ -2479,13 +2479,25 @@ export default function MatchScreen() {
               <Stat
                 label="RALLY SHOT WINNERS"
                 value={formatPercent(performance.rallyWinnerPercent)}
-                detail={`${performance.rallyWinnerCount} tracked-player winner tags / ${insightsQuery.data.pointCount} points · aces excluded`}
+                detail={
+                  performance.rallyWinnerTagCount > 0
+                    ? `${performance.rallyWinnerCount} tracked-player winner tags / ${insightsQuery.data.pointCount} points · aces excluded`
+                    : 'No rally-shot winner tags recorded; aces excluded'
+                }
                 colors={colors}
               />
               <Stat
                 label="UNFORCED ERRORS"
-                value={String(performance.trackedUnforcedErrors)}
-                detail="Net, long, and wide tags; double faults separate"
+                value={
+                  performance.unforcedErrorTagCount > 0
+                    ? String(performance.trackedUnforcedErrors)
+                    : '—'
+                }
+                detail={
+                  performance.unforcedErrorTagCount > 0
+                    ? 'Net, long, and wide tags; double faults separate'
+                    : 'No unforced-error tags recorded'
+                }
                 colors={colors}
               />
               <Stat

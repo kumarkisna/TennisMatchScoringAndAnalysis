@@ -59,8 +59,10 @@ export interface PlayerPerformanceSummary {
   rallyWinnerPercent: number | null;
   opponentRallyWinnerCount: number;
   opponentRallyWinnerPercent: number | null;
+  rallyWinnerTagCount: number;
   trackedUnforcedErrors: number;
   opponentUnforcedErrors: number;
+  unforcedErrorTagCount: number;
   acesPerServiceGame: number | null;
   acesPerSet: number | null;
   acesPerMatch: number | null;
@@ -298,6 +300,11 @@ export function summarizePlayerPerformance(
         b.count - a.count || a.code.localeCompare(b.code),
     );
   const rallyWinnerCodes: readonly PointCode[] = ['F', 'B', 'V', 'O', 'P'];
+  const rallyWinnerTagCount = validCodes.reduce(
+    (total, item) =>
+      total + (rallyWinnerCodes.includes(item.code) ? item.count : 0),
+    0,
+  );
   const rallyWinnerCount = validCodes.reduce(
     (total, item) =>
       total + (rallyWinnerCodes.includes(item.code) ? item.trackedWon : 0),
@@ -309,6 +316,11 @@ export function summarizePlayerPerformance(
     0,
   );
   const unforcedErrorCodes: readonly PointCode[] = ['N', 'L', 'W'];
+  const unforcedErrorTagCount = validCodes.reduce(
+    (total, item) =>
+      total + (unforcedErrorCodes.includes(item.code) ? item.count : 0),
+    0,
+  );
   const trackedUnforcedErrors = validCodes.reduce(
     (total, item) =>
       total + (unforcedErrorCodes.includes(item.code) ? item.opponentWon : 0),
@@ -330,7 +342,9 @@ export function summarizePlayerPerformance(
   const acesPerSet =
     setsWithRecordedPoints > 0 ? aces / setsWithRecordedPoints : null;
   const acesPerMatch =
-    matchesInSample > 0 ? aces / matchesInSample : null;
+    matchesInSample > 0 && insights.pointCount > 0
+      ? aces / matchesInSample
+      : null;
 
   const shotDirections = summarizeContext(
     SHOT_DIRECTION_OPTIONS,
@@ -452,14 +466,19 @@ export function summarizePlayerPerformance(
     firstServePointsWonPercent,
     secondServePointsWonPercent,
     rallyWinnerCount,
-    rallyWinnerPercent: percent(rallyWinnerCount, insights.pointCount),
+    rallyWinnerPercent:
+      rallyWinnerTagCount > 0
+        ? percent(rallyWinnerCount, insights.pointCount)
+        : null,
     opponentRallyWinnerCount,
-    opponentRallyWinnerPercent: percent(
-      opponentRallyWinnerCount,
-      insights.pointCount,
-    ),
+    opponentRallyWinnerPercent:
+      rallyWinnerTagCount > 0
+        ? percent(opponentRallyWinnerCount, insights.pointCount)
+        : null,
+    rallyWinnerTagCount,
     trackedUnforcedErrors,
     opponentUnforcedErrors,
+    unforcedErrorTagCount,
     acesPerServiceGame,
     acesPerSet,
     acesPerMatch,

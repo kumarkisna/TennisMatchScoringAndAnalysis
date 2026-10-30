@@ -169,8 +169,16 @@ export function buildHeadToHeadReportHtml(
     ],
     [
       'Aces per match',
-      averageAces(trackedServe.aces, report.matchesRecorded, 'matches'),
-      averageAces(opponentServe.aces, report.matchesRecorded, 'matches'),
+      averageAces(
+        trackedServe.aces,
+        insights.pointCount > 0 ? report.matchesRecorded : 0,
+        'matches',
+      ),
+      averageAces(
+        opponentServe.aces,
+        insights.pointCount > 0 ? report.matchesRecorded : 0,
+        'matches',
+      ),
     ],
   ]);
 
@@ -202,13 +210,21 @@ export function buildHeadToHeadReportHtml(
     ],
     [
       'Rally-shot winner points',
-      rate(report.performance.rallyWinnerCount, insights.pointCount),
-      rate(report.performance.opponentRallyWinnerCount, insights.pointCount),
+      report.performance.rallyWinnerTagCount > 0
+        ? rate(report.performance.rallyWinnerCount, insights.pointCount)
+        : '—',
+      report.performance.rallyWinnerTagCount > 0
+        ? rate(report.performance.opponentRallyWinnerCount, insights.pointCount)
+        : '—',
     ],
     [
       'Unforced errors',
-      `${report.performance.trackedUnforcedErrors} · ${insights.pointCount} recorded points`,
-      `${report.performance.opponentUnforcedErrors} · ${insights.pointCount} recorded points`,
+      report.performance.unforcedErrorTagCount > 0
+        ? `${report.performance.trackedUnforcedErrors} · ${insights.pointCount} recorded points`
+        : '—',
+      report.performance.unforcedErrorTagCount > 0
+        ? `${report.performance.opponentUnforcedErrors} · ${insights.pointCount} recorded points`
+        : '—',
     ],
   ]);
 
