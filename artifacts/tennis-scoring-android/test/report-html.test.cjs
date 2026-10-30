@@ -11,6 +11,8 @@ const strokeOptions = [
 const originalLoad = Module._load;
 let playerReportExports;
 let localMatchExports;
+let playerInsightsExports;
+let headToHeadExports;
 
 Module._load = function (request, parent, isMain) {
   if (request === '@/lib/local-matches') {
@@ -20,7 +22,10 @@ Module._load = function (request, parent, isMain) {
     return { __esModule: true, default: {} };
   }
   if (request === '@/lib/head-to-head') {
-    return { getSetWinner: () => null };
+    return headToHeadExports ?? { getSetWinner: () => null };
+  }
+  if (request === '@/lib/player-insights') {
+    return playerInsightsExports;
   }
   if (request === '@/lib/report-html-utils') {
     return originalLoad.call(
@@ -57,9 +62,12 @@ require.extensions['.ts'] = function (module, filename) {
 
 localMatchExports = require('../lib/local-matches.ts');
 playerReportExports = require('../lib/player-report-html.ts');
+playerInsightsExports = require('../lib/player-insights.ts');
+headToHeadExports = require('../lib/head-to-head.ts');
 const { buildPlayerReportHtml } = playerReportExports;
 const { buildHeadToHeadReportHtml } = require('../lib/head-to-head-report-html.ts');
-const { summarizePlayerPerformance } = require('../lib/player-insights.ts');
+const { summarizePlayerPerformance } = playerInsightsExports;
+const { buildHeadToHeadReport } = headToHeadExports;
 Module._load = originalLoad;
 const { createAndPreviewLocalPdf } = require('../lib/report-pdf.ts');
 const {
@@ -411,6 +419,174 @@ function headToHeadReportFixture(insights, performance, matchesRecorded = 1) {
     personalAverageMatches: matchesRecorded,
   };
 }
+
+function breakPointMeeting(
+  id,
+  trackedPlayer,
+  opponent,
+  trackedBreakPoints,
+  opponentBreakPoints,
+  matchDate,
+) {
+  const insights = {
+    ...emptyInsight,
+    pointCount: 24,
+    breakPoints: {
+      tracked: { ...trackedBreakPoints },
+      opponent: { ...opponentBreakPoints },
+    },
+  };
+  return {
+    summary: {
+      id,
+      remoteMatchId: null,
+      matchDate,
+      event: null,
+      round: null,
+      setNumber: 1,
+      trackedPlayer,
+      opponent,
+      surface: 'Hard',
+      status: 'complete',
+      syncStatus: 'local_only',
+      pendingPointCount: 0,
+      trackedGames: 6,
+      opponentGames: 4,
+      setScores: [
+        {
+          setNumber: 1,
+          format: 'standard',
+          tiebreakTarget: 10,
+          trackedGames: 6,
+          opponentGames: 4,
+          trackedTiebreakPoints: 0,
+          opponentTiebreakPoints: 0,
+          isComplete: true,
+        },
+      ],
+      pointCount: insights.pointCount,
+      winner: 'tracked',
+      updatedAt: `${matchDate}T12:00:00.000Z`,
+    },
+    insights,
+  };
+}
+
+test('head-to-head personal break-point averages pool each tracked-player match once', () => {
+  const alexVsBailey = breakPointMeeting(
+    'alex-bailey',
+    'Alex',
+    'Bailey',
+    { opportunities: 4, converted: 2, faced: 5, saved: 3 },
+    { opportunities: 1, converted: 1, faced: 3, saved: 2 },
+    '2026-10-01',
+  );
+  const alexVsCasey = breakPointMeeting(
+    'alex-casey',
+    'Alex',
+    'Casey',
+    { opportunities: 6, converted: 3, faced: 4, saved: 2 },
+    { opportunities: 3, converted: 1, faced: 4, saved: 2 },
+    '2026-10-02',
+  );
+  const reverseOriented = breakPointMeeting(
+    'bailey-alex',
+    'Bailey',
+    'Alex',
+    { opportunities: 100, converted: 100, faced: 100, saved: 0 },
+    { opportunities: 100, converted: 0, faced: 100, saved: 0 },
+    '2026-10-03',
+  );
+  const trackedOnlyAsOpponent = breakPointMeeting(
+    'jordan-alex',
+    'Jordan',
+    'Alex',
+    { opportunities: 50, converted: 0, faced: 50, saved: 0 },
+    { opportunities: 50, converted: 50, faced: 50, saved: 50 },
+    '2026-10-04',
+  );
+
+  const report = buildHeadToHeadReport(
+    'Alex',
+    'Bailey',
+    [alexVsBailey],
+    [alexVsBailey, alexVsCasey, reverseOriented, trackedOnlyAsOpponent],
+  );
+
+  assert.equal(report.matchesRecorded, 1);
+  assert.equal(report.personalAverageMatches, 2);
+  assert.deepEqual(report.insights.breakPoints.tracked, {
+    opportunities: 4,
+    converted: 2,
+    faced: 5,
+    saved: 3,
+  });
+  assert.deepEqual(report.personalAverageInsights.breakPoints.tracked, {
+    opportunities: 10,
+    converted: 5,
+    faced: 9,
+    saved: 5,
+  });
+
+  const html = buildHeadToHeadReportHtml(report);
+  assert.match(html, /Pooled break-point chances across 2 saved matches/);
+  assert.deepEqual(reportRows(html, 'Alex · personal average'), [
+    'Break points converted 5/10 · 50.0%',
+    'Break points missed 5/10 · 50.0%',
+    'Break points saved 5/9 · 55.6%',
+    'Break points lost while serving 4/9 · 44.4%',
+  ]);
+});
+
+test('head-to-head break-point rates are unavailable for empty samples', () => {
+  const noChances = breakPointMeeting(
+    'alex-bailey-no-break-points',
+    'Alex',
+    'Bailey',
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    '2026-10-05',
+  );
+  const report = buildHeadToHeadReport(
+    'Alex',
+    'Bailey',
+    [noChances],
+    [noChances],
+  );
+  const html = buildHeadToHeadReportHtml(report);
+
+  assert.equal(report.personalAverageMatches, 1);
+  assert.match(html, /Pooled break-point chances across 1 saved match/);
+  assert.deepEqual(reportRows(html, 'Alex · personal average'), [
+    'Break points converted —',
+    'Break points missed —',
+    'Break points saved —',
+    'Break points lost while serving —',
+  ]);
+
+  const partialChances = breakPointMeeting(
+    'alex-bailey-partial-break-points',
+    'Alex',
+    'Bailey',
+    { opportunities: 0, converted: 0, faced: 2, saved: 1 },
+    { opportunities: 2, converted: 1, faced: 0, saved: 0 },
+    '2026-10-06',
+  );
+  const partialReport = buildHeadToHeadReport(
+    'Alex',
+    'Bailey',
+    [partialChances],
+    [partialChances],
+  );
+  const partialHtml = buildHeadToHeadReportHtml(partialReport);
+
+  assert.deepEqual(reportRowsAfterHeading(partialHtml, 'Break points'), [
+    'Break points converted — 1/2 · 50.0%',
+    'Break points missed — 1/2 · 50.0%',
+    'Break points saved 1/2 · 50.0% —',
+    'Break points lost while serving 1/2 · 50.0% —',
+  ]);
+});
 
 test('player statistics match a deterministic four-game point log', () => {
   const match = performanceSampleMatch();
