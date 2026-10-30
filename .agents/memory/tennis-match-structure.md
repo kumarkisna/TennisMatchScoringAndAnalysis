@@ -20,3 +20,9 @@ description: Product requirements for multi-set tennis records, tiebreak-only se
 **Why:** A valid backup from an in-progress match tiebreak was rejected when the validator accepted only regular tennis score labels.
 
 **How to apply:** Keep backup validation aligned with the scoring engine for standard games, standard-set tiebreaks, and match-tiebreak sets.
+
+**Rule:** Only completed sets with an unambiguous format-specific score count toward a match winner. Tied set scores have no named set winner, tied set totals have no named match winner, and in-progress matches stay labeled in progress.
+
+**Why:** The user asked to prevent false winner labels when set scores are tied or the match is unfinished.
+
+**How to apply:** Use regular game totals for standard sets and tiebreak-point totals for match-tiebreak sets. Do not substitute a player when a stored winner is absent.

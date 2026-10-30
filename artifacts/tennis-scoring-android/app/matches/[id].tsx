@@ -1216,9 +1216,17 @@ export default function MatchScreen() {
               {formatDate(match.matchDate)}
               {match.chairCoach ? ` · ${match.chairCoach}` : ''}
             </Text>
-            {match.score.isComplete ? (
+            {match.score.isComplete && match.score.winner ? (
               <Text style={[styles.winnerText, { color: colors.primaryForeground }]}>
-                {pointWinnerName(match.score.winner ?? 'tracked')} wins Set {match.setNumber}
+                {pointWinnerName(match.score.winner)} wins Set {match.setNumber}
+              </Text>
+            ) : match.score.isComplete ? (
+              <Text
+                testID="set-winner-undetermined"
+                accessibilityLabel={`Set ${match.setNumber} complete, winner not determined`}
+                style={[styles.scoreFooterText, { color: colors.primaryForeground, opacity: 0.72 }]}
+              >
+                Set winner not determined
               </Text>
             ) : (
               <Text style={[styles.scoreFooterText, { color: colors.primaryForeground, opacity: 0.72 }]}>

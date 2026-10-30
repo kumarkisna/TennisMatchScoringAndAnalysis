@@ -299,6 +299,75 @@ function reportRows(html, heading) {
     .map((match) => match[1].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim());
 }
 
+function reportSetFixture({
+  setNumber = 1,
+  format = 'standard',
+  trackedGames = 6,
+  opponentGames = 4,
+  trackedTiebreakPoints = 0,
+  opponentTiebreakPoints = 0,
+  tiebreakTarget = 10,
+  isComplete = true,
+} = {}) {
+  return {
+    setNumber,
+    format,
+    trackedGames,
+    opponentGames,
+    trackedTiebreakPoints,
+    opponentTiebreakPoints,
+    tiebreakTarget,
+    isComplete,
+    pointCount: 1,
+    breakPoints: {
+      tracked: { ...emptyBreakPoints },
+      opponent: { ...emptyBreakPoints },
+    },
+    gameNotes: [],
+    review: {
+      strokeRatings: {},
+      strokeNotes: {},
+      footworkNote: '',
+      tacticalNote: '',
+      mentalNote: '',
+    },
+  };
+}
+
+function winnerReportHtml(sets, matchStatus = 'complete') {
+  return buildPlayerReportHtml(
+    {
+      matchDate: '2026-10-30',
+      trackedPlayer: 'Tracked',
+      opponent: 'Opponent',
+      surface: 'Hard',
+      matchStatus,
+    },
+    { ...emptyInsight, sets },
+    { ...emptyPerformance, feedback: [] },
+    ['sets'],
+    [],
+  );
+}
+
+function matchResultFrom(html) {
+  const result = html.match(
+    /<span class="date-result-label">MATCH RESULT<\/span>\s*<span class="date-result-value">([\s\S]*?)<\/span>/,
+  );
+  assert.ok(result, 'Expected the report to include a match result');
+  return result[1];
+}
+
+function setWinnerFrom(html, setNumber) {
+  const row = html.match(
+    new RegExp(
+      `<td>Set ${setNumber}<span class="sub">(Complete|In progress)<\\/span><\\/td>\\s*<td>([\\s\\S]*?)<\\/td>\\s*<td>([\\s\\S]*?)<\\/td>`,
+    ),
+  );
+  assert.ok(row, `Expected the report to include Set ${setNumber}`);
+  return { status: row[1], score: row[2], winner: row[3] };
+}
+
 test('single-match report removes URL-like text and keeps match details and analysis', () => {
   const insights = {
     ...emptyInsight,
@@ -415,6 +484,103 @@ test('single benchmark columns keep their generic source label and missing value
     html,
     /<td>Service games won<\/td>.*?<td>88\.0%<\/td>/s,
   );
+});
+
+test('match result uses set majorities and the correct score for each set format', () => {
+  const html = winnerReportHtml([
+    reportSetFixture({
+      setNumber: 1,
+      format: 'standard',
+      trackedGames: 6,
+      opponentGames: 4,
+      trackedTiebreakPoints: 0,
+      opponentTiebreakPoints: 0,
+    }),
+    reportSetFixture({
+      setNumber: 2,
+      format: 'match_tiebreak',
+      trackedGames: 0,
+      opponentGames: 0,
+      trackedTiebreakPoints: 10,
+      opponentTiebreakPoints: 8,
+      tiebreakTarget: 10,
+    }),
+    reportSetFixture({
+      setNumber: 3,
+      format: 'standard',
+      trackedGames: 4,
+      opponentGames: 6,
+    }),
+  ]);
+
+  assert.equal(matchResultFrom(html), 'Tracked');
+  assert.deepEqual(setWinnerFrom(html, 1), {
+    status: 'Complete',
+    score: '6–4',
+    winner: 'Tracked',
+  });
+  assert.deepEqual(setWinnerFrom(html, 2), {
+    status: 'Complete',
+    score: 'Match tie-break 10–8 (target 10, win by 2)',
+    winner: 'Tracked',
+  });
+  assert.deepEqual(setWinnerFrom(html, 3), {
+    status: 'Complete',
+    score: '4–6',
+    winner: 'Opponent',
+  });
+});
+
+test('tied set totals and tied completed set scores never name a match winner', () => {
+  const tiedTotalsHtml = winnerReportHtml([
+    reportSetFixture({ setNumber: 1, trackedGames: 6, opponentGames: 4 }),
+    reportSetFixture({
+      setNumber: 2,
+      trackedGames: 4,
+      opponentGames: 6,
+    }),
+  ]);
+  assert.equal(matchResultFrom(tiedTotalsHtml), 'Complete · no set majority');
+
+  const tiedScoreHtml = winnerReportHtml([
+    reportSetFixture({
+      setNumber: 1,
+      trackedGames: 6,
+      opponentGames: 6,
+    }),
+  ]);
+  assert.equal(matchResultFrom(tiedScoreHtml), 'Complete · no set majority');
+  assert.equal(setWinnerFrom(tiedScoreHtml, 1).winner, 'Not determined');
+});
+
+test('in-progress reports do not label the match won or lost', () => {
+  const html = winnerReportHtml(
+    [
+      reportSetFixture({ setNumber: 1, trackedGames: 6, opponentGames: 4 }),
+      reportSetFixture({
+        setNumber: 2,
+        trackedGames: 5,
+        opponentGames: 5,
+        isComplete: false,
+      }),
+    ],
+    'in_progress',
+  );
+
+  assert.equal(matchResultFrom(html), 'In progress');
+  assert.equal(setWinnerFrom(html, 1).winner, 'Tracked');
+  assert.equal(setWinnerFrom(html, 2).winner, 'In progress');
+});
+
+test('match detail does not default an undetermined set winner to the tracked player', () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, '../app/matches/[id].tsx'),
+    'utf8',
+  );
+
+  assert.match(source, /match\.score\.isComplete && match\.score\.winner/);
+  assert.match(source, /Set winner not determined/);
+  assert.doesNotMatch(source, /match\.score\.winner\s*\?\?\s*'tracked'/);
 });
 
 test('break-point counts, set aggregation, exclusions, and report rates match scored sequences', () => {
