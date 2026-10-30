@@ -32,6 +32,7 @@ import * as Sharing from 'expo-sharing';
 import {
   getLocalInsights,
   getLocalMatch,
+  getLocalMatchSummaryResultLabel,
   getLocalPointHistory,
   getLocalSetHistory,
   LOCAL_MATCH_LIST_KEY,
@@ -70,6 +71,7 @@ import {
   type SetFormat,
   type StrokeResult,
   type StrokeType,
+  summarizeLocalMatch,
 } from '@/lib/local-matches';
 import {
   summarizeMatchNotes,
@@ -580,6 +582,12 @@ export default function MatchScreen() {
     },
   });
   const match = matchQuery.data;
+  const matchSummary = match ? summarizeLocalMatch(match) : null;
+  const matchResultLabel = matchSummary
+    ? getLocalMatchSummaryResultLabel(matchSummary)
+    : null;
+  const hasMatchResultWinner =
+    matchSummary?.status === 'complete' && matchSummary.winner !== null;
   const savedPlayers = playersQuery.data ?? [];
   const selectedReportBenchmarks = reportBenchmarksQuery.data
     ? reportBenchmarksQuery.data.selectedPresetIds.flatMap((id) => {
@@ -1466,9 +1474,20 @@ export default function MatchScreen() {
               {formatDate(match.matchDate)}
               {match.chairCoach ? ` · ${match.chairCoach}` : ''}
             </Text>
-          {match.matchOutcome ? (
-            <Text style={[styles.winnerText, { color: colors.primaryForeground }]}>
-              Winner by {match.matchOutcome.reason}: {pointWinnerName(match.matchOutcome.winner)}
+          {matchResultLabel ? (
+            <Text
+              testID="match-result-label"
+              accessibilityRole="text"
+              accessibilityLabel={`Match result. ${matchResultLabel}`}
+              style={[
+                hasMatchResultWinner ? styles.winnerText : styles.scoreFooterText,
+                {
+                  color: colors.primaryForeground,
+                  opacity: hasMatchResultWinner ? 1 : 0.72,
+                },
+              ]}
+            >
+              {matchResultLabel}
             </Text>
           ) : match.score.isComplete && match.score.winner ? (
               <Text style={[styles.winnerText, { color: colors.primaryForeground }]}>
@@ -3947,7 +3966,13 @@ const styles = StyleSheet.create({
   matchTiebreakScoreValue: { fontFamily: 'DMSans_700Bold', fontSize: 25, fontVariant: ['tabular-nums'] },
   scoreFooter: { minHeight: 30, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   scoreFooterText: { fontFamily: 'DMSans_400Regular', fontSize: 10 },
-  winnerText: { fontFamily: 'DMSans_700Bold', fontSize: 11 },
+  winnerText: {
+    flexShrink: 1,
+    minWidth: 0,
+    textAlign: 'right',
+    fontFamily: 'DMSans_700Bold',
+    fontSize: 11,
+  },
   completeBanner: { marginTop: 12, borderRadius: 9, paddingHorizontal: 12, minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 8 },
   completeText: { flex: 1, fontFamily: 'DMSans_600SemiBold', fontSize: 12 },
   setHistoryCard: { marginTop: 12, borderWidth: 1, borderRadius: 12, padding: 12, gap: 9 },

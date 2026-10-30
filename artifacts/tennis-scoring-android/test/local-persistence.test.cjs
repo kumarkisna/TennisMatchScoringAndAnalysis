@@ -2359,6 +2359,11 @@ test('match book results use completed-set majorities and keep ties and live mat
   const tied = summaries.get(tiedId);
   const live = summaries.get(liveId);
 
+  for (const summary of [trackedWin, opponentWin, tied, live]) {
+    const match = await localMatches.getLocalMatch(summary.id);
+    assert.ok(match);
+    assert.deepEqual(localMatches.summarizeLocalMatch(match), summary);
+  }
   assert.equal(trackedWin.winner, 'tracked');
   assert.equal(
     localMatches.getLocalMatchSummaryResultLabel(trackedWin),
@@ -2389,6 +2394,28 @@ test('match book results use completed-set majorities and keep ties and live mat
   );
   assert.match(homeScreen, /getLocalMatchSummaryResultLabel\(item\)/);
   assert.match(homeScreen, /testID=\{`match-result-\$\{item\.id\}`\}/);
+});
+
+test('match detail displays the shared completed-match result label', () => {
+  const matchScreen = fs.readFileSync(
+    path.join(__dirname, '../app/matches/[id].tsx'),
+    'utf8',
+  );
+
+  assert.match(
+    matchScreen,
+    /const matchSummary = match \? summarizeLocalMatch\(match\) : null/,
+  );
+  assert.match(
+    matchScreen,
+    /const matchResultLabel = matchSummary\s*\?\s*getLocalMatchSummaryResultLabel\(matchSummary\)\s*:\s*null/,
+  );
+  assert.match(matchScreen, /testID="match-result-label"/);
+  assert.match(
+    matchScreen,
+    /accessibilityLabel=\{`Match result\. \$\{matchResultLabel\}`\}/,
+  );
+  assert.match(matchScreen, /\{matchResultLabel \? \(/);
 });
 
 test('retirement and walkover outcomes stay separate from local set scores', async () => {

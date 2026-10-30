@@ -1008,7 +1008,7 @@ function rebuildLocalSetPoints(
   };
 }
 
-function summarize(match: LocalMatch): LocalMatchSummary {
+export function summarizeLocalMatch(match: LocalMatch): LocalMatchSummary {
   const setHistory = getLocalSetHistory(match);
   const trackedSetsWon = setHistory.filter((set) => set.score.winner === 'tracked').length;
   const opponentSetsWon = setHistory.filter((set) => set.score.winner === 'opponent').length;
@@ -1077,7 +1077,9 @@ export async function listLocalMatches(): Promise<LocalMatchSummary[]> {
       matches.push(match);
     }
 
-    return matches.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(summarize);
+    return matches
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .map(summarizeLocalMatch);
   });
 }
 
