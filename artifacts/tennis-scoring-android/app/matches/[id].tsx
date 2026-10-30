@@ -3381,14 +3381,33 @@ export default function MatchScreen() {
                     {breakPointOutcome ? (
                       <>
                         {breakPointScoreBefore ? (
-                          <Text
+                          <View
                             testID={`point-log-break-point-score-${point.id}`}
-                            accessibilityLabel={`Score before break point. ${trackedName}: ${breakPointScoreBefore.trackedScore}, ${opponentName}: ${breakPointScoreBefore.opponentScore}`}
-                            style={[styles.logDetail, { color: colors.mutedForeground }]}
+                            accessible
+                            accessibilityRole="text"
+                            accessibilityLabel={`Score before break point. ${trackedName}: ${breakPointScoreBefore.trackedScore}; ${opponentName}: ${breakPointScoreBefore.opponentScore}`}
+                            style={styles.breakPointScoreBefore}
                           >
-                            Before point · {trackedName} {breakPointScoreBefore.trackedScore} –{' '}
-                            {opponentName} {breakPointScoreBefore.opponentScore}
-                          </Text>
+                            <Text style={[styles.breakPointScoreTitle, { color: colors.mutedForeground }]}>
+                              Before point
+                            </Text>
+                            <View style={styles.breakPointScoreRow}>
+                              <Text style={[styles.breakPointScoreName, { color: colors.foreground }]}>
+                                {trackedName}
+                              </Text>
+                              <Text style={[styles.breakPointScoreValue, { color: colors.foreground }]}>
+                                {breakPointScoreBefore.trackedScore}
+                              </Text>
+                            </View>
+                            <View style={styles.breakPointScoreRow}>
+                              <Text style={[styles.breakPointScoreName, { color: colors.foreground }]}>
+                                {opponentName}
+                              </Text>
+                              <Text style={[styles.breakPointScoreValue, { color: colors.foreground }]}>
+                                {breakPointScoreBefore.opponentScore}
+                              </Text>
+                            </View>
+                          </View>
                         ) : null}
                         <View
                           testID={`point-log-break-point-${point.id}`}
@@ -4111,9 +4130,28 @@ const styles = StyleSheet.create({
   logRow: { minHeight: 54, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 10 },
   logSequence: { width: 30, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   logSequenceText: { fontFamily: 'DMSans_700Bold', fontSize: 10, fontVariant: ['tabular-nums'] },
-  logDescription: { flex: 1, gap: 3 },
-  logWinner: { fontFamily: 'DMSans_600SemiBold', fontSize: 11 },
-  logDetail: { fontFamily: 'DMSans_400Regular', fontSize: 9 },
+  logDescription: { flex: 1, minWidth: 0, gap: 3 },
+  logWinner: { flexShrink: 1, minWidth: 0, fontFamily: 'DMSans_600SemiBold', fontSize: 11 },
+  logDetail: { flexShrink: 1, minWidth: 0, fontFamily: 'DMSans_400Regular', fontSize: 9 },
+  breakPointScoreBefore: { gap: 2, minWidth: 0, paddingTop: 1 },
+  breakPointScoreTitle: { fontFamily: 'DMSans_400Regular', fontSize: 8 },
+  breakPointScoreRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 7 },
+  breakPointScoreName: {
+    flex: 1,
+    minWidth: 0,
+    flexShrink: 1,
+    fontFamily: 'DMSans_400Regular',
+    fontSize: 9,
+    lineHeight: 12,
+  },
+  breakPointScoreValue: {
+    minWidth: 24,
+    textAlign: 'right',
+    fontFamily: 'DMSans_700Bold',
+    fontSize: 9,
+    lineHeight: 12,
+    fontVariant: ['tabular-nums'],
+  },
   breakPointMarker: {
     alignSelf: 'flex-start',
     marginTop: 2,

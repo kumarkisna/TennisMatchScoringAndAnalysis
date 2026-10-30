@@ -1024,20 +1024,58 @@ test('match details expose accessible controls for all points and break-point mo
   );
 });
 
-test('break-point markers show pre-point scores for both named players', () => {
+test('break-point scores keep long player names readable and accessible', () => {
   const matchScreen = fs.readFileSync(
     path.join(__dirname, '../app/matches/[id].tsx'),
     'utf8',
   );
 
-  assert.match(matchScreen, /point-log-break-point-score-/);
+  const scoreStart = matchScreen.indexOf(
+    'testID={`point-log-break-point-score-${point.id}`}',
+  );
+  const markerStart = matchScreen.indexOf(
+    'testID={`point-log-break-point-${point.id}`}',
+    scoreStart,
+  );
+  assert.ok(scoreStart >= 0);
+  assert.ok(markerStart > scoreStart);
+  const scoreSection = matchScreen.slice(scoreStart, markerStart);
+
+  assert.match(scoreSection, /accessible/);
+  assert.match(scoreSection, /accessibilityRole="text"/);
+  assert.match(
+    scoreSection,
+    /Score before break point\.\s*\$\{trackedName\}:\s*\$\{breakPointScoreBefore\.trackedScore\};\s*\$\{opponentName\}:\s*\$\{breakPointScoreBefore\.opponentScore\}/,
+  );
+  assert.match(
+    scoreSection,
+    /styles\.breakPointScoreName[\s\S]*?\{trackedName\}/,
+  );
+  assert.match(
+    scoreSection,
+    /styles\.breakPointScoreValue[\s\S]*?\{breakPointScoreBefore\.trackedScore\}/,
+  );
+  assert.match(
+    scoreSection,
+    /styles\.breakPointScoreName[\s\S]*?\{opponentName\}/,
+  );
+  assert.match(
+    scoreSection,
+    /styles\.breakPointScoreValue[\s\S]*?\{breakPointScoreBefore\.opponentScore\}/,
+  );
+  assert.doesNotMatch(scoreSection, /numberOfLines/);
+
   assert.match(
     matchScreen,
-    /Before point · \{trackedName\} \{breakPointScoreBefore\.trackedScore\}/,
+    /breakPointScoreName:\s*\{\s*flex: 1,\s*minWidth: 0,\s*flexShrink: 1/,
   );
   assert.match(
     matchScreen,
-    /\{opponentName\} \{breakPointScoreBefore\.opponentScore\}/,
+    /logDescription: \{ flex: 1, minWidth: 0, gap: 3 \}/,
+  );
+  assert.match(
+    matchScreen,
+    /accessibilityLabel=\{\s*breakPointScoreBefore\s*\?\s*`Break point \$\{breakPointOutcome\}\. Before the point, \$\{trackedName\} \$\{breakPointScoreBefore\.trackedScore\}, \$\{opponentName\} \$\{breakPointScoreBefore\.opponentScore\}`/,
   );
 });
 
