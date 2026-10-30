@@ -1,8 +1,16 @@
 import { and, desc, eq, exists, inArray, or } from "drizzle-orm";
-import { Router, type IRouter } from "express";
-import { clerkClient, getAuth } from "@clerk/express";
 import {
-  db,
+  Router,
+  type IRouter,
+  type Request,
+  type RequestHandler,
+} from "express";
+import {
+  clerkClient as defaultClerkClient,
+  getAuth as clerkGetAuth,
+} from "@clerk/express";
+import {
+  db as defaultDb,
   tennisMatchSharesTable,
   tennisMatchesTable,
   tennisPointsTable,
@@ -37,7 +45,7 @@ import {
   UndoLatestPointParams,
   UndoLatestPointResponse,
 } from "@workspace/api-zod";
-import { requireAuth } from "../middlewares/require-auth";
+import { requireAuth as defaultRequireAuth } from "../middlewares/require-auth";
 import { canReadMatch, normalizeInviteEmail } from "../lib/match-access";
 import {
   claimLegacyMatchOwnership,
@@ -51,65 +59,81 @@ import {
   type PlayerSide,
 } from "../lib/tennis-scoring";
 
-const router: IRouter = Router();
-router.use(requireAuth);
-
-function getUserId(req: Parameters<typeof getAuth>[0]): string {
-  const userId = getAuth(req).userId;
+function getAuthenticatedUserId(req: Request): string {
+  const userId = clerkGetAuth(req).userId;
   if (!userId) throw new Error("Authentication middleware did not provide a user.");
   return userId;
 }
 
-async function getVerifiedEmails(userId: string): Promise<string[]> {
-  const user = await clerkClient.users.getUser(userId);
+async function getVerifiedEmailsForUser(userId: string): Promise<string[]> {
+  const user = await defaultClerkClient.users.getUser(userId);
   return user.emailAddresses
     .filter((address) => address.verification?.status === "verified")
     .map((address) => normalizeInviteEmail(address.emailAddress));
 }
 
-async function fetchMatch(matchId: string, userId: string) {
-  const [match] = await db
-    .select()
-    .from(tennisMatchesTable)
-    .where(eq(tennisMatchesTable.id, matchId));
-
-  if (!match) return null;
-
-  const isOwner = match.ownerId === userId;
-  if (!isOwner) {
-    const verifiedEmails = await getVerifiedEmails(userId);
-    const shares =
-      verifiedEmails.length === 0
-        ? []
-        : await db
-            .select({ inviteEmail: tennisMatchSharesTable.inviteEmail })
-            .from(tennisMatchSharesTable)
-            .where(
-              and(
-                eq(tennisMatchSharesTable.matchId, matchId),
-                inArray(tennisMatchSharesTable.inviteEmail, verifiedEmails),
-              ),
-            );
-    if (
-      !canReadMatch(
-        match.ownerId,
-        userId,
-        verifiedEmails,
-        shares.map((share) => share.inviteEmail),
-      )
-    ) {
-      return null;
-    }
-  }
-
-  const points = await db
-    .select()
-    .from(tennisPointsTable)
-    .where(eq(tennisPointsTable.matchId, matchId))
-    .orderBy(tennisPointsTable.sequenceNumber);
-
-  return { match, points, isOwner };
+export interface MatchesRouterDependencies {
+  db?: typeof defaultDb;
+  getUserId?: (req: Request) => string;
+  getVerifiedEmails?: (userId: string) => Promise<string[]>;
+  requireAuth?: RequestHandler;
 }
+
+export function createMatchesRouter(
+  dependencies: MatchesRouterDependencies = {},
+): IRouter {
+  const db = dependencies.db ?? defaultDb;
+  const getUserId = dependencies.getUserId ?? getAuthenticatedUserId;
+  const getVerifiedEmails =
+    dependencies.getVerifiedEmails ?? getVerifiedEmailsForUser;
+  const requireAuth = dependencies.requireAuth ?? defaultRequireAuth;
+
+  const router: IRouter = Router();
+  router.use(requireAuth);
+
+  async function fetchMatch(matchId: string, userId: string) {
+    const [match] = await db
+      .select()
+      .from(tennisMatchesTable)
+      .where(eq(tennisMatchesTable.id, matchId));
+
+    if (!match) return null;
+
+    const isOwner = match.ownerId === userId;
+    if (!isOwner) {
+      const verifiedEmails = await getVerifiedEmails(userId);
+      const shares =
+        verifiedEmails.length === 0
+          ? []
+          : await db
+              .select({ inviteEmail: tennisMatchSharesTable.inviteEmail })
+              .from(tennisMatchSharesTable)
+              .where(
+                and(
+                  eq(tennisMatchSharesTable.matchId, matchId),
+                  inArray(tennisMatchSharesTable.inviteEmail, verifiedEmails),
+                ),
+              );
+      if (
+        !canReadMatch(
+          match.ownerId,
+          userId,
+          verifiedEmails,
+          shares.map((share) => share.inviteEmail),
+        )
+      ) {
+        return null;
+      }
+    }
+
+    const points = await db
+      .select()
+      .from(tennisPointsTable)
+      .where(eq(tennisPointsTable.matchId, matchId))
+      .orderBy(tennisPointsTable.sequenceNumber);
+
+    return { match, points, isOwner };
+  }
 
 router.post(
   "/matches/:id/claim-ownership",
@@ -1009,5 +1033,10 @@ router.delete(
     res.sendStatus(204);
   },
 );
+
+  return router;
+}
+
+const router = createMatchesRouter();
 
 export default router;
