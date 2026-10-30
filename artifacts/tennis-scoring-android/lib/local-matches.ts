@@ -589,6 +589,12 @@ function emptyBreakPointStats(): Record<PlayerSide, BreakPointStats> {
 }
 
 export type BreakPointPointOutcome = 'converted' | 'saved';
+export type LocalPointHistoryFilter = 'all' | 'break_points';
+
+export interface LocalPointHistoryEntry<TPoint> {
+  point: TPoint;
+  breakPointOutcome: BreakPointPointOutcome | null;
+}
 
 export function getBreakPointPointOutcomes(
   points: Pick<LocalPoint, 'isTiebreak' | 'server' | 'winner'>[],
@@ -620,6 +626,23 @@ export function getBreakPointPointOutcomes(
     }
   }
   return outcomes;
+}
+
+export function getLocalPointHistory<
+  TPoint extends Pick<LocalPoint, 'isTiebreak' | 'server' | 'winner'>,
+>(
+  points: readonly TPoint[],
+  format: SetFormat,
+  filter: LocalPointHistoryFilter = 'all',
+): LocalPointHistoryEntry<TPoint>[] {
+  const outcomes = getBreakPointPointOutcomes([...points], format);
+  return points
+    .map((point, index) => ({
+      point,
+      breakPointOutcome: outcomes[index] ?? null,
+    }))
+    .filter((entry) => filter === 'all' || entry.breakPointOutcome !== null)
+    .reverse();
 }
 
 export function calculateBreakPointStats(

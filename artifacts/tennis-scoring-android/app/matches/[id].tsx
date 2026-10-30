@@ -30,8 +30,8 @@ import * as Sharing from 'expo-sharing';
 import {
   getLocalInsights,
   getLocalMatch,
+  getLocalPointHistory,
   getLocalSetHistory,
-  getBreakPointPointOutcomes,
   LOCAL_MATCH_LIST_KEY,
   addLocalSet,
   updateLocalGameNote,
@@ -396,6 +396,8 @@ export default function MatchScreen() {
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const matchId = Array.isArray(params.id) ? params.id[0] ?? '' : params.id ?? '';
   const [endingCode, setEndingCode] = useState<PointCode | null>(null);
+  const [pointHistoryFilter, setPointHistoryFilter] =
+    useState<'all' | 'break_points'>('all');
   const [firstServeFault, setFirstServeFault] = useState(false);
   const [isPointContextExpanded, setIsPointContextExpanded] = useState(false);
   const [isStrokeEntryExpanded, setIsStrokeEntryExpanded] = useState(false);
@@ -446,6 +448,7 @@ export default function MatchScreen() {
   useEffect(() => {
     setSelectedReviewSetNumber(null);
     setEndingCode(null);
+    setPointHistoryFilter('all');
     setFirstServeFault(false);
     setShotDirection(null);
     setRallyLength(null);
@@ -900,17 +903,11 @@ export default function MatchScreen() {
   const trackedName = match.trackedPlayer;
   const opponentName = match.opponent;
   const viewedSet = displayedSet ?? currentSet ?? setHistory[setHistory.length - 1]!;
-  const viewedSetBreakPointOutcomes = getBreakPointPointOutcomes(
+  const pointHistoryEntries = getLocalPointHistory(
     viewedSet.points,
     viewedSet.format,
+    pointHistoryFilter,
   );
-  const recentHistoryPoints = viewedSet.points
-    .map((point, pointIndex) => ({
-      point,
-      breakPointOutcome: viewedSetBreakPointOutcomes[pointIndex],
-    }))
-    .slice(-8)
-    .reverse();
   const pointGroups = new Map<number, typeof viewedSet.points>();
   for (const point of viewedSet.points) {
     if (point.isTiebreak) continue;
@@ -2766,27 +2763,71 @@ export default function MatchScreen() {
               Set {viewedSet.setNumber} points
             </Text>
             <Text style={[styles.sectionCaption, { color: colors.mutedForeground }]}>
-              {viewedSet.points.length} recorded · latest first
+              {pointHistoryFilter === 'all'
+                ? `${pointHistoryEntries.length} recorded · newest first`
+                : `${pointHistoryEntries.length} break-point moments · newest first`}
             </Text>
           </View>
         </View>
 
+        <View style={styles.pointHistoryFilterRow}>
+          {([
+            ['all', 'All points', 'Show all recorded points'],
+            ['break_points', 'Break points', 'Show saved and converted break points'],
+          ] as const).map(([filter, label, accessibilityLabel]) => {
+            const selected = pointHistoryFilter === filter;
+            return (
+              <Pressable
+                key={filter}
+                testID={`button-point-history-filter-${filter}`}
+                accessibilityRole="button"
+                accessibilityLabel={accessibilityLabel}
+                accessibilityState={{ selected }}
+                onPress={() => setPointHistoryFilter(filter)}
+                style={({ pressed }) => [
+                  styles.pointHistoryFilterButton,
+                  {
+                    backgroundColor: selected ? colors.primary : colors.card,
+                    borderColor: selected ? colors.primary : colors.border,
+                    opacity: pressed ? 0.72 : 1,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.pointHistoryFilterText,
+                    {
+                      color: selected
+                        ? colors.primaryForeground
+                        : colors.foreground,
+                    },
+                  ]}
+                >
+                  {label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
         <View style={[styles.logCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          {viewedSet.points.length === 0 ? (
+          {pointHistoryEntries.length === 0 ? (
             <View style={styles.emptyLog}>
               <Ionicons name="list-outline" size={19} color={colors.mutedForeground} />
               <Text style={[styles.insightHint, { color: colors.mutedForeground }]}>
-                No points have been recorded in Set {viewedSet.setNumber}.
+                {pointHistoryFilter === 'break_points'
+                  ? `No break-point moments have been recorded in Set ${viewedSet.setNumber}.`
+                  : `No points have been recorded in Set ${viewedSet.setNumber}.`}
               </Text>
             </View>
           ) : (
-            recentHistoryPoints.map(({ point, breakPointOutcome }, index, recentPoints) => (
+            pointHistoryEntries.map(({ point, breakPointOutcome }, index, historyEntries) => (
                 <View
                   key={point.id}
                   testID={`point-log-${point.id}`}
                   style={[
                     styles.logRow,
-                    index < recentPoints.length - 1 && { borderBottomColor: colors.border },
+                    index < historyEntries.length - 1 && { borderBottomColor: colors.border },
                   ]}
                 >
                   <View
@@ -3526,6 +3567,9 @@ const styles = StyleSheet.create({
   noStats: { marginTop: 11, paddingTop: 11, borderTopWidth: StyleSheet.hairlineWidth },
   insightHint: { fontFamily: 'DMSans_400Regular', fontSize: 11, lineHeight: 16 },
   logCard: { borderWidth: 1, borderRadius: 11, paddingHorizontal: 12 },
+  pointHistoryFilterRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  pointHistoryFilterButton: { flex: 1, minHeight: 36, borderWidth: 1, borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 },
+  pointHistoryFilterText: { fontFamily: 'DMSans_600SemiBold', fontSize: 11, textAlign: 'center' },
   emptyLog: { minHeight: 74, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   logRow: { minHeight: 54, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 10 },
   logSequence: { width: 30, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },

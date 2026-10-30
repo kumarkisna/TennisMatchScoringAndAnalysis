@@ -705,6 +705,75 @@ test('undoing and replacing a converted break point recomputes saved match stats
   assertBreakPointRates(replacementInsights, 0, 100);
 });
 
+test('point history filter keeps all points and lists saved or converted chances newest first', () => {
+  const { localMatches } = loadStorageModulesAfterRestart();
+  const winners = [
+    'tracked',
+    'tracked',
+    'tracked',
+    'opponent',
+    'opponent',
+    'opponent',
+    'tracked',
+    'tracked',
+    'tracked',
+    'opponent',
+  ];
+  const points = winners.map((winner, index) => ({
+    sequenceNumber: index + 1,
+    isTiebreak: index >= 8,
+    server: 'opponent',
+    winner,
+  }));
+
+  const allHistory = localMatches.getLocalPointHistory(points, 'standard', 'all');
+  assert.deepEqual(
+    allHistory.map(({ point }) => point.sequenceNumber),
+    [10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
+  );
+
+  const breakPointHistory = localMatches.getLocalPointHistory(
+    points,
+    'standard',
+    'break_points',
+  );
+  assert.deepEqual(
+    breakPointHistory.map(({ point, breakPointOutcome }) => [
+      point.sequenceNumber,
+      breakPointOutcome,
+    ]),
+    [
+      [8, 'converted'],
+      [6, 'saved'],
+      [5, 'saved'],
+      [4, 'saved'],
+    ],
+  );
+
+  assert.deepEqual(
+    localMatches
+      .getLocalPointHistory(points, 'match_tiebreak', 'break_points')
+      .map(({ point }) => point.sequenceNumber),
+    [],
+  );
+});
+
+test('match details expose accessible controls for all points and break-point moments', () => {
+  const matchScreen = fs.readFileSync(
+    path.join(__dirname, '../app/matches/[id].tsx'),
+    'utf8',
+  );
+
+  assert.match(matchScreen, /button-point-history-filter-\$\{filter\}/);
+  assert.match(matchScreen, /Show all recorded points/);
+  assert.match(matchScreen, /Show saved and converted break points/);
+  assert.match(matchScreen, /setPointHistoryFilter\(filter\)/);
+  assert.match(
+    matchScreen,
+    /getLocalPointHistory\([\s\S]*?viewedSet\.format,\s*pointHistoryFilter/,
+  );
+});
+
 test('match detail edits preserve multi-set point history, score totals, and analytics', async () => {
   storageValues.clear();
   const { localMatches } = loadStorageModulesAfterRestart();
