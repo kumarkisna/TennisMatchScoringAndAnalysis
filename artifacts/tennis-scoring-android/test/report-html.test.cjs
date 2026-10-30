@@ -2917,6 +2917,113 @@ test('head-to-head PDF includes only selected analysis sections', () => {
   assert.doesNotMatch(html, /<h2>Coaching observations<\/h2>/);
 });
 
+test('short report layouts retain readable match details and natural print flow', () => {
+  const playerMatch = {
+    matchDate: '2026-10-30',
+    trackedPlayer: 'Alex Example',
+    opponent: 'Jordan Example',
+    surface: 'Hard',
+    matchStatus: 'complete',
+  };
+  const playerInsights = {
+    ...emptyInsight,
+    sets: [reportSetFixture()],
+  };
+  const playerSummary = {
+    ...summarizePlayerPerformance(playerInsights),
+    feedback: [],
+  };
+  const reportLabels = {
+    hidePlayerNames: true,
+    labels: { trackedPlayer: 'Player North', opponent: 'Player South' },
+  };
+  const assertPrintableFlow = (html) => {
+    assertCleanReport(html);
+    assert.match(html, /overflow-wrap:\s*anywhere/);
+    assert.doesNotMatch(
+      html,
+      /(?:page-break-before:\s*(?:always|left|right)|break-before:\s*(?:page|left|right)|page-break-after:\s*always|break-after:\s*page)/i,
+    );
+    assert.doesNotMatch(html, /(?:^|[;{])\s*(?:min-height|height)\s*:\s*\d/i);
+    assert.doesNotMatch(html, /<h[23]\b[^>]*>\s*<\/h[23]>/i);
+  };
+
+  const playerOverview = buildPlayerReportHtml(
+    playerMatch,
+    playerInsights,
+    playerSummary,
+    PLAYER_REPORT_SECTION_PRESETS[0].sections,
+    [],
+    reportLabels,
+  );
+  const playerStatistics = buildPlayerReportHtml(
+    playerMatch,
+    playerInsights,
+    playerSummary,
+    PLAYER_REPORT_SECTION_PRESETS[1].sections,
+    [],
+    reportLabels,
+  );
+
+  for (const html of [playerOverview, playerStatistics]) {
+    assertPrintableFlow(html);
+    assert.match(html, /Player North/);
+    assert.match(html, /Player South/);
+    assert.match(html, /October 30, 2026/);
+    assert.doesNotMatch(html, /Alex Example|Jordan Example/);
+  }
+  assert.match(
+    playerOverview,
+    /Set scores and winners:<\/strong> Set 1 6–4 — Player North/,
+  );
+  assert.doesNotMatch(playerOverview, /<h2>Set scores and winners<\/h2>/);
+  assert.match(playerStatistics, /<h2>Set scores and winners<\/h2>/);
+  assert.match(playerStatistics, /<td>6–4<\/td>/);
+  assert.match(playerStatistics, /<td>Player North<\/td>/);
+
+  const meeting = breakPointMeeting(
+    'short-layout-meeting',
+    'Alex Example',
+    'Jordan Example',
+    { opportunities: 2, converted: 1, faced: 3, saved: 2 },
+    { opportunities: 1, converted: 0, faced: 2, saved: 1 },
+    '2026-10-01',
+  );
+  const headToHeadReport = buildHeadToHeadReport(
+    'Alex Example',
+    'Jordan Example',
+    [meeting],
+    [meeting],
+  );
+  const headToHeadOverview = buildHeadToHeadReportHtml(
+    headToHeadReport,
+    HEAD_TO_HEAD_REPORT_SECTION_PRESETS[0].sections,
+    reportLabels,
+  );
+  const headToHeadStatistics = buildHeadToHeadReportHtml(
+    headToHeadReport,
+    HEAD_TO_HEAD_REPORT_SECTION_PRESETS[1].sections,
+    reportLabels,
+  );
+
+  for (const html of [headToHeadOverview, headToHeadStatistics]) {
+    assertPrintableFlow(html);
+    assert.match(html, /Player North/);
+    assert.match(html, /Player South/);
+    assert.doesNotMatch(html, /Alex Example|Jordan Example/);
+  }
+  assert.match(headToHeadOverview, /Head-to-Head Report/);
+  assert.doesNotMatch(
+    headToHeadOverview,
+    /<h2>Meetings and set scores<\/h2>/,
+  );
+  assert.match(headToHeadOverview, /LATEST MEETING · October 1, 2026/);
+  assert.match(headToHeadOverview, /6–4 — Player North/);
+  assert.match(headToHeadStatistics, /<h2>Meetings and set scores<\/h2>/);
+  assert.match(headToHeadStatistics, /October 1, 2026/);
+  assert.match(headToHeadStatistics, /6–4 — Player North/);
+});
+
 test('clearing all sections keeps match details without analysis sections', () => {
   const playerHtml = buildPlayerReportHtml(
     {
@@ -2964,6 +3071,10 @@ test('clearing all sections keeps match details without analysis sections', () =
 
   assert.match(playerHtml, /Tennis Match Report/);
   assert.match(playerHtml, /Alex/);
+  assert.match(
+    playerHtml,
+    /Set scores and winners:<\/strong> No set scores recorded/,
+  );
   assert.doesNotMatch(playerHtml, /<h2>/);
   assert.match(headToHeadHtml, /Head-to-Head Report/);
   assert.match(headToHeadHtml, /Jordan/);

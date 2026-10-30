@@ -461,6 +461,24 @@ export function buildHeadToHeadReportHtml(
     })
     .join('');
 
+  const latestMeeting = report.meetings[0];
+  const latestMeetingScores = latestMeeting?.summary.setScores.length
+    ? latestMeeting.summary.setScores
+        .map(
+          (set) =>
+            `${setScore(set)} — ${setResult(set, trackedPlayer, opponent)}`,
+        )
+        .join(' · ')
+    : 'No set score recorded';
+  const latestMeetingResult = latestMeeting
+    ? matchResult(
+        displayReport,
+        latestMeeting.summary.winner,
+        latestMeeting.summary.status,
+        latestMeeting.summary.matchOutcome,
+      )
+    : 'No meetings recorded';
+
   const tagRows = report.performance.codeInsights.length
     ? report.performance.codeInsights
         .map(
@@ -537,17 +555,19 @@ export function buildHeadToHeadReportHtml(
       main { padding: 14mm; }
       .eyebrow { color: #a45c45; font-size: 9px; font-weight: 700; letter-spacing: 1.8px; }
       h1 { font-size: 23px; margin: 7px 0 14px; }
-      h2 { break-after: avoid; font-size: 14px; margin: 22px 0 9px; }
-      h3 { font-size: 11px; margin: 13px 0 6px; }
-      .pairing { background: #f2f1e9; border-radius: 8px; display: grid; gap: 12px; grid-template-columns: 1fr auto 1fr; padding: 12px; }
+      h2 { break-after: avoid; page-break-after: avoid; font-size: 14px; margin: 22px 0 9px; }
+      h3 { break-after: avoid; page-break-after: avoid; font-size: 11px; margin: 13px 0 6px; }
+      .pairing { background: #f2f1e9; border-radius: 8px; break-inside: avoid; display: grid; gap: 12px; grid-template-columns: 1fr auto 1fr; page-break-inside: avoid; padding: 12px; }
       .player-label { color: #60746c; font-size: 8px; font-weight: 700; letter-spacing: 1px; }
       .player-name { font-size: 14px; font-weight: 700; margin-top: 5px; overflow-wrap: anywhere; }
       .versus { align-self: center; color: #718078; font-size: 10px; font-weight: 700; }
-      .cards { display: grid; gap: 8px; grid-template-columns: repeat(4, 1fr); margin: 13px 0; }
-      .card { background: #f2f1e9; border-radius: 8px; padding: 10px; }
+      .cards { break-inside: avoid; display: grid; gap: 8px; grid-template-columns: repeat(4, 1fr); margin: 13px 0; page-break-inside: avoid; }
+      .card { background: #f2f1e9; border-radius: 8px; break-inside: avoid; page-break-inside: avoid; padding: 10px; }
       .label { color: #60746c; font-size: 8px; font-weight: 700; letter-spacing: .7px; }
       .value { color: #245d4b; font-size: 16px; font-weight: 700; margin-top: 5px; }
       .sample { color: #60746c; font-size: 8px; line-height: 1.4; margin-top: 3px; }
+      .latest-meeting { background: #fbfaf6; border: 1px solid #dcded4; border-radius: 7px; break-inside: avoid; margin: 0 0 12px; page-break-inside: avoid; padding: 9px 11px; }
+      .latest-meeting-detail { color: #183a30; font-size: 9px; line-height: 1.45; margin-top: 4px; overflow-wrap: anywhere; }
       .note { color: #60746c; font-size: 9px; line-height: 1.5; }
       .feedback { background: #f2f1e9; border-left: 3px solid #a45c45; padding: 8px 12px; }
       .feedback li { font-size: 9px; line-height: 1.5; margin: 4px 0; }
@@ -555,7 +575,7 @@ export function buildHeadToHeadReportHtml(
       thead { display: table-header-group; }
       tr { break-inside: avoid; page-break-inside: avoid; }
       th { background: #245d4b; color: #fff; text-align: left; }
-      th, td { border-bottom: 1px solid #dcded4; padding: 6px 5px; vertical-align: top; }
+      th, td { border-bottom: 1px solid #dcded4; overflow-wrap: anywhere; padding: 6px 5px; vertical-align: top; }
       th:first-child, td:first-child { width: 40%; }
       .matches-table th:first-child, .matches-table td:first-child { width: 18%; }
       .matches-table th:nth-child(2), .matches-table td:nth-child(2) { width: 21%; }
@@ -582,6 +602,10 @@ export function buildHeadToHeadReportHtml(
         <div class="card"><div class="label">SET RECORD</div><div class="value">${setRecord}</div><div class="sample">${report.setsRecorded} recorded · ${report.completedSets} complete</div></div>
         <div class="card"><div class="label">POINTS WON</div><div class="value">${rate(insights.trackedPointsWon, insights.pointCount)}</div><div class="sample">${insights.pointCount} recorded points</div></div>
         <div class="card"><div class="label">IN PROGRESS</div><div class="value">${report.matchesInProgress}</div><div class="sample">not included in match W–L</div></div>
+      </div>
+      <div class="latest-meeting">
+        <div class="label">${latestMeeting ? `LATEST MEETING · ${escapeHtml(formatDate(latestMeeting.summary.matchDate))}` : 'LATEST MEETING'}</div>
+        <div class="latest-meeting-detail">${escapeHtml(latestMeetingResult)} · ${escapeHtml(latestMeetingScores)}</div>
       </div>
       ` : ''}
       <p class="note"><strong>Report basis:</strong> Only matches recorded with ${escapeHtml(trackedPlayer)} as the tracked player are included. Reverse-oriented records are excluded. Rates show wins and attempts; optional tags describe only what was entered and their absence does not mean an event did not occur. Coaching notes are based on this local sample, not outside player data.</p>

@@ -494,6 +494,18 @@ export function buildPlayerReportHtml(
         )
         .join('')
     : '<tr><td colspan="3">No set data recorded.</td></tr>';
+  const compactSetResults = reportSets.length
+    ? reportSets
+        .map(
+          (set) =>
+            `Set ${set.setNumber} ${setScore(set)} — ${setWinnerLabel(
+              set,
+              trackedPlayerLabel,
+              opponentLabel,
+            )}`,
+        )
+        .join(' · ')
+    : 'No set scores recorded.';
   const breakPointConversionRows = reportSets.length
     ? reportSets
         .map(
@@ -621,6 +633,7 @@ export function buildPlayerReportHtml(
       .date-result-label { color: #60746c; font-size: 8px; font-weight: 700; letter-spacing: 1px; }
       .date-result-value { color: #183a30; font-size: 12px; font-weight: 700; }
       .meta { border-bottom: 1px solid #dcded4; color: #53685f; display: grid; font-size: 11px; gap: 8px 18px; grid-template-columns: 1fr 1fr; margin: 18px 0; padding-bottom: 16px; }
+      .meta > div { overflow-wrap: anywhere; }
       .meta strong { color: #183a30; }
       h2 { break-after: avoid; page-break-after: avoid; font-size: 15px; margin: 22px 0 10px; }
       .stats { display: grid; gap: 8px; grid-template-columns: 1fr 1fr; }
@@ -702,6 +715,7 @@ export function buildPlayerReportHtml(
       <div><strong>Status:</strong> ${match.matchStatus === 'complete' ? 'Complete' : 'In progress'}</div>
       ${displayMatch.matchOutcome ? `<div><strong>Outcome reason:</strong> ${displayMatch.matchOutcome.reason === 'retirement' ? 'Retirement' : 'Walkover'}</div>` : ''}
       <div><strong>Points logged:</strong> ${insights.pointCount}</div>
+      ${includes('sets') ? '' : `<div><strong>Set scores and winners:</strong> ${escape(compactSetResults)}</div>`}
     </div>
     <p class="note">
       <strong>Report basis:</strong> Generated from saved match points. Rates include denominators; small samples are directional, not conclusions. Break-point counts are reconstructed from regular games; standard tie-break points and match tie-break sets are excluded. Any reference columns are user-entered preset values, not match results or live statistics.
