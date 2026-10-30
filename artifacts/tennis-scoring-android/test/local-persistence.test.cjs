@@ -734,6 +734,26 @@ test('undoing and replacing a converted break point recomputes saved match stats
   for (const winner of recordedWinners) {
     current = await localMatches.recordLocalPoint(match.id, { winner });
   }
+  const getSavedBreakPointMoments = async () => {
+    const savedMatch = await localMatches.getLocalMatch(match.id);
+    assert.ok(savedMatch);
+    const savedSet = localMatches
+      .getLocalSetHistory(savedMatch)
+      .find((set) => set.isCurrent);
+    assert.ok(savedSet);
+    return localMatches
+      .getLocalPointHistory(savedSet.points, savedSet.format, 'break_points')
+      .map(({ point, breakPointOutcome }) => [
+        point.sequenceNumber,
+        breakPointOutcome,
+      ]);
+  };
+  assert.deepEqual(await getSavedBreakPointMoments(), [
+    [8, 'converted'],
+    [6, 'saved'],
+    [5, 'saved'],
+    [4, 'saved'],
+  ]);
 
   const percentage = (value, total) =>
     total === 0 ? null : Number(((value / total) * 100).toFixed(1));
@@ -769,6 +789,11 @@ test('undoing and replacing a converted break point recomputes saved match stats
     savedAfterUndo.points.map((point) => point.winner),
     recordedWinners.slice(0, -1),
   );
+  assert.deepEqual(await getSavedBreakPointMoments(), [
+    [6, 'saved'],
+    [5, 'saved'],
+    [4, 'saved'],
+  ]);
   const undoneInsights = localMatches.calculateLocalInsights(savedAfterUndo);
   assert.deepEqual(undoneInsights.breakPoints, {
     tracked: { opportunities: 3, converted: 0, faced: 0, saved: 0 },
@@ -781,6 +806,12 @@ test('undoing and replacing a converted break point recomputes saved match stats
   });
   assert.equal(replacement.points.length, 8);
   assert.equal(replacement.points.at(-1).winner, 'opponent');
+  assert.deepEqual(await getSavedBreakPointMoments(), [
+    [8, 'saved'],
+    [6, 'saved'],
+    [5, 'saved'],
+    [4, 'saved'],
+  ]);
   const replacementInsights =
     localMatches.calculateLocalInsights(replacement);
   assert.deepEqual(replacementInsights.breakPoints, {
@@ -978,6 +1009,18 @@ test('match details expose accessible controls for all points and break-point mo
   assert.match(
     matchScreen,
     /getLocalPointHistory\([\s\S]*?viewedSet\.format,\s*pointHistoryFilter/,
+  );
+  assert.match(
+    matchScreen,
+    /const undoPoint = useMutation\(\s*\{\s*mutationFn: \(\) => undoLocalPoint\(matchId\),\s*onSuccess: onUpdated/,
+  );
+  assert.match(
+    matchScreen,
+    /const recordPoint = useMutation\(\s*\{[\s\S]*?onSuccess: \(updatedMatch\) => \{[\s\S]*?onUpdated\(updatedMatch\);/,
+  );
+  assert.match(
+    matchScreen,
+    /queryClient\.setQueryData\(localMatchKey\(matchId\), updatedMatch\)/,
   );
 });
 
