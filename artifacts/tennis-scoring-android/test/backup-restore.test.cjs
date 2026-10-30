@@ -487,6 +487,109 @@ test('backup save, share, and restore preserve all players and sets without netw
   assert.equal(networkRequestCount, 0);
 });
 
+test('backup restore keeps game notes with their sets and games and allows local edits', async () => {
+  storageValues.clear();
+  savedDeviceBackup = null;
+  networkRequestCount = 0;
+  loadLocalModules();
+
+  const player = await activeModules.localPlayers.addLocalPlayer('Sana Iyer');
+  await activeModules.localPlayers.setActiveLocalPlayerId(player.id);
+  const match = await activeModules.localMatches.createLocalMatch({
+    matchDate: '2026-10-30',
+    event: 'Game Notes Backup Test',
+    round: 'Final',
+    trackedPlayer: player.name,
+    trackedPlayerId: player.id,
+    opponent: 'Maya Rao',
+    chairCoach: null,
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+
+  const setNotes = [
+    { setNumber: 1, gameNumber: 6, note: 'Set one: changed direction on game point.' },
+    { setNumber: 2, gameNumber: 3, note: 'Set two: improved first-serve placement.' },
+  ];
+  for (const { setNumber, gameNumber, note } of setNotes) {
+    for (let point = 0; point < 24; point += 1) {
+      await activeModules.localMatches.recordLocalPoint(match.id, {
+        winner: 'tracked',
+      });
+    }
+    await activeModules.localMatches.updateLocalGameNote(
+      match.id,
+      setNumber,
+      gameNumber,
+      note,
+    );
+    if (setNumber < setNotes.length) {
+      await activeModules.localMatches.addLocalSet(match.id, 'standard');
+    }
+  }
+  await activeModules.localMatches.addLocalSet(match.id, 'standard');
+
+  const saveResult = await loadBackupModule().saveLocalBackupToDevice();
+  assert.equal(saveResult.cancelled, false);
+  const exported = JSON.parse(savedDeviceBackup.contents);
+  assert.deepEqual(
+    exported.matches[0].completedSets.map((set) => ({
+      setNumber: set.setNumber,
+      gameNotes: set.gameNotes,
+    })),
+    setNotes.map(({ setNumber, gameNumber, note }) => ({
+      setNumber,
+      gameNotes: [{ gameNumber, note }],
+    })),
+  );
+
+  storageValues.clear();
+  loadLocalModules();
+  selectedBackupContents = savedDeviceBackup.contents;
+  const restoreResult = await loadBackupModule().loadLocalBackupFromDevice();
+  assert.deepEqual(restoreResult, {
+    cancelled: false,
+    playersAdded: 1,
+    playersSkipped: 0,
+    matchesAdded: 1,
+    matchesSkipped: 0,
+  });
+
+  let restoredMatch = await activeModules.localMatches.getLocalMatch(match.id);
+  assert.ok(restoredMatch);
+  assert.deepEqual(
+    restoredMatch.completedSets.map((set) => ({
+      setNumber: set.setNumber,
+      gameNotes: set.gameNotes,
+    })),
+    setNotes.map(({ setNumber, gameNumber, note }) => ({
+      setNumber,
+      gameNotes: [{ gameNumber, note }],
+    })),
+  );
+
+  await activeModules.localMatches.updateLocalGameNote(
+    match.id,
+    2,
+    3,
+    'Set two: revised after restoring the backup.',
+  );
+  loadLocalModules();
+  restoredMatch = await activeModules.localMatches.getLocalMatch(match.id);
+  assert.ok(restoredMatch);
+  assert.deepEqual(restoredMatch.completedSets[0].gameNotes, [
+    { gameNumber: 6, note: 'Set one: changed direction on game point.' },
+  ]);
+  assert.deepEqual(restoredMatch.completedSets[1].gameNotes, [
+    {
+      gameNumber: 3,
+      note: 'Set two: revised after restoring the backup.',
+    },
+  ]);
+  assert.equal(networkRequestCount, 0);
+});
+
 test('backup restore remaps both saved player links and keeps each player history offline', async () => {
   storageValues.clear();
   networkRequestCount = 0;
