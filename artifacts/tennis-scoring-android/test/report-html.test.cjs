@@ -681,6 +681,55 @@ test('player statistics match a deterministic four-game point log', () => {
   );
 });
 
+test('player feedback interprets break-point results and marks small samples directional', () => {
+  const match = performanceSampleMatch();
+  const insights = {
+    ...calculateLocalInsights(match),
+    breakPoints: {
+      tracked: { opportunities: 3, converted: 2, faced: 4, saved: 3 },
+      opponent: { ...emptyBreakPoints },
+    },
+  };
+  const directional = summarizePlayerPerformance(insights);
+  assert.ok(
+    directional.feedback.includes(
+      'Directional only, not conclusive: the tracked player converted 2 of 3 break-point chances (67%).',
+    ),
+  );
+  assert.ok(
+    directional.feedback.includes(
+      'Directional only, not conclusive: the tracked player saved 3 of 4 break points faced (75%).',
+    ),
+  );
+
+  const reportHtml = buildPlayerReportHtml(
+    match,
+    insights,
+    directional,
+  );
+  assert.match(reportHtml, /Directional only, not conclusive/);
+  assert.match(reportHtml, /converted 2 of 3 break-point chances \(67%\)/);
+  assert.match(reportHtml, /saved 3 of 4 break points faced \(75%\)/);
+
+  const establishedSample = summarizePlayerPerformance({
+    ...insights,
+    breakPoints: {
+      tracked: { opportunities: 6, converted: 2, faced: 5, saved: 2 },
+      opponent: { ...emptyBreakPoints },
+    },
+  });
+  assert.ok(
+    establishedSample.feedback.includes(
+      'Break-point conversion is an area to work on: the tracked player converted 2 of 6 break-point chances (33%).',
+    ),
+  );
+  assert.ok(
+    establishedSample.feedback.includes(
+      'Break-point defense is an area to work on: the tracked player saved 2 of 5 break points faced (40%).',
+    ),
+  );
+});
+
 test('untagged or zero-denominator report statistics are unavailable', () => {
   const match = {
     ...performanceSampleMatch(),

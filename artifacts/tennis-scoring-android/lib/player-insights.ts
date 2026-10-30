@@ -216,6 +216,41 @@ function percent(numerator: number, denominator: number): number | null {
   return Math.round((numerator / denominator) * 100);
 }
 
+function breakPointFeedback(
+  kind: 'conversion' | 'saving',
+  successful: number,
+  total: number,
+): string | null {
+  const successPercent = percent(successful, total);
+  if (successPercent === null) return null;
+
+  const detail =
+    kind === 'conversion'
+      ? `converted ${successful} of ${total} break-point chances`
+      : `saved ${successful} of ${total} break points faced`;
+  if (total < 5) {
+    return `Directional only, not conclusive: the tracked player ${detail} (${successPercent}%).`;
+  }
+
+  if (kind === 'conversion') {
+    if (successPercent >= 50) {
+      return `Break-point conversion was a strength in this sample: the tracked player ${detail} (${successPercent}%).`;
+    }
+    if (successPercent <= 35) {
+      return `Break-point conversion is an area to work on: the tracked player ${detail} (${successPercent}%).`;
+    }
+    return `Break-point conversion was mixed in this sample: the tracked player ${detail} (${successPercent}%).`;
+  }
+
+  if (successPercent >= 60) {
+    return `Break-point defense was a strength in this sample: the tracked player ${detail} (${successPercent}%).`;
+  }
+  if (successPercent <= 40) {
+    return `Break-point defense is an area to work on: the tracked player ${detail} (${successPercent}%).`;
+  }
+  return `Break-point defense was mixed in this sample: the tracked player ${detail} (${successPercent}%).`;
+}
+
 function summarizeContext<T extends string>(
   options: readonly { value: T; label: string }[],
   records: readonly LocalContextInsight<T>[],
@@ -363,6 +398,18 @@ export function summarizePlayerPerformance(
     0,
   );
 
+  const breakPointFeedbackItems = [
+    breakPointFeedback(
+      'conversion',
+      insights.breakPoints.tracked.converted,
+      insights.breakPoints.tracked.opportunities,
+    ),
+    breakPointFeedback(
+      'saving',
+      insights.breakPoints.tracked.saved,
+      insights.breakPoints.tracked.faced,
+    ),
+  ].filter((item): item is string => item !== null);
   const feedback: string[] = [];
   const shotFeedback: string[] = [];
 
@@ -491,6 +538,10 @@ export function summarizePlayerPerformance(
     rallyLengthTaggedCount,
     shotDirections,
     rallyLengths,
-    feedback: [...feedback.slice(0, 3), ...shotFeedback].slice(0, 4),
+    feedback: [
+      ...breakPointFeedbackItems,
+      ...feedback.slice(0, 2),
+      ...shotFeedback,
+    ].slice(0, 5),
   };
 }
