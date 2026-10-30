@@ -328,7 +328,7 @@ test('profile links accept HTTP(S), normalize bare domains, and ignore blank row
   );
 });
 
-test('profile link edits and removals keep each label with its URL', async () => {
+test('profile link pairs survive edits, removals, and a saved-player rename', async () => {
   storageValues.clear();
   const { localPlayers } = loadStorageModulesAfterRestart();
   const links = localPlayers.pairLocalPlayerProfileLinks(
@@ -389,32 +389,49 @@ test('profile link edits and removals keep each label with its URL', async () =>
   await localPlayers.updateLocalPlayer(
     saved.id,
     'Renamed profile link alignment player',
-    localPlayers.serializeLocalPlayerProfileLinks(edited),
+    localPlayers.serializeLocalPlayerProfileLinks(links),
   );
   const afterRestart = loadStorageModulesAfterRestart();
   const restored = (await afterRestart.localPlayers.listLocalPlayers()).find(
     (player) => player.id === saved.id,
   );
   assert.ok(restored);
+  assert.equal(restored.name, 'Renamed profile link alignment player');
   assert.deepEqual(
     afterRestart.localPlayers.pairLocalPlayerProfileLinks(
       restored.profileUrls,
       restored.profileUrlLabels,
     ),
-    edited,
+    links,
   );
 
-  const presentation =
-    afterRestart.localPlayers.getLocalPlayerProfileLinkPresentation(
-      edited[1],
-      1,
-    );
-  assert.deepEqual(presentation, {
-    url: 'https://academy.example.net/players/one',
-    host: 'academy.example.net',
-    displayLabel: 'Club profile',
-    displayText: 'Club profile · academy.example.net',
-  });
+  const presentations = links.map((link, index) =>
+    afterRestart.localPlayers.getLocalPlayerProfileLinkPresentation(link, index),
+  );
+  assert.deepEqual(
+    presentations.map(({ url, displayLabel, displayText }) => ({
+      url,
+      displayLabel,
+      displayText,
+    })),
+    [
+      {
+        url: 'https://atp.example.org/player/one',
+        displayLabel: 'ATP profile',
+        displayText: 'ATP profile · atp.example.org',
+      },
+      {
+        url: 'https://club.example.org/players/one',
+        displayLabel: 'Club profile',
+        displayText: 'Club profile · club.example.org',
+      },
+      {
+        url: 'https://itf.example.org/player/one',
+        displayLabel: 'ITF profile',
+        displayText: 'ITF profile · itf.example.org',
+      },
+    ],
+  );
 
   const playersScreen = fs.readFileSync(
     path.join(__dirname, '../app/players.tsx'),
@@ -426,7 +443,19 @@ test('profile link edits and removals keep each label with its URL', async () =>
   );
   assert.match(
     playersScreen,
+    /setProfileLinks\(\s*pairLocalPlayerProfileLinks\(\s*player\.profileUrls\s*\?\?\s*\[\],\s*player\.profileUrlLabels\s*\?\?\s*\[\],\s*\),\s*\);/,
+  );
+  assert.match(
+    playersScreen,
+    /getLocalPlayerProfileLinkPresentation\(\s*link,\s*linkIndex,\s*\)/,
+  );
+  assert.match(
+    playersScreen,
     /onPress=\{\(\) => void openProfileLink\(presentation\.url\)\}/,
+  );
+  assert.match(
+    playersScreen,
+    /async function openProfileLink\(url: string\) \{\s*try \{\s*await Linking\.openURL\(url\)/,
   );
   assert.match(playersScreen, /\{presentation\.displayText\}/);
   assert.match(
