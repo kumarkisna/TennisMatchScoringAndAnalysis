@@ -468,6 +468,128 @@ test('match detail edits preserve multi-set point history, score totals, and ana
   assert.deepEqual(localMatches.calculateLocalInsights(standardEdited), standardInsights);
 });
 
+test('completed match-tiebreak result survives player-label and metadata edits', async () => {
+  storageValues.clear();
+  const { localMatches } = loadStorageModulesAfterRestart();
+  const match = await localMatches.createLocalMatch({
+    matchDate: '2026-10-30',
+    event: 'City Open',
+    round: 'Final',
+    trackedPlayer: 'Sana Iyer',
+    opponent: 'Maya Rao',
+    chairCoach: 'Coach Lee',
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+
+  for (let point = 0; point < 24; point += 1) {
+    await localMatches.recordLocalPoint(match.id, { winner: 'tracked' });
+  }
+  await localMatches.addLocalSet(match.id, 'match_tiebreak', 7);
+  for (let point = 0; point < 7; point += 1) {
+    await localMatches.recordLocalPoint(match.id, { winner: 'tracked' });
+  }
+  await localMatches.finishLocalMatch(match.id);
+
+  const before = await localMatches.getLocalMatch(match.id);
+  assert.ok(before);
+  assert.equal(before.matchStatus, 'complete');
+  assert.equal(before.score.isComplete, true);
+  assert.equal(before.score.winner, 'tracked');
+  assert.equal(before.completedSets.length, 1);
+  assert.equal(before.setFormat, 'match_tiebreak');
+  assert.equal(before.tiebreakTarget, 7);
+  const beforeSummary = (await localMatches.listLocalMatches()).find(
+    (summary) => summary.id === match.id,
+  );
+  assert.ok(beforeSummary);
+  assert.equal(beforeSummary.status, 'complete');
+  assert.equal(beforeSummary.winner, 'tracked');
+  assert.equal(beforeSummary.setScores.length, 2);
+  assert.deepEqual(
+    beforeSummary.setScores.map((set) => [
+      set.setNumber,
+      set.format,
+      set.trackedGames,
+      set.opponentGames,
+      set.trackedTiebreakPoints,
+      set.opponentTiebreakPoints,
+      set.isComplete,
+    ]),
+    [
+      [1, 'standard', 6, 0, 0, 0, true],
+      [2, 'match_tiebreak', 0, 0, 7, 0, true],
+    ],
+  );
+  const beforeInsights = localMatches.calculateLocalInsights(before);
+  const beforeScore = { ...before.score };
+  delete beforeScore.nextServer;
+  const beforePointHistory = localMatches
+    .getLocalSetHistory(before)
+    .map((set) => ({
+      setNumber: set.setNumber,
+      format: set.format,
+      tiebreakTarget: set.tiebreakTarget,
+      points: set.points,
+    }));
+
+  await localMatches.updateLocalMatchDetails(match.id, {
+    matchDate: '2026-11-02',
+    trackedPlayer: 'Sana Iyer Updated',
+    opponent: 'Maya Rao Updated',
+    event: 'Winter Championships',
+    round: 'Semi-final',
+    chairCoach: 'Coach Patel',
+    surface: 'Clay',
+    firstServer: 'opponent',
+  });
+
+  const afterRestart = loadStorageModulesAfterRestart();
+  const after = await afterRestart.localMatches.getLocalMatch(match.id);
+  assert.ok(after);
+  const afterSummary = (await afterRestart.localMatches.listLocalMatches()).find(
+    (summary) => summary.id === match.id,
+  );
+  assert.ok(afterSummary);
+  assert.equal(after.matchDate, '2026-11-02');
+  assert.equal(after.trackedPlayer, 'Sana Iyer Updated');
+  assert.equal(after.opponent, 'Maya Rao Updated');
+  assert.equal(after.event, 'Winter Championships');
+  assert.equal(after.round, 'Semi-final');
+  assert.equal(after.chairCoach, 'Coach Patel');
+  assert.equal(after.surface, 'Clay');
+  assert.equal(after.firstServer, 'opponent');
+  assert.equal(after.matchStatus, 'complete');
+  assert.equal(after.status, 'complete');
+  assert.equal(after.score.isComplete, true);
+  assert.equal(after.score.winner, 'tracked');
+  assert.deepEqual(afterSummary.setScores, beforeSummary.setScores);
+  assert.equal(afterSummary.status, beforeSummary.status);
+  assert.equal(afterSummary.winner, beforeSummary.winner);
+
+  const afterScore = { ...after.score };
+  delete afterScore.nextServer;
+  assert.deepEqual(afterScore, beforeScore);
+  assert.deepEqual(after.completedSets, before.completedSets);
+  assert.deepEqual(after.points, before.points);
+  assert.deepEqual(
+    afterRestart.localMatches
+      .getLocalSetHistory(after)
+      .map((set) => ({
+        setNumber: set.setNumber,
+        format: set.format,
+        tiebreakTarget: set.tiebreakTarget,
+        points: set.points,
+      })),
+    beforePointHistory,
+  );
+  assert.deepEqual(
+    afterRestart.localMatches.calculateLocalInsights(after),
+    beforeInsights,
+  );
+});
+
 test('saved player choices relink both match sides without changing recorded points', async (t) => {
   storageValues.clear();
   const originalFetch = global.fetch;
