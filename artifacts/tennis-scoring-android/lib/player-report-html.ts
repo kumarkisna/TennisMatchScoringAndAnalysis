@@ -5,7 +5,10 @@ import type {
   PlayerReportInsights,
 } from '@/lib/player-insights';
 import type { LocalReportBenchmarkPreset } from '@/lib/local-benchmarks';
-import { escapeReportHtml as escapeHtml } from '@/lib/report-html-utils';
+import {
+  anonymizeReportPlayerNames,
+  escapeReportHtml as escapeHtml,
+} from '@/lib/report-html-utils';
 import {
   allPlayerReportSections,
   type PlayerReportSection,
@@ -146,10 +149,23 @@ export function buildPlayerReportHtml(
     LocalReportBenchmarkPreset,
     'firstServePointsWon' | 'secondServePointsWon' | 'serviceGamesWon'
   >[] = [],
+  options: { hidePlayerNames?: boolean } = {},
 ): string {
+  const hidePlayerNames = options.hidePlayerNames ?? false;
+  const trackedPlayerLabel = hidePlayerNames ? 'Player A' : match.trackedPlayer;
+  const opponentLabel = hidePlayerNames ? 'Player B' : match.opponent;
+  const displayMatch = {
+    ...match,
+    trackedPlayer: trackedPlayerLabel,
+    opponent: opponentLabel,
+  };
   const includes = (section: PlayerReportSection) =>
     selectedSections.includes(section);
   const escape = escapeHtml;
+  const displayText = (value: string) =>
+    hidePlayerNames
+      ? anonymizeReportPlayerNames(value, match.trackedPlayer, match.opponent)
+      : value;
   const shotRows = summary.codeInsights.length
     ? summary.codeInsights
         .map(
@@ -174,7 +190,7 @@ export function buildPlayerReportHtml(
     )
     .join('');
   const feedbackRows = summary.feedback
-    .map((item) => `<li>${escape(item)}</li>`)
+    .map((item) => `<li>${escape(displayText(item))}</li>`)
     .join('');
   const strokeResultLabels = {
     in_play: 'In play',
@@ -185,7 +201,7 @@ export function buildPlayerReportHtml(
     .filter((item) => item.sampleCount > 0)
     .map((item) => `
       <tr>
-        <td>${escape(item.player === 'tracked' ? match.trackedPlayer : match.opponent)}</td>
+        <td>${escape(item.player === 'tracked' ? trackedPlayerLabel : opponentLabel)}</td>
         <td>${escape(STROKE_LABELS[item.strokeType])}</td>
         <td>${item.inPlay}</td>
         <td>${item.errors}</td>
@@ -197,10 +213,10 @@ export function buildPlayerReportHtml(
     .map((item) => `
       <tr>
         <td>Set ${item.setNumber}, Game ${item.gameNumber}, Point ${item.sequenceNumber}</td>
-        <td>${escape(item.player === 'tracked' ? match.trackedPlayer : match.opponent)}</td>
+        <td>${escape(item.player === 'tracked' ? trackedPlayerLabel : opponentLabel)}</td>
         <td>${escape(STROKE_LABELS[item.strokeType])}</td>
         <td>${escape(strokeResultLabels[item.result])}</td>
-        <td>${escape(item.note)}</td>
+        <td>${escape(displayText(item.note))}</td>
       </tr>`)
     .join('');
   const setObservationSections = insights.sets
@@ -227,7 +243,7 @@ export function buildPlayerReportHtml(
           : []),
       ];
       if (!notes.length) return '';
-      return `<section class="observation-group"><h3>Set ${set.setNumber} observations</h3><ul class="observation-list">${notes.map((note) => `<li>${escape(note)}</li>`).join('')}</ul></section>`;
+      return `<section class="observation-group"><h3>Set ${set.setNumber} observations</h3><ul class="observation-list">${notes.map((note) => `<li>${escape(displayText(note))}</li>`).join('')}</ul></section>`;
     })
     .filter(Boolean)
     .join('');
@@ -413,7 +429,7 @@ export function buildPlayerReportHtml(
             <tr>
               <td>Set ${set.setNumber}<span class="sub">${set.isComplete ? 'Complete' : 'In progress'}</span></td>
               <td>${setScore(set)}</td>
-              <td>${escape(setWinnerLabel(set, match.trackedPlayer, match.opponent))}</td>
+              <td>${escape(setWinnerLabel(set, trackedPlayerLabel, opponentLabel))}</td>
             </tr>`,
         )
         .join('')
@@ -516,11 +532,11 @@ export function buildPlayerReportHtml(
   const pointsWonTile = rate(insights.trackedPointsWon, insights.pointCount);
   const serviceWonTile = rate(insights.servicePointsWon, insights.trackedServicePoints);
   const returnWonTile = rate(insights.returnPointsWon, insights.trackedReturnPoints);
-  const event = match.event?.trim() || 'Match session';
-  const round = match.round?.trim() || 'Not specified';
-  const coach = match.chairCoach?.trim() || 'Not specified';
+  const event = displayText(match.event?.trim() || 'Match session');
+  const round = displayText(match.round?.trim() || 'Not specified');
+  const coach = displayText(match.chairCoach?.trim() || 'Not specified');
   const reportDate = formatReportDate(match.matchDate);
-  const matchWinner = matchWinnerLabel(match, insights.sets);
+  const matchWinner = matchWinnerLabel(displayMatch, insights.sets);
 
   return `<!doctype html>
 <html>
@@ -593,12 +609,12 @@ export function buildPlayerReportHtml(
     <div class="match-heading">
       <div class="player-block">
         <div class="player-label">TRACKED PLAYER</div>
-        <div class="player-name">${escape(match.trackedPlayer)}</div>
+        <div class="player-name">${escape(trackedPlayerLabel)}</div>
       </div>
       <div class="versus">VS</div>
       <div class="player-block">
         <div class="player-label">OPPONENT</div>
-        <div class="player-name">${escape(match.opponent)}</div>
+        <div class="player-name">${escape(opponentLabel)}</div>
       </div>
     </div>
     <div class="date-result">
@@ -662,7 +678,7 @@ export function buildPlayerReportHtml(
       <strong>Quick read:</strong>
       ${insights.pointCount === 0
         ? 'No points have been recorded yet, so performance percentages are not available.'
-        : `${escape(match.trackedPlayer)} won ${rate(insights.trackedPointsWon, insights.pointCount)} of logged points. The serve rate was ${rate(insights.servicePointsWon, insights.trackedServicePoints)} and the return rate was ${rate(insights.returnPointsWon, insights.trackedReturnPoints)}.`}
+        : `${escape(trackedPlayerLabel)} won ${rate(insights.trackedPointsWon, insights.pointCount)} of logged points. The serve rate was ${rate(insights.servicePointsWon, insights.trackedServicePoints)} and the return rate was ${rate(insights.returnPointsWon, insights.trackedReturnPoints)}.`}
     </div>` : ''}
 
     ${includes('serve') ? `<h2>Serve</h2>
@@ -670,8 +686,8 @@ export function buildPlayerReportHtml(
       <thead>
         <tr>
           <th>Stat</th>
-          <th>${escape(match.trackedPlayer)} · match</th>
-          <th>${escape(match.opponent)} · match</th>
+          <th>${escape(trackedPlayerLabel)} · match</th>
+          <th>${escape(opponentLabel)} · match</th>
           ${benchmarkHeaders}
         </tr>
       </thead>
@@ -684,7 +700,7 @@ export function buildPlayerReportHtml(
     ${includes('return') ? `<h2>Return</h2>
     <table class="metric-table return-table">
       <thead>
-        <tr><th>Stat</th><th>${escape(match.trackedPlayer)} · match</th><th>${escape(match.opponent)} · match</th></tr>
+        <tr><th>Stat</th><th>${escape(trackedPlayerLabel)} · match</th><th>${escape(opponentLabel)} · match</th></tr>
       </thead>
       <tbody>${returnRows}</tbody>
     </table>` : ''}
@@ -702,14 +718,14 @@ export function buildPlayerReportHtml(
     <h3>Returning · opportunities created</h3>
     <table>
       <thead>
-        <tr><th>Set</th><th>${escape(match.trackedPlayer)} converted</th><th>${escape(match.trackedPlayer)} missed</th><th>${escape(match.opponent)} converted</th><th>${escape(match.opponent)} missed</th></tr>
+        <tr><th>Set</th><th>${escape(trackedPlayerLabel)} converted</th><th>${escape(trackedPlayerLabel)} missed</th><th>${escape(opponentLabel)} converted</th><th>${escape(opponentLabel)} missed</th></tr>
       </thead>
       <tbody>${breakPointConversionRows}${breakPointConversionMatchRow}</tbody>
     </table>
     <h3>Serving · break points faced</h3>
     <table>
       <thead>
-        <tr><th>Set</th><th>${escape(match.trackedPlayer)} saved</th><th>${escape(match.trackedPlayer)} lost</th><th>${escape(match.opponent)} saved</th><th>${escape(match.opponent)} lost</th></tr>
+        <tr><th>Set</th><th>${escape(trackedPlayerLabel)} saved</th><th>${escape(trackedPlayerLabel)} lost</th><th>${escape(opponentLabel)} saved</th><th>${escape(opponentLabel)} lost</th></tr>
       </thead>
       <tbody>${breakPointDefenseRows}${breakPointDefenseMatchRow}</tbody>
     </table>

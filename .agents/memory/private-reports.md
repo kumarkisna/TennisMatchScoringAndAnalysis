@@ -30,3 +30,11 @@ Report PDFs may show at most two selected user benchmark presets at a time, with
 **Why:** A two-column reference layout remains readable in a printable report and avoids printing outside-company attribution from a user-entered preset name.
 
 **How to apply:** Keep saved presets unlimited and editable on-device, but limit selected references to two and label exported columns as generic user references.
+
+## Optional player-name anonymization
+
+Single-match and head-to-head reports can hide player names behind “Player A” and “Player B”. Apply the same choice to report preview and PDF sharing, redact those names from report text, and leave saved match records unchanged.
+
+**Why:** The user wants to choose whether a private report includes player identities while keeping its analysis useful.
+
+**How to apply:** Keep anonymization as a report-rendering option only; include the choice in review validity so a PDF reviewed under a different name setting cannot be shared as current.

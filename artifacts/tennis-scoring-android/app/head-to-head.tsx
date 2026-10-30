@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
+import { ReportAnonymityToggle } from '@/components/ReportAnonymityToggle';
 import { ReportSectionPicker } from '@/components/ReportSectionPicker';
 import {
   getLocalInsights,
@@ -290,6 +291,7 @@ export default function HeadToHeadScreen() {
   const [reportError, setReportError] = useState('');
   const [selectedReportSections, setSelectedReportSections] =
     useState<HeadToHeadReportSection[]>(allHeadToHeadReportSections);
+  const [hidePlayerNames, setHidePlayerNames] = useState(false);
 
   const matchesQuery = useQuery({
     queryKey: LOCAL_MATCH_LIST_KEY,
@@ -377,12 +379,12 @@ export default function HeadToHeadScreen() {
       .map(({ summary }) => `${summary.id}:${summary.updatedAt}`)
       .join('|') ?? '';
   const reportReviewVersion = reportVersion
-    ? `${reportVersion}:${selectedReportSections.join(',')}`
+    ? `${reportVersion}:${selectedReportSections.join(',')}:${hidePlayerNames ? 'anonymous' : 'named'}`
     : '';
   const hasReviewedReport =
     Boolean(reportReviewVersion) && reviewedVersion === reportReviewVersion;
   const reportHtml = report
-    ? buildHeadToHeadReportHtml(report, selectedReportSections)
+    ? buildHeadToHeadReportHtml(report, selectedReportSections, { hidePlayerNames })
     : null;
   const isReportBusy = reportAction !== null;
 
@@ -928,6 +930,11 @@ export default function HeadToHeadScreen() {
                 setSelectedReportSections(allHeadToHeadReportSections())
               }
               onClear={() => setSelectedReportSections([])}
+            />
+            <ReportAnonymityToggle
+              testID="head-to-head-report-hide-names"
+              hidePlayerNames={hidePlayerNames}
+              onToggle={() => setHidePlayerNames((current) => !current)}
             />
 
             <View

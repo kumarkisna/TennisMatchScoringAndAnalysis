@@ -1213,6 +1213,63 @@ test('head-to-head report removes URL-like text and keeps names and statistics',
   assert.doesNotMatch(html, /TENNISSCORING|LOCAL MATCH ANALYSIS/i);
 });
 
+test('anonymized single-match reports replace names in headings and match notes', () => {
+  const match = performanceSampleMatch();
+  match.trackedPlayer = 'Alex';
+  match.opponent = 'Bailey';
+  match.event = 'Alex vs Bailey';
+  match.gameNotes = [
+    { setNumber: 1, gameNumber: 1, note: 'Alex moved Bailey wide' },
+  ];
+  const originalMatch = structuredClone(match);
+  const insights = calculateLocalInsights(match);
+  const summary = summarizePlayerPerformance(insights);
+
+  const anonymousHtml = buildPlayerReportHtml(
+    match,
+    insights,
+    summary,
+    undefined,
+    [],
+    { hidePlayerNames: true },
+  );
+  const namedHtml = buildPlayerReportHtml(match, insights, summary);
+
+  assert.match(anonymousHtml, /Player A/);
+  assert.match(anonymousHtml, /Player B/);
+  assert.doesNotMatch(anonymousHtml, /Alex|Bailey/i);
+  assert.match(namedHtml, /Alex/);
+  assert.match(namedHtml, /Bailey/);
+  assert.deepEqual(match, originalMatch);
+});
+
+test('anonymized head-to-head reports hide player names in match results', () => {
+  const meeting = breakPointMeeting(
+    'alex-bailey',
+    'Alex',
+    'Bailey',
+    { opportunities: 4, converted: 2, faced: 5, saved: 3 },
+    { opportunities: 1, converted: 1, faced: 3, saved: 1 },
+    '2026-10-01',
+  );
+  const report = buildHeadToHeadReport('Alex', 'Bailey', [meeting], [meeting]);
+  const originalReport = structuredClone(report);
+
+  const anonymousHtml = buildHeadToHeadReportHtml(
+    report,
+    undefined,
+    { hidePlayerNames: true },
+  );
+  const namedHtml = buildHeadToHeadReportHtml(report);
+
+  assert.match(anonymousHtml, /Player A/);
+  assert.match(anonymousHtml, /Player B/);
+  assert.doesNotMatch(anonymousHtml, /Alex|Bailey/i);
+  assert.match(namedHtml, /Alex/);
+  assert.match(namedHtml, /Bailey/);
+  assert.deepEqual(report, originalReport);
+});
+
 test('single-match PDF includes only selected analysis sections', () => {
   const insights = {
     ...emptyInsight,

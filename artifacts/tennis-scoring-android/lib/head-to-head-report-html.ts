@@ -3,7 +3,10 @@ import {
   type HeadToHeadReport,
 } from '@/lib/head-to-head';
 import { POINT_CODE_LABELS } from '@/lib/player-report-html';
-import { escapeReportHtml as escapeHtml } from '@/lib/report-html-utils';
+import {
+  anonymizeReportPlayerNames,
+  escapeReportHtml as escapeHtml,
+} from '@/lib/report-html-utils';
 import {
   allHeadToHeadReportSections,
   type HeadToHeadReportSection,
@@ -75,10 +78,19 @@ export function buildHeadToHeadReportHtml(
   report: HeadToHeadReport,
   selectedSections: readonly HeadToHeadReportSection[] =
     allHeadToHeadReportSections(),
+  options: { hidePlayerNames?: boolean } = {},
 ): string {
+  const hidePlayerNames = options.hidePlayerNames ?? false;
+  const trackedPlayer = hidePlayerNames ? 'Player A' : report.trackedPlayer;
+  const opponent = hidePlayerNames ? 'Player B' : report.opponent;
+  const displayReport = { ...report, trackedPlayer, opponent };
   const includes = (section: HeadToHeadReportSection) =>
     selectedSections.includes(section);
-  const { insights, trackedPlayer, opponent } = report;
+  const { insights } = report;
+  const displayText = (value: string) =>
+    hidePlayerNames
+      ? anonymizeReportPlayerNames(value, report.trackedPlayer, report.opponent)
+      : value;
   const trackedServe = insights.serveStats.tracked;
   const opponentServe = insights.serveStats.opponent;
   const recordedSetCount = insights.sets.filter((set) => set.pointCount > 0).length;
@@ -312,7 +324,7 @@ export function buildHeadToHeadReportHtml(
             .map(
               (set) =>
                 `${escapeHtml(setScore(set))} — ${escapeHtml(
-                  setResult(set, report.trackedPlayer, report.opponent),
+                  setResult(set, trackedPlayer, opponent),
                 )}`,
             )
             .join('<br />')
@@ -320,7 +332,7 @@ export function buildHeadToHeadReportHtml(
       return `
         <tr>
           <td>${escapeHtml(formatDate(summary.matchDate))}</td>
-          <td>${escapeHtml(matchResult(report, summary.winner, summary.status))}</td>
+          <td>${escapeHtml(matchResult(displayReport, summary.winner, summary.status))}</td>
           <td>${scores}</td>
           <td>${meeting.insights.pointCount}</td>
         </tr>`;
@@ -363,7 +375,7 @@ export function buildHeadToHeadReportHtml(
     )
     .join('');
   const feedbackRows = report.performance.feedback
-    .map((item) => `<li>${escapeHtml(item)}</li>`)
+    .map((item) => `<li>${escapeHtml(displayText(item))}</li>`)
     .join('');
   const winsAndLosses =
     `${report.matchesWon}–${report.matchesLost}` +

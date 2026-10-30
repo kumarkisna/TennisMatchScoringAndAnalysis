@@ -21,6 +21,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { ReportBenchmarkManager } from '@/components/ReportBenchmarkManager';
+import { ReportAnonymityToggle } from '@/components/ReportAnonymityToggle';
 import { ReportSectionPicker } from '@/components/ReportSectionPicker';
 import { useColors } from '@/hooks/useColors';
 import * as Print from 'expo-print';
@@ -413,6 +414,7 @@ export default function MatchScreen() {
   } | null>(null);
   const [selectedReportSections, setSelectedReportSections] =
     useState<PlayerReportSection[]>(allPlayerReportSections);
+  const [hidePlayerNames, setHidePlayerNames] = useState(false);
   const [reportExportError, setReportExportError] = useState('');
   const [customTiebreakTarget, setCustomTiebreakTarget] = useState('');
   const [selectedReviewSetNumber, setSelectedReviewSetNumber] = useState<number | null>(null);
@@ -538,7 +540,7 @@ export default function MatchScreen() {
     ),
   );
   const reportReviewVersion = reportVersion
-    ? `${reportVersion}:${selectedReportSections.join(',')}:${selectedBenchmarkVersion}`
+    ? `${reportVersion}:${selectedReportSections.join(',')}:${selectedBenchmarkVersion}:${hidePlayerNames ? 'anonymous' : 'named'}`
     : null;
   const hasReviewedReport =
     reportReviewVersion !== null &&
@@ -776,6 +778,7 @@ export default function MatchScreen() {
           serviceGamesWon,
         }),
       ),
+      { hidePlayerNames },
     );
   }
 
@@ -2412,6 +2415,11 @@ export default function MatchScreen() {
           onToggle={toggleReportSection}
           onSelectAll={() => setSelectedReportSections(allPlayerReportSections())}
           onClear={() => setSelectedReportSections([])}
+        />
+        <ReportAnonymityToggle
+          testID="player-report-hide-names"
+          hidePlayerNames={hidePlayerNames}
+          onToggle={() => setHidePlayerNames((current) => !current)}
         />
         <ReportBenchmarkManager />
 
