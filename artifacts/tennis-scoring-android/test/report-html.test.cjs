@@ -1565,6 +1565,95 @@ test('player feedback interprets break-point results and marks small samples dir
   );
 });
 
+test('break-point coaching omits zero-denominator conclusions and keeps available samples accurate', () => {
+  const match = performanceSampleMatch();
+  const baseInsights = calculateLocalInsights(match);
+  const conversionOnly = {
+    ...baseInsights,
+    breakPoints: {
+      tracked: { opportunities: 0, converted: 0, faced: 3, saved: 2 },
+      opponent: { opportunities: 2, converted: 1, faced: 0, saved: 0 },
+    },
+  };
+  const conversionOnlySummary = summarizePlayerPerformance(conversionOnly);
+
+  assert.ok(
+    conversionOnlySummary.feedback.includes(
+      'Directional only, not conclusive: the tracked player saved 2 of 3 break points faced (67%).',
+    ),
+  );
+  assert.ok(
+    conversionOnlySummary.feedback.includes(
+      'Directional only, not conclusive: the opponent converted 1 of 2 break-point chances (50%).',
+    ),
+  );
+  assert.equal(
+    conversionOnlySummary.feedback.some((item) =>
+      item.includes('the tracked player converted'),
+    ),
+    false,
+  );
+  assert.equal(
+    conversionOnlySummary.feedback.some((item) =>
+      item.includes('the opponent saved'),
+    ),
+    false,
+  );
+
+  const conversionOnlyHtml = buildPlayerReportHtml(
+    match,
+    conversionOnly,
+    conversionOnlySummary,
+  );
+  const conversionRows = reportRowsAfterHeading(
+    conversionOnlyHtml,
+    'Break-point pressure',
+  );
+  assert.match(
+    conversionRows.find((row) => row.startsWith('Match total')),
+    /2 chances[^—]*— — 1\/2 \(50\.0%\) 1\/2 \(50\.0%\)/,
+  );
+  const defenseRows = reportRows(
+    conversionOnlyHtml,
+    'Serving · break points faced',
+  );
+  assert.match(
+    defenseRows.find((row) => row.startsWith('Match total')),
+    /3 break points faced[^—]*2\/3 \(66\.7%\) 1\/3 \(33\.3%\) — —/,
+  );
+
+  const savingOnly = {
+    ...baseInsights,
+    breakPoints: {
+      tracked: { opportunities: 2, converted: 1, faced: 0, saved: 0 },
+      opponent: { opportunities: 0, converted: 0, faced: 3, saved: 2 },
+    },
+  };
+  const savingOnlySummary = summarizePlayerPerformance(savingOnly);
+  assert.ok(
+    savingOnlySummary.feedback.includes(
+      'Directional only, not conclusive: the tracked player converted 1 of 2 break-point chances (50%).',
+    ),
+  );
+  assert.ok(
+    savingOnlySummary.feedback.includes(
+      'Directional only, not conclusive: the opponent saved 2 of 3 break points faced (67%).',
+    ),
+  );
+  assert.equal(
+    savingOnlySummary.feedback.some((item) =>
+      item.includes('the tracked player saved'),
+    ),
+    false,
+  );
+  assert.equal(
+    savingOnlySummary.feedback.some((item) =>
+      item.includes('the opponent converted'),
+    ),
+    false,
+  );
+});
+
 test('untagged or zero-denominator report statistics are unavailable', () => {
   const match = {
     ...performanceSampleMatch(),
