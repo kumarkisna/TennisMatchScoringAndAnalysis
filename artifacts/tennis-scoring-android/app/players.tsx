@@ -16,6 +16,7 @@ import {
   getLocalPlayerProfileLinkPresentation,
   listLocalPlayers,
   LOCAL_PLAYERS_KEY,
+  moveLocalPlayerProfileLink,
   pairLocalPlayerProfileLinks,
   removeLocalPlayerProfileLink,
   serializeLocalPlayerProfileLinks,
@@ -355,6 +356,57 @@ export default function PlayersScreen() {
                   },
                 ]}
               />
+              <View style={styles.profileLinkReorderRow}>
+                <Pressable
+                  testID={`button-move-player-profile-link-${index}-up`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Move profile link ${index + 1} up`}
+                  accessibilityState={{ disabled: index === 0 }}
+                  disabled={index === 0}
+                  onPress={() =>
+                    setProfileLinks((links) =>
+                      moveLocalPlayerProfileLink(links, index, 'up'),
+                    )
+                  }
+                  style={({ pressed }) => [
+                    styles.profileLinkMoveButton,
+                    {
+                      borderColor: colors.border,
+                      opacity: index === 0 ? 0.4 : pressed ? 0.65 : 1,
+                    },
+                  ]}
+                >
+                  <Ionicons name="arrow-up" size={12} color={colors.primary} />
+                  <Text style={[styles.profileLinkMoveText, { color: colors.primary }]}>
+                    Move up
+                  </Text>
+                </Pressable>
+                <Pressable
+                  testID={`button-move-player-profile-link-${index}-down`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Move profile link ${index + 1} down`}
+                  accessibilityState={{ disabled: index === profileLinks.length - 1 }}
+                  disabled={index === profileLinks.length - 1}
+                  onPress={() =>
+                    setProfileLinks((links) =>
+                      moveLocalPlayerProfileLink(links, index, 'down'),
+                    )
+                  }
+                  style={({ pressed }) => [
+                    styles.profileLinkMoveButton,
+                    {
+                      borderColor: colors.border,
+                      opacity:
+                        index === profileLinks.length - 1 ? 0.4 : pressed ? 0.65 : 1,
+                    },
+                  ]}
+                >
+                  <Ionicons name="arrow-down" size={12} color={colors.primary} />
+                  <Text style={[styles.profileLinkMoveText, { color: colors.primary }]}>
+                    Move down
+                  </Text>
+                </Pressable>
+              </View>
             </View>
           ))}
           <View style={styles.profileLinksHeader}>
@@ -980,6 +1032,9 @@ const styles = StyleSheet.create({
   addLinkText: { fontFamily: 'DMSans_600SemiBold', fontSize: 11 },
   profileLinkInputRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   profileLinkInputGroup: { gap: 5 },
+  profileLinkReorderRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  profileLinkMoveButton: { minHeight: 30, borderWidth: 1, borderRadius: 7, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  profileLinkMoveText: { fontFamily: 'DMSans_600SemiBold', fontSize: 9 },
   profileLinkInput: { flex: 1, minHeight: 40, borderWidth: 1, borderRadius: 8, paddingHorizontal: 9, fontFamily: 'DMSans_500Medium', fontSize: 12 },
   profileLinkLabelInput: { minHeight: 38, borderWidth: 1, borderRadius: 8, paddingHorizontal: 9, fontFamily: 'DMSans_500Medium', fontSize: 11 },
   removeLinkButton: { width: 36, height: 38, alignItems: 'center', justifyContent: 'center' },

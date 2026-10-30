@@ -413,6 +413,85 @@ test('profile link edits and removals keep each label with its URL', async () =>
   );
 });
 
+test('moving profile links preserves pairs and saves the selected order', async () => {
+  storageValues.clear();
+  const { localPlayers } = loadStorageModulesAfterRestart();
+  const links = localPlayers.pairLocalPlayerProfileLinks(
+    [
+      'https://atp.example.org/player/one',
+      'https://club.example.org/players/one',
+      'https://itf.example.org/player/one',
+    ],
+    ['ATP profile', 'Club profile', 'ITF profile'],
+  );
+
+  const movedUp = localPlayers.moveLocalPlayerProfileLink(links, 1, 'up');
+  assert.deepEqual(movedUp, [
+    { url: 'https://club.example.org/players/one', label: 'Club profile' },
+    { url: 'https://atp.example.org/player/one', label: 'ATP profile' },
+    { url: 'https://itf.example.org/player/one', label: 'ITF profile' },
+  ]);
+  assert.deepEqual(
+    localPlayers.moveLocalPlayerProfileLink(movedUp, 0, 'down'),
+    links,
+  );
+  assert.deepEqual(
+    localPlayers.moveLocalPlayerProfileLink(links, 0, 'up'),
+    links,
+  );
+  assert.deepEqual(
+    localPlayers.moveLocalPlayerProfileLink(links, 2, 'down'),
+    links,
+  );
+
+  const player = await localPlayers.addLocalPlayer(
+    'Reordered profile links player',
+    localPlayers.serializeLocalPlayerProfileLinks(links),
+  );
+  await localPlayers.updateLocalPlayer(
+    player.id,
+    player.name,
+    localPlayers.serializeLocalPlayerProfileLinks(movedUp),
+  );
+  const afterRestart = loadStorageModulesAfterRestart();
+  const restored = (await afterRestart.localPlayers.listLocalPlayers()).find(
+    (item) => item.id === player.id,
+  );
+  assert.ok(restored);
+  assert.deepEqual(
+    afterRestart.localPlayers.pairLocalPlayerProfileLinks(
+      restored.profileUrls,
+      restored.profileUrlLabels,
+    ),
+    movedUp,
+  );
+
+  const playersScreen = fs.readFileSync(
+    path.join(__dirname, '../app/players.tsx'),
+    'utf8',
+  );
+  assert.match(playersScreen, /button-move-player-profile-link-\$\{index\}-up/);
+  assert.match(playersScreen, /button-move-player-profile-link-\$\{index\}-down/);
+  assert.match(
+    playersScreen,
+    /moveLocalPlayerProfileLink\(links, index, 'up'\)/,
+  );
+  assert.match(
+    playersScreen,
+    /moveLocalPlayerProfileLink\(links, index, 'down'\)/,
+  );
+  assert.match(playersScreen, /disabled=\{index === 0\}/);
+  assert.match(playersScreen, /disabled=\{index === profileLinks\.length - 1\}/);
+  assert.match(
+    playersScreen,
+    /accessibilityLabel=\{`Move profile link \$\{index \+ 1\} up`\}/,
+  );
+  assert.match(
+    playersScreen,
+    /accessibilityLabel=\{`Move profile link \$\{index \+ 1\} down`\}/,
+  );
+});
+
 test('profile links reject unsupported, malformed, credentialed, spaced, and duplicate URLs', async () => {
   storageValues.clear();
   const { localPlayers } = loadStorageModulesAfterRestart();

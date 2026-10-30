@@ -95,6 +95,29 @@ export function removeLocalPlayerProfileLink(
   return links.filter((_, linkIndex) => linkIndex !== index);
 }
 
+export function moveLocalPlayerProfileLink(
+  links: readonly LocalPlayerProfileLink[],
+  index: number,
+  direction: 'up' | 'down',
+): LocalPlayerProfileLink[] {
+  const targetIndex = index + (direction === 'up' ? -1 : 1);
+  if (
+    index < 0 ||
+    index >= links.length ||
+    targetIndex < 0 ||
+    targetIndex >= links.length
+  ) {
+    return [...links];
+  }
+
+  const reordered = [...links];
+  [reordered[index], reordered[targetIndex]] = [
+    reordered[targetIndex]!,
+    reordered[index]!,
+  ];
+  return reordered;
+}
+
 export function serializeLocalPlayerProfileLinks(
   links: readonly LocalPlayerProfileLink[],
 ): Pick<LocalPlayerDetailsInput, 'profileUrls' | 'profileUrlLabels'> {

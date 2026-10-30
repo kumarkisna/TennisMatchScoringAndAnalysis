@@ -138,6 +138,18 @@ function loadBackupModule() {
 }
 
 async function createSampleRecords() {
+  const profileLinks = activeModules.localPlayers.moveLocalPlayerProfileLink(
+    activeModules.localPlayers.pairLocalPlayerProfileLinks(
+      [
+        'https://atp.example.org/players/sana-iyer',
+        'https://club.example.org/players/sana-iyer',
+        'https://itf.example.org/player/sana-iyer',
+      ],
+      ['ATP profile', 'Club page', 'ITF profile'],
+    ),
+    1,
+    'up',
+  );
   const player = await activeModules.localPlayers.addLocalPlayer('Sana Iyer', {
     dateOfBirth: '2005-07-09',
     atpPlayerId: 'ATP-12345',
@@ -149,8 +161,7 @@ async function createSampleRecords() {
     heightCm: 180,
     weightKg: 75,
     phoneNumbers: ['+1 415 555 0123'],
-    profileUrls: ['https://example.org/players/sana-iyer'],
-    profileUrlLabels: ['ATP profile'],
+    ...activeModules.localPlayers.serializeLocalPlayerProfileLinks(profileLinks),
   });
   await activeModules.localPlayers.setActiveLocalPlayerId(player.id);
 
@@ -236,7 +247,16 @@ test('backup save, share, and restore preserve all players and sets without netw
   assert.equal(exported.players[0].heightCm, 180);
   assert.equal(exported.players[0].weightKg, 75);
   assert.deepEqual(exported.players[0].phoneNumbers, ['+1 415 555 0123']);
-  assert.deepEqual(exported.players[0].profileUrlLabels, ['ATP profile']);
+  assert.deepEqual(exported.players[0].profileUrls, [
+    'https://club.example.org/players/sana-iyer',
+    'https://atp.example.org/players/sana-iyer',
+    'https://itf.example.org/player/sana-iyer',
+  ]);
+  assert.deepEqual(exported.players[0].profileUrlLabels, [
+    'Club page',
+    'ATP profile',
+    'ITF profile',
+  ]);
   assert.equal(exported.matches[0].id, match.id);
   assert.equal(exported.matches[0].completedSets.length, 1);
   assert.equal(exported.matches[0].completedSets[0].points.length, 24);
@@ -280,9 +300,15 @@ test('backup save, share, and restore preserve all players and sets without netw
   assert.equal(restoredPlayer.heightCm, 180);
   assert.equal(restoredPlayer.weightKg, 75);
   assert.deepEqual(restoredPlayer.profileUrls, [
-    'https://example.org/players/sana-iyer',
+    'https://club.example.org/players/sana-iyer',
+    'https://atp.example.org/players/sana-iyer',
+    'https://itf.example.org/player/sana-iyer',
   ]);
-  assert.deepEqual(restoredPlayer.profileUrlLabels, ['ATP profile']);
+  assert.deepEqual(restoredPlayer.profileUrlLabels, [
+    'Club page',
+    'ATP profile',
+    'ITF profile',
+  ]);
   assert.equal(
     await activeModules.localPlayers.getActiveLocalPlayerId(),
     restoredPlayer.id,
@@ -348,8 +374,14 @@ test('older backups without profile labels still restore their saved URLs', asyn
 
   assert.equal(restoreResult.cancelled, false);
   assert.deepEqual(restoredPlayer.profileUrls, [
-    'https://example.org/players/sana-iyer',
+    'https://club.example.org/players/sana-iyer',
+    'https://atp.example.org/players/sana-iyer',
+    'https://itf.example.org/player/sana-iyer',
   ]);
-  assert.deepEqual(restoredPlayer.profileUrlLabels, ['']);
+  assert.deepEqual(restoredPlayer.profileUrlLabels, [
+    '',
+    '',
+    '',
+  ]);
   assert.equal(networkRequestCount, 0);
 });
