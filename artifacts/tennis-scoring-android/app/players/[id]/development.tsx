@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -18,6 +19,7 @@ import { listLocalPlayers } from '@/lib/local-players';
 import {
   buildPlayerPerformanceHistory,
   PLAYER_TREND_METRICS,
+  summarizePlayerTrendMetric,
   type PlayerTrendMatch,
   type PlayerTrendMetricKey,
 } from '@/lib/player-insights';
@@ -34,7 +36,7 @@ function formatDate(date: string) {
 }
 
 function trendLabel(match: PlayerTrendMatch) {
-  return match.event?.trim() || `vs ${match.opponent}`;
+  return match.event?.trim() || 'Match';
 }
 
 function PerformanceChart({
@@ -153,31 +155,512 @@ function PerformanceChart({
   );
 }
 
+function PlayerSelectionCard({
+  label,
+  playerName,
+  onPress,
+  testID,
+}: {
+  label: string;
+  playerName: string;
+  onPress: () => void;
+  testID: string;
+}) {
+  const colors = useColors();
+  return (
+    <Pressable
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}: ${playerName}. Choose a saved player.`}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.playerSelectionCard,
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.border,
+          opacity: pressed ? 0.7 : 1,
+        },
+      ]}
+    >
+      <Text style={[styles.playerSelectionLabel, { color: colors.mutedForeground }]}>
+        {label}
+      </Text>
+      <View style={styles.playerSelectionValue}>
+        <Text
+          numberOfLines={1}
+          style={[styles.playerSelectionName, { color: colors.foreground }]}
+        >
+          {playerName}
+        </Text>
+        <Ionicons name="chevron-down" size={15} color={colors.mutedForeground} />
+      </View>
+    </Pressable>
+  );
+}
+
+function PlayerPickerModal({
+  visible,
+  target,
+  players,
+  excludePlayerId,
+  selectedPlayerId,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  target: 'primary' | 'comparison' | null;
+  players: { id: string; name: string }[];
+  excludePlayerId: string;
+  selectedPlayerId: string;
+  onSelect: (playerId: string) => void;
+  onClose: () => void;
+}) {
+  const colors = useColors();
+  const availablePlayers = players.filter(
+    (player) => player.id !== excludePlayerId,
+  );
+  const targetLabel =
+    target === 'primary' ? 'Player 1' : 'Player 2';
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Close saved player selection"
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+        />
+        <View
+          style={[
+            styles.modalCard,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          <View style={styles.modalHeading}>
+            <View style={styles.modalHeadingCopy}>
+              <Text style={[styles.modalTitle, { color: colors.foreground }]}>
+                Choose {targetLabel}
+              </Text>
+              <Text style={[styles.modalHint, { color: colors.mutedForeground }]}>
+                Select a saved player on this device.
+              </Text>
+            </View>
+            <Pressable
+              testID="button-close-trend-player-picker"
+              accessibilityRole="button"
+              accessibilityLabel="Close player selection"
+              onPress={onClose}
+              hitSlop={8}
+              style={styles.modalClose}
+            >
+              <Ionicons name="close" size={19} color={colors.foreground} />
+            </Pressable>
+          </View>
+          <ScrollView
+            style={styles.playerOptions}
+            contentContainerStyle={styles.playerOptionsContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {availablePlayers.length === 0 ? (
+              <Text style={[styles.modalEmpty, { color: colors.mutedForeground }]}>
+                Save another player on this device to compare match histories.
+              </Text>
+            ) : (
+              availablePlayers.map((player) => {
+                const selected = player.id === selectedPlayerId;
+                return (
+                  <Pressable
+                    key={player.id}
+                    testID={`option-trend-player-${player.id}`}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={`${player.name}${selected ? ', selected' : ''}`}
+                    onPress={() => onSelect(player.id)}
+                    style={[
+                      styles.playerOption,
+                      {
+                        borderColor: selected ? colors.primary : colors.border,
+                        backgroundColor: selected ? colors.secondary : colors.card,
+                      },
+                    ]}
+                  >
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.playerOptionName, { color: colors.foreground }]}
+                    >
+                      {player.name}
+                    </Text>
+                    {selected ? (
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={17}
+                        color={colors.primary}
+                      />
+                    ) : null}
+                  </Pressable>
+                );
+              })
+            )}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function ComparisonPerformanceChart({
+  primaryName,
+  primaryMatches,
+  comparisonName,
+  comparisonMatches,
+  metric,
+  primaryColor,
+  comparisonColor,
+}: {
+  primaryName: string;
+  primaryMatches: PlayerTrendMatch[];
+  comparisonName: string;
+  comparisonMatches: PlayerTrendMatch[];
+  metric: PlayerTrendMetricKey;
+  primaryColor: string;
+  comparisonColor: string;
+}) {
+  const colors = useColors();
+  const dates = [
+    ...new Set(
+      [...primaryMatches, ...comparisonMatches].map((match) =>
+        match.date.slice(0, 10),
+      ),
+    ),
+  ].sort();
+  const chartWidth = Math.max(300, dates.length * 66);
+  const left = 32;
+  const right = chartWidth - 12;
+  const top = 15;
+  const bottom = 132;
+  const xFor = (date: string) =>
+    dates.length === 1
+      ? (left + right) / 2
+      : left + (dates.indexOf(date.slice(0, 10)) * (right - left)) / (dates.length - 1);
+  const yFor = (value: number) =>
+    bottom - (value / 100) * (bottom - top);
+  const series = [
+    { id: 'primary', matches: primaryMatches, color: primaryColor },
+    { id: 'comparison', matches: comparisonMatches, color: comparisonColor },
+  ];
+  const pathFor = (matches: PlayerTrendMatch[]) => {
+    let path = '';
+    let segmentOpen = false;
+    for (const match of matches) {
+      const value = match.metrics[metric].percent;
+      if (value === null) {
+        segmentOpen = false;
+        continue;
+      }
+      path += `${segmentOpen ? 'L' : 'M'} ${xFor(match.date)} ${yFor(value)} `;
+      segmentOpen = true;
+    }
+    return path;
+  };
+
+  return (
+    <>
+      <View style={styles.chartLegend}>
+        {[
+          { id: 'primary', name: primaryName, color: primaryColor },
+          { id: 'comparison', name: comparisonName, color: comparisonColor },
+        ].map((item) => (
+          <View key={item.id} style={styles.legendItem}>
+            <View style={[styles.legendLine, { backgroundColor: item.color }]} />
+            <Text
+              numberOfLines={1}
+              style={[styles.legendText, { color: colors.foreground }]}
+            >
+              {item.name}
+            </Text>
+          </View>
+        ))}
+      </View>
+      <ScrollView
+        horizontal
+        nestedScrollEnabled
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.chartScrollContent}
+      >
+        <Svg
+          width={chartWidth}
+          height={171}
+          accessibilityLabel={`${primaryName} and ${comparisonName} ${PLAYER_TREND_METRICS.find((item) => item.key === metric)?.label ?? 'performance'} by match date`}
+        >
+          {[0, 50, 100].map((tick) => {
+            const y = yFor(tick);
+            return (
+              <G key={tick}>
+                <Line
+                  x1={left}
+                  x2={right}
+                  y1={y}
+                  y2={y}
+                  stroke={colors.border}
+                  strokeWidth={1}
+                />
+                <SvgText
+                  x={left - 7}
+                  y={y + 4}
+                  fill={colors.mutedForeground}
+                  fontSize={9}
+                  textAnchor="end"
+                >
+                  {tick}%
+                </SvgText>
+              </G>
+            );
+          })}
+          {series.map((item) => {
+            const path = pathFor(item.matches);
+            return path ? (
+              <Path
+                key={`${item.id}-path`}
+                d={path}
+                fill="none"
+                stroke={item.color}
+                strokeWidth={2.5}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            ) : null;
+          })}
+          {series.flatMap((item) =>
+            item.matches.map((match) => {
+              const value = match.metrics[metric].percent;
+              return (
+                <Circle
+                  key={`${item.id}-${match.id}`}
+                  cx={xFor(match.date)}
+                  cy={value === null ? bottom + 8 : yFor(value)}
+                  r={value === null ? 3 : 4}
+                  fill={value === null ? colors.mutedForeground : item.color}
+                  stroke={value === null ? 'none' : colors.card}
+                  strokeWidth={2}
+                />
+              );
+            }),
+          )}
+          {dates.map((date) => (
+            <SvgText
+              key={date}
+              x={xFor(date)}
+              y={bottom + 29}
+              fill={colors.mutedForeground}
+              fontSize={9}
+              textAnchor="middle"
+            >
+              {formatDate(date).replace(/, \d{4}$/, '')}
+            </SvgText>
+          ))}
+        </Svg>
+      </ScrollView>
+    </>
+  );
+}
+
+function TrendSummaryCard({
+  playerName,
+  matches,
+  metric,
+  color,
+}: {
+  playerName: string;
+  matches: PlayerTrendMatch[];
+  metric: PlayerTrendMetricKey;
+  color: string;
+}) {
+  const colors = useColors();
+  const summary = summarizePlayerTrendMetric(matches, metric);
+  return (
+    <View
+      style={[
+        styles.summaryCard,
+        { backgroundColor: colors.card, borderColor: colors.border },
+      ]}
+    >
+      <View style={styles.summaryNameRow}>
+        <View style={[styles.playerDot, { backgroundColor: color }]} />
+        <Text
+          numberOfLines={1}
+          style={[styles.summaryName, { color: colors.foreground }]}
+        >
+          {playerName}
+        </Text>
+      </View>
+      <Text style={[styles.summaryPercent, { color }]}>
+        {summary.percent === null ? 'Unavailable' : `${summary.percent}%`}
+      </Text>
+      <Text style={[styles.summaryMeta, { color: colors.mutedForeground }]}>
+        {summary.won} of {summary.total} {summary.countLabel}
+      </Text>
+      <Text style={[styles.summaryMeta, { color: colors.mutedForeground }]}>
+        {summary.sampledMatchCount} of {summary.matchCount} matches sampled
+      </Text>
+    </View>
+  );
+}
+
+function PlayerTrendHistory({
+  playerName,
+  matches,
+  metric,
+  color,
+  testIDPrefix,
+}: {
+  playerName: string;
+  matches: PlayerTrendMatch[];
+  metric: PlayerTrendMetricKey;
+  color: string;
+  testIDPrefix: string;
+}) {
+  const colors = useColors();
+  return (
+    <View style={styles.historySection}>
+      <View style={styles.historyHeading}>
+        <View style={[styles.playerDot, { backgroundColor: color }]} />
+        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+          {playerName}
+        </Text>
+        <Text style={[styles.sampleCount, { color: colors.mutedForeground }]}>
+          {matches.length} {matches.length === 1 ? 'match' : 'matches'}
+        </Text>
+      </View>
+      {matches.length === 0 ? (
+        <View
+          style={[
+            styles.emptyHistory,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.matchMeta, { color: colors.mutedForeground }]}>
+            No point-recorded matches for this player yet.
+          </Text>
+        </View>
+      ) : (
+        matches.map((match) => {
+          const value = match.metrics[metric];
+          const valueText =
+            value.percent === null ? 'Unavailable' : `${value.percent}%`;
+          const countText =
+            value.total === 0
+              ? `No ${value.countLabel} recorded`
+              : `${value.won} of ${value.total} ${value.countLabel}`;
+          return (
+            <View
+              key={match.id}
+              testID={`${testIDPrefix}-match-${match.id}`}
+              style={[
+                styles.matchRow,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <View style={styles.matchCopy}>
+                <Text style={[styles.matchName, { color: colors.foreground }]}>
+                  {trendLabel(match)}
+                </Text>
+                <Text style={[styles.matchMeta, { color: colors.mutedForeground }]}>
+                  {`vs ${match.opponent} · ${formatDate(match.date)}`}
+                  {match.round ? ` · ${match.round}` : ''}
+                </Text>
+                <Text style={[styles.matchCount, { color: colors.mutedForeground }]}>
+                  {countText}
+                </Text>
+              </View>
+              <Text
+                accessibilityLabel={`${valueText}, ${countText}`}
+                style={[styles.matchPercent, { color: value.percent === null ? colors.mutedForeground : color }]}
+              >
+                {valueText}
+              </Text>
+            </View>
+          );
+        })
+      )}
+    </View>
+  );
+}
+
+async function loadPlayerTrendHistory(playerId: string) {
+  const players = await listLocalPlayers();
+  const player = players.find((item) => item.id === playerId);
+  if (!player) return null;
+  const records = await listLocalPlayerMatchInsights(player.id, players);
+  return {
+    player,
+    matches: buildPlayerPerformanceHistory(records),
+  };
+}
+
 export default function PlayerDevelopmentScreen() {
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const playerId = Array.isArray(id) ? id[0] : id;
+  const routePlayerId = Array.isArray(id) ? id[0] ?? '' : id ?? '';
+  const [primaryPlayerId, setPrimaryPlayerId] = useState(routePlayerId);
+  const [comparisonPlayerId, setComparisonPlayerId] = useState<string | null>(null);
+  const [pickerTarget, setPickerTarget] = useState<
+    'primary' | 'comparison' | null
+  >(null);
   const [selectedMetric, setSelectedMetric] =
     useState<PlayerTrendMetricKey>('overall');
-  const historyQuery = useQuery({
-    queryKey: ['player-performance-history', playerId],
-    enabled: Boolean(playerId),
-    queryFn: async () => {
-      const players = await listLocalPlayers();
-      const player = players.find((item) => item.id === playerId);
-      if (!player) return null;
-      const records = await listLocalPlayerMatchInsights(player.id, players);
-      return {
-        player,
-        matches: buildPlayerPerformanceHistory(records),
-      };
-    },
+  const playersQuery = useQuery({
+    queryKey: ['player-development-saved-players'],
+    queryFn: listLocalPlayers,
   });
-  const player = historyQuery.data?.player;
+  const players = playersQuery.data ?? [];
+  const historyQuery = useQuery({
+    queryKey: ['player-performance-history', primaryPlayerId],
+    enabled: Boolean(primaryPlayerId),
+    queryFn: () => loadPlayerTrendHistory(primaryPlayerId),
+  });
+  const comparisonQuery = useQuery({
+    queryKey: ['player-performance-history', comparisonPlayerId],
+    enabled: Boolean(comparisonPlayerId && comparisonPlayerId !== primaryPlayerId),
+    queryFn: () => loadPlayerTrendHistory(comparisonPlayerId ?? ''),
+  });
+  useEffect(() => {
+    setPrimaryPlayerId(routePlayerId);
+  }, [routePlayerId]);
+  useEffect(() => {
+    if (comparisonPlayerId && comparisonPlayerId === primaryPlayerId) {
+      setComparisonPlayerId(null);
+    }
+  }, [comparisonPlayerId, primaryPlayerId]);
+
+  const player =
+    players.find((item) => item.id === primaryPlayerId) ??
+    historyQuery.data?.player;
+  const comparisonPlayer =
+    players.find((item) => item.id === comparisonPlayerId) ??
+    comparisonQuery.data?.player;
   const matches = historyQuery.data?.matches ?? [];
+  const comparisonMatches = comparisonQuery.data?.matches ?? [];
   const chartHasEnoughHistory = matches.length >= 2;
+  const comparisonHasEnoughHistory =
+    matches.length + comparisonMatches.length >= 2;
+
+  function selectPlayer(playerId: string) {
+    if (pickerTarget === 'primary') {
+      setPrimaryPlayerId(playerId);
+      if (comparisonPlayerId === playerId) setComparisonPlayerId(null);
+    } else if (pickerTarget === 'comparison') {
+      setComparisonPlayerId(playerId);
+    }
+    setPickerTarget(null);
+  }
 
   return (
     <SafeAreaView
@@ -203,20 +686,51 @@ export default function PlayerDevelopmentScreen() {
 
         <Text style={[styles.eyebrow, { color: colors.accent }]}>PLAYER DEVELOPMENT</Text>
         <Text style={[styles.title, { color: colors.foreground }]}>
-          {player?.name ?? 'Performance trends'}
+          {comparisonPlayerId ? 'Performance comparison' : player?.name ?? 'Performance trends'}
         </Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
           Match-by-match percentages from points recorded on this device.
         </Text>
 
-        {historyQuery.isLoading ? (
+        {playersQuery.isSuccess ? (
+          <>
+            <View style={styles.playerPairChoices}>
+              <PlayerSelectionCard
+                testID="button-select-trend-player-primary"
+                label="Player 1"
+                playerName={player?.name ?? 'Choose saved player'}
+                onPress={() => setPickerTarget('primary')}
+              />
+              <PlayerSelectionCard
+                testID="button-select-trend-player-comparison"
+                label="Player 2"
+                playerName={comparisonPlayer?.name ?? 'Choose player'}
+                onPress={() => setPickerTarget('comparison')}
+              />
+            </View>
+            {comparisonPlayerId ? (
+              <Pressable
+                testID="button-clear-trend-comparison"
+                accessibilityRole="button"
+                onPress={() => setComparisonPlayerId(null)}
+                style={styles.clearComparison}
+              >
+                <Text style={[styles.clearComparisonText, { color: colors.primary }]}>
+                  Clear comparison
+                </Text>
+              </Pressable>
+            ) : null}
+          </>
+        ) : null}
+
+        {playersQuery.isLoading || (Boolean(primaryPlayerId) && historyQuery.isLoading) ? (
           <View style={styles.loading}>
             <ActivityIndicator color={colors.primary} />
             <Text style={[styles.stateText, { color: colors.mutedForeground }]}>
               Reading recorded match points…
             </Text>
           </View>
-        ) : historyQuery.isError ? (
+        ) : playersQuery.isError || historyQuery.isError ? (
           <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Ionicons name="alert-circle-outline" size={25} color={colors.destructive} />
             <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
@@ -227,7 +741,10 @@ export default function PlayerDevelopmentScreen() {
             </Text>
             <Pressable
               accessibilityRole="button"
-              onPress={() => void historyQuery.refetch()}
+              onPress={() => {
+                void playersQuery.refetch();
+                void historyQuery.refetch();
+              }}
               style={[styles.retryButton, { borderColor: colors.border }]}
             >
               <Text style={[styles.retryText, { color: colors.primary }]}>Try again</Text>
@@ -236,13 +753,13 @@ export default function PlayerDevelopmentScreen() {
         ) : !player ? (
           <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-              Saved player not found
+              Choose a saved player
             </Text>
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              This player may have been removed from this device.
+              Select Player 1 above to view a point-recorded history.
             </Text>
           </View>
-        ) : matches.length === 0 ? (
+        ) : matches.length === 0 && !comparisonPlayerId ? (
           <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={[styles.emptyIcon, { backgroundColor: colors.secondary }]}>
               <Ionicons name="stats-chart-outline" size={23} color={colors.primary} />
@@ -261,7 +778,11 @@ export default function PlayerDevelopmentScreen() {
                 Percentage over time
               </Text>
               <Text style={[styles.sampleCount, { color: colors.mutedForeground }]}>
-                {matches.length} {matches.length === 1 ? 'match' : 'matches'}
+                {comparisonPlayerId
+                  ? comparisonQuery.isSuccess
+                    ? `${matches.length} vs ${comparisonMatches.length} matches`
+                    : 'Comparing players'
+                  : `${matches.length} ${matches.length === 1 ? 'match' : 'matches'}`}
               </Text>
             </View>
             <View style={styles.metricChoices}>
@@ -295,75 +816,224 @@ export default function PlayerDevelopmentScreen() {
               })}
             </View>
 
-            <View style={[styles.chartCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              {chartHasEnoughHistory ? (
-                <PerformanceChart matches={matches} metric={selectedMetric} />
-              ) : (
-                <View style={styles.chartEmpty}>
-                  <Ionicons name="analytics-outline" size={22} color={colors.primary} />
-                  <Text style={[styles.chartEmptyTitle, { color: colors.foreground }]}>
-                    Record another match to see a trend
-                  </Text>
-                  <Text style={[styles.chartEmptyText, { color: colors.mutedForeground }]}>
-                    One match is available below. The graph needs at least two point-recorded matches.
+            {comparisonPlayerId ? (
+              comparisonQuery.isLoading ? (
+                <View style={styles.loading}>
+                  <ActivityIndicator color={colors.primary} />
+                  <Text style={[styles.stateText, { color: colors.mutedForeground }]}>
+                    Reading the second player’s match points…
                   </Text>
                 </View>
-              )}
-            </View>
-
-            <Text style={[styles.sectionTitle, styles.matchListHeading, { color: colors.foreground }]}>
-              Match details
-            </Text>
-            <Text style={[styles.countHint, { color: colors.mutedForeground }]}>
-              Values show won attempts / total attempts. A zero denominator is unavailable, not 0%.
-            </Text>
-            {matches.map((match) => {
-              const value = match.metrics[selectedMetric];
-              const valueText =
-                value.percent === null ? 'Unavailable' : `${value.percent}%`;
-              const countText =
-                value.total === 0
-                  ? `No ${value.countLabel} recorded`
-                  : `${value.won} of ${value.total} ${value.countLabel}`;
-              return (
+              ) : comparisonQuery.isError ? (
                 <View
-                  key={match.id}
-                  testID={`player-trend-match-${match.id}`}
                   style={[
-                    styles.matchRow,
+                    styles.emptyCard,
                     { backgroundColor: colors.card, borderColor: colors.border },
                   ]}
                 >
-                  <View style={styles.matchCopy}>
-                    <Text style={[styles.matchName, { color: colors.foreground }]}>
-                      {trendLabel(match)}
-                    </Text>
-                    <Text style={[styles.matchMeta, { color: colors.mutedForeground }]}>
-                      {`vs ${match.opponent} · ${formatDate(match.date)}`}
-                      {match.round ? ` · ${match.round}` : ''}
-                    </Text>
-                    <Text style={[styles.matchCount, { color: colors.mutedForeground }]}>
-                      {countText}
-                    </Text>
-                  </View>
-                  <Text
-                    accessibilityLabel={`${valueText}, ${countText}`}
-                    style={[
-                      styles.matchPercent,
-                      { color: value.percent === null ? colors.mutedForeground : colors.primary },
-                    ]}
+                  <Ionicons
+                    name="alert-circle-outline"
+                    size={25}
+                    color={colors.destructive}
+                  />
+                  <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
+                    Couldn’t load the comparison
+                  </Text>
+                  <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
+                    No saved match data was changed. Try loading the player again.
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => void comparisonQuery.refetch()}
+                    style={[styles.retryButton, { borderColor: colors.border }]}
                   >
-                    {valueText}
+                    <Text style={[styles.retryText, { color: colors.primary }]}>
+                      Try again
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : !comparisonPlayer ? (
+                <View
+                  style={[
+                    styles.emptyCard,
+                    { backgroundColor: colors.card, borderColor: colors.border },
+                  ]}
+                >
+                  <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
+                    Saved player not found
+                  </Text>
+                  <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
+                    Choose another player to compare.
                   </Text>
                 </View>
-              );
-            })}
+              ) : (
+                <>
+                  <View
+                    testID="player-trend-comparison-chart"
+                    style={[
+                      styles.chartCard,
+                      { backgroundColor: colors.card, borderColor: colors.border },
+                    ]}
+                  >
+                    {comparisonHasEnoughHistory ? (
+                      <ComparisonPerformanceChart
+                        primaryName={player.name}
+                        primaryMatches={matches}
+                        comparisonName={comparisonPlayer.name}
+                        comparisonMatches={comparisonMatches}
+                        metric={selectedMetric}
+                        primaryColor={colors.primary}
+                        comparisonColor={colors.accent}
+                      />
+                    ) : (
+                      <View style={styles.chartEmpty}>
+                        <Ionicons
+                          name="analytics-outline"
+                          size={22}
+                          color={colors.primary}
+                        />
+                        <Text
+                          style={[
+                            styles.chartEmptyTitle,
+                            { color: colors.foreground },
+                          ]}
+                        >
+                          Record another match to compare trends
+                        </Text>
+                        <Text
+                          style={[
+                            styles.chartEmptyText,
+                            { color: colors.mutedForeground },
+                          ]}
+                        >
+                          The graph needs at least two point-recorded matches between the selected players.
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.summaryCards}>
+                    <TrendSummaryCard
+                      playerName={player.name}
+                      matches={matches}
+                      metric={selectedMetric}
+                      color={colors.primary}
+                    />
+                    <TrendSummaryCard
+                      playerName={comparisonPlayer.name}
+                      matches={comparisonMatches}
+                      metric={selectedMetric}
+                      color={colors.accent}
+                    />
+                  </View>
+                  <Text
+                    style={[
+                      styles.sectionTitle,
+                      styles.matchListHeading,
+                      { color: colors.foreground },
+                    ]}
+                  >
+                    Match history by player
+                  </Text>
+                  <Text style={[styles.countHint, { color: colors.mutedForeground }]}>
+                    Each history is ordered by match date. Values show won attempts / total attempts; unavailable denominators are not 0%.
+                  </Text>
+                  <PlayerTrendHistory
+                    playerName={player.name}
+                    matches={matches}
+                    metric={selectedMetric}
+                    color={colors.primary}
+                    testIDPrefix="player-trend-primary"
+                  />
+                  <PlayerTrendHistory
+                    playerName={comparisonPlayer.name}
+                    matches={comparisonMatches}
+                    metric={selectedMetric}
+                    color={colors.accent}
+                    testIDPrefix="player-trend-comparison"
+                  />
+                </>
+              )
+            ) : (
+              <>
+                <View
+                  style={[
+                    styles.chartCard,
+                    { backgroundColor: colors.card, borderColor: colors.border },
+                  ]}
+                >
+                  {chartHasEnoughHistory ? (
+                    <PerformanceChart matches={matches} metric={selectedMetric} />
+                  ) : (
+                    <View style={styles.chartEmpty}>
+                      <Ionicons
+                        name="analytics-outline"
+                        size={22}
+                        color={colors.primary}
+                      />
+                      <Text
+                        style={[
+                          styles.chartEmptyTitle,
+                          { color: colors.foreground },
+                        ]}
+                      >
+                        Record another match to see a trend
+                      </Text>
+                      <Text
+                        style={[
+                          styles.chartEmptyText,
+                          { color: colors.mutedForeground },
+                        ]}
+                      >
+                        One match is available below. The graph needs at least two point-recorded matches.
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                <Text
+                  style={[
+                    styles.sectionTitle,
+                    styles.matchListHeading,
+                    { color: colors.foreground },
+                  ]}
+                >
+                  Match details
+                </Text>
+                <Text style={[styles.countHint, { color: colors.mutedForeground }]}>
+                  Values show won attempts / total attempts. A zero denominator is unavailable, not 0%.
+                </Text>
+                <PlayerTrendHistory
+                  playerName={player.name}
+                  matches={matches}
+                  metric={selectedMetric}
+                  color={colors.primary}
+                  testIDPrefix="player-trend"
+                />
+              </>
+            )}
             <Text style={[styles.localNote, { color: colors.mutedForeground }]}>
               Names shown on old match sheets are unchanged. Player links and calculations stay on this device.
             </Text>
           </>
         )}
       </ScrollView>
+      <PlayerPickerModal
+        visible={pickerTarget !== null}
+        target={pickerTarget}
+        players={players}
+        excludePlayerId={
+          pickerTarget === 'primary'
+            ? comparisonPlayerId ?? ''
+            : primaryPlayerId
+        }
+        selectedPlayerId={
+          pickerTarget === 'primary'
+            ? primaryPlayerId
+            : comparisonPlayerId ?? ''
+        }
+        onSelect={selectPlayer}
+        onClose={() => setPickerTarget(null)}
+      />
     </SafeAreaView>
   );
 }
@@ -371,6 +1041,33 @@ export default function PlayerDevelopmentScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   content: { paddingHorizontal: 20, paddingTop: 8 },
+  playerPairChoices: { flexDirection: 'row', gap: 8, marginBottom: 4 },
+  playerSelectionCard: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 62,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    justifyContent: 'center',
+    gap: 5,
+  },
+  playerSelectionLabel: {
+    fontFamily: 'DMSans_700Bold',
+    fontSize: 9,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  playerSelectionValue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 5,
+  },
+  playerSelectionName: { flex: 1, fontFamily: 'DMSans_600SemiBold', fontSize: 11 },
+  clearComparison: { alignSelf: 'flex-end', paddingVertical: 4, paddingHorizontal: 3 },
+  clearComparisonText: { fontFamily: 'DMSans_600SemiBold', fontSize: 10 },
   backButton: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 42, marginBottom: 22 },
   backText: { fontFamily: 'DMSans_600SemiBold', fontSize: 13 },
   eyebrow: { fontFamily: 'DMSans_700Bold', fontSize: 10, letterSpacing: 1.6 },
@@ -386,6 +1083,32 @@ const styles = StyleSheet.create({
   metricChipText: { fontFamily: 'DMSans_600SemiBold', fontSize: 10 },
   chartCard: { borderWidth: 1, borderRadius: 13, paddingVertical: 9, paddingHorizontal: 6, minHeight: 164, justifyContent: 'center' },
   chartScrollContent: { paddingHorizontal: 2 },
+  chartLegend: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 7, paddingBottom: 6 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5, flex: 1, minWidth: '45%' },
+  legendLine: { width: 13, height: 3, borderRadius: 2 },
+  legendText: { flex: 1, fontFamily: 'DMSans_600SemiBold', fontSize: 9 },
+  summaryCards: { flexDirection: 'row', gap: 8, marginTop: 9 },
+  summaryCard: { flex: 1, minWidth: 0, borderWidth: 1, borderRadius: 11, padding: 10, gap: 4 },
+  summaryNameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  playerDot: { width: 8, height: 8, borderRadius: 4 },
+  summaryName: { flex: 1, fontFamily: 'DMSans_700Bold', fontSize: 10 },
+  summaryPercent: { fontFamily: 'Manrope_700Bold', fontSize: 20, fontVariant: ['tabular-nums'] },
+  summaryMeta: { fontFamily: 'DMSans_500Medium', fontSize: 9 },
+  historySection: { gap: 7, marginBottom: 11 },
+  historyHeading: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 5 },
+  emptyHistory: { borderWidth: 1, borderRadius: 10, padding: 12 },
+  modalOverlay: { flex: 1, justifyContent: 'center', padding: 22, backgroundColor: 'rgba(12, 25, 19, 0.48)' },
+  modalCard: { maxHeight: '75%', borderWidth: 1, borderRadius: 16, padding: 15, gap: 12 },
+  modalHeading: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  modalHeadingCopy: { flex: 1, gap: 3 },
+  modalTitle: { fontFamily: 'Manrope_700Bold', fontSize: 17 },
+  modalHint: { fontFamily: 'DMSans_400Regular', fontSize: 11 },
+  modalClose: { minWidth: 36, minHeight: 36, alignItems: 'center', justifyContent: 'center' },
+  playerOptions: { flexGrow: 0, maxHeight: 440 },
+  playerOptionsContent: { gap: 7 },
+  playerOption: { minHeight: 44, borderWidth: 1, borderRadius: 9, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  playerOptionName: { flex: 1, fontFamily: 'DMSans_600SemiBold', fontSize: 12 },
+  modalEmpty: { paddingVertical: 18, fontFamily: 'DMSans_400Regular', fontSize: 12, lineHeight: 18, textAlign: 'center' },
   chartEmpty: { minHeight: 142, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, gap: 8 },
   chartEmptyTitle: { fontFamily: 'DMSans_700Bold', fontSize: 13, textAlign: 'center' },
   chartEmptyText: { fontFamily: 'DMSans_400Regular', fontSize: 11, lineHeight: 16, textAlign: 'center' },

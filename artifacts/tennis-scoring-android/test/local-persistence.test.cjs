@@ -643,6 +643,12 @@ test('legacy match links preserve names and trend metrics count points from ever
 
   const trends = loadPlayerInsights().buildPlayerPerformanceHistory(history);
   assert.equal(trends.length, 2);
+  assert.deepEqual(
+    loadPlayerInsights()
+      .buildPlayerPerformanceHistory([...history].reverse())
+      .map((trend) => trend.date),
+    ['2026-10-29', '2026-10-31'],
+  );
   assert.equal(trends[0].metrics.overall.percent, 50);
   assert.equal(trends[0].metrics.service.percent, 50);
   assert.equal(trends[0].metrics.return.percent, 50);
@@ -652,6 +658,26 @@ test('legacy match links preserve names and trend metrics count points from ever
     [trends[0].metrics.overall.won, trends[0].metrics.overall.total],
     [2, 4],
   );
+  const overallSummary = loadPlayerInsights().summarizePlayerTrendMetric(
+    trends,
+    'overall',
+  );
+  assert.deepEqual(
+    {
+      percent: overallSummary.percent,
+      won: overallSummary.won,
+      total: overallSummary.total,
+      matchCount: overallSummary.matchCount,
+      sampledMatchCount: overallSummary.sampledMatchCount,
+    },
+    {
+      percent: 60,
+      won: 3,
+      total: 5,
+      matchCount: 2,
+      sampledMatchCount: 2,
+    },
+  );
 
   const opponentHistory = await localMatches.listLocalPlayerMatchInsights(
     opponentPlayer.id,
@@ -660,8 +686,17 @@ test('legacy match links preserve names and trend metrics count points from ever
   const opponentTrend = loadPlayerInsights().buildPlayerPerformanceHistory(
     opponentHistory,
   )[0];
+  assert.equal(opponentTrend.trackedPlayer, 'Maya Rao');
+  assert.equal(opponentTrend.opponent, 'Sana Iyer');
   assert.equal(opponentTrend.metrics.secondServe.percent, null);
   assert.equal(opponentTrend.metrics.secondServe.total, 0);
+  const noSecondServeSummary = loadPlayerInsights().summarizePlayerTrendMetric(
+    [opponentTrend],
+    'secondServe',
+  );
+  assert.equal(noSecondServeSummary.percent, null);
+  assert.equal(noSecondServeSummary.matchCount, 1);
+  assert.equal(noSecondServeSummary.sampledMatchCount, 0);
 });
 
 test('legacy match names that match multiple saved identities stay unlinked', async () => {

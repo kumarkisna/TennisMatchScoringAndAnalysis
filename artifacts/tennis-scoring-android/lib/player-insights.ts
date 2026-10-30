@@ -127,6 +127,11 @@ export interface PlayerTrendMetricValue {
   countLabel: string;
 }
 
+export interface PlayerTrendMetricSummary extends PlayerTrendMetricValue {
+  matchCount: number;
+  sampledMatchCount: number;
+}
+
 export interface PlayerTrendMatch {
   id: string;
   date: string;
@@ -198,11 +203,40 @@ export function buildPlayerPerformanceHistory(
       date: match.matchDate,
       event: match.event,
       round: match.round,
-      trackedPlayer: match.trackedPlayer,
-      opponent: match.opponent,
+      trackedPlayer:
+        playerSide === 'tracked' ? match.trackedPlayer : match.opponent,
+      opponent:
+        playerSide === 'tracked' ? match.opponent : match.trackedPlayer,
       metrics,
     };
-  });
+  }).sort(
+    (left, right) =>
+      left.date.localeCompare(right.date) || left.id.localeCompare(right.id),
+  );
+}
+
+export function summarizePlayerTrendMetric(
+  matches: readonly PlayerTrendMatch[],
+  metric: PlayerTrendMetricKey,
+): PlayerTrendMetricSummary {
+  const countLabels: Record<PlayerTrendMetricKey, string> = {
+    overall: 'points',
+    service: 'service points',
+    return: 'return points',
+    firstServe: 'first-serve points',
+    secondServe: 'second-serve points',
+  };
+  const values = matches.map((match) => match.metrics[metric]);
+  const won = values.reduce((total, value) => total + value.won, 0);
+  const total = values.reduce((sum, value) => sum + value.total, 0);
+  return {
+    percent: percent(won, total),
+    won,
+    total,
+    countLabel: values[0]?.countLabel ?? countLabels[metric],
+    matchCount: matches.length,
+    sampledMatchCount: values.filter((value) => value.total > 0).length,
+  };
 }
 
 const allPointCodes: PointCode[] = [...shotCodes, 'N', 'L', 'W', 'D', 'FE'];
