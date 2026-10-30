@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -12,6 +12,7 @@ import {
   Text,
   TextInput,
   View,
+  type ScrollViewInstance,
 } from 'react-native';
 import {
   useMutation,
@@ -108,6 +109,7 @@ type NoteEditorTarget =
     };
 
 const courtSurfaces: CourtSurface[] = ['Hard', 'Clay', 'Grass', 'Carpet', 'Other'];
+const MATRIX_POINT_COLUMN_STEP = 36;
 
 function NotePromptChips({
   scope,
@@ -451,6 +453,7 @@ export default function MatchScreen() {
   const [isEditingDetails, setIsEditingDetails] = useState(false);
   const [editDraft, setEditDraft] = useState<LocalMatchDetailsUpdate | null>(null);
   const [editValidationError, setEditValidationError] = useState('');
+  const tiebreakMatrixScrollRef = useRef<ScrollViewInstance | null>(null);
 
   const matchQuery = useQuery({
     queryKey: localMatchKey(matchId),
@@ -619,6 +622,28 @@ export default function MatchScreen() {
   const currentSet = setHistory.find((set) => set.isCurrent);
   const displayedSet =
     setHistory.find((set) => set.setNumber === selectedReviewSetNumber) ?? currentSet;
+  const matrixSetToFollow = displayedSet ?? currentSet ?? setHistory.at(-1);
+  const matrixSetTiebreakPoints =
+    matrixSetToFollow?.points.filter((point) => point.isTiebreak) ?? [];
+  const newestTiebreakPoint = matrixSetTiebreakPoints.at(-1);
+  const newestTiebreakPointIndex = matrixSetTiebreakPoints.length - 1;
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      tiebreakMatrixScrollRef.current?.scrollTo({
+        x: newestTiebreakPoint
+          ? Math.max(0, newestTiebreakPointIndex * MATRIX_POINT_COLUMN_STEP)
+          : 0,
+        y: 0,
+        animated: false,
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [
+    matchId,
+    matrixSetToFollow?.setNumber,
+    newestTiebreakPoint?.id,
+    newestTiebreakPointIndex,
+  ]);
   const isReviewingHistoricalSet = Boolean(displayedSet && !displayedSet.isCurrent);
   const isBusy =
     recordPoint.isPending ||
@@ -1195,7 +1220,11 @@ export default function MatchScreen() {
             {viewedSet.score.trackedTiebreakPoints} – {viewedSet.score.opponentTiebreakPoints}
           </Text>
         </View>
-        <View style={{ width: Math.max(0, matrixColumnCount * 36 - 3) }} />
+        <View
+          style={{
+            width: Math.max(0, matrixColumnCount * MATRIX_POINT_COLUMN_STEP - 3),
+          }}
+        />
         <View
           style={[
             styles.winnerCell,
@@ -2311,6 +2340,10 @@ export default function MatchScreen() {
         </View>
 
         <ScrollView
+          ref={tiebreakMatrixScrollRef}
+          testID="matrix-point-history-scroll"
+          accessibilityLabel="Set point history"
+          accessibilityHint="Swipe horizontally to review earlier points without changing their order."
           horizontal
           showsHorizontalScrollIndicator={false}
           style={[styles.matrixCard, { backgroundColor: colors.card, borderColor: colors.border }]}
@@ -2377,7 +2410,11 @@ export default function MatchScreen() {
                         </Text>
                       </View>
                     </View>
-                    <View style={{ width: Math.max(0, matrixColumnCount * 36 - 3) }} />
+                    <View
+                      style={{
+                        width: Math.max(0, matrixColumnCount * MATRIX_POINT_COLUMN_STEP - 3),
+                      }}
+                    />
                     <View
                       style={[
                         styles.winnerCell,

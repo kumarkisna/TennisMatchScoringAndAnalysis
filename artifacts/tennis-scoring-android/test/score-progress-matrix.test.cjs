@@ -216,7 +216,7 @@ test('tiebreak point history uses the same two-lane chronological layout', () =>
 test('narrow screens can scroll the point columns while player lanes stay stacked', () => {
   assert.match(
     screenSource,
-    /<ScrollView\s+horizontal\s+showsHorizontalScrollIndicator=\{false\}/,
+    /<ScrollView\s+ref=\{tiebreakMatrixScrollRef\}[\s\S]*?horizontal\s+showsHorizontalScrollIndicator=\{false\}/,
   );
   assert.match(
     screenSource,
@@ -225,5 +225,40 @@ test('narrow screens can scroll the point columns while player lanes stay stacke
   assert.match(
     screenSource,
     /matrixColumnCount = Math\.max\(\s*1,/,
+  );
+});
+
+test('the matrix follows each newest tiebreak point and keeps earlier points scrollable', () => {
+  assert.match(
+    screenSource,
+    /const tiebreakMatrixScrollRef = useRef<ScrollViewInstance \| null>\(null\);/,
+  );
+  assert.match(
+    screenSource,
+    /const matrixSetToFollow = displayedSet \?\? currentSet \?\? setHistory\.at\(-1\);/,
+  );
+  assert.match(
+    screenSource,
+    /const matrixSetTiebreakPoints =\s*matrixSetToFollow\?\.points\.filter\(\(point\) => point\.isTiebreak\) \?\? \[\];/,
+  );
+  assert.match(
+    screenSource,
+    /const newestTiebreakPointIndex = matrixSetTiebreakPoints\.length - 1;/,
+  );
+  assert.match(
+    screenSource,
+    /tiebreakMatrixScrollRef\.current\?\.scrollTo\(\{\s*x: newestTiebreakPoint\s*\?\s*Math\.max\(0, newestTiebreakPointIndex \* MATRIX_POINT_COLUMN_STEP\)\s*:\s*0,\s*y: 0,\s*animated: false,/,
+  );
+  assert.match(
+    screenSource,
+    /\[\s*matchId,\s*matrixSetToFollow\?\.setNumber,\s*newestTiebreakPoint\?\.id,\s*newestTiebreakPointIndex,\s*\]/,
+  );
+  assert.match(
+    screenSource,
+    /<ScrollView\s+ref=\{tiebreakMatrixScrollRef\}\s+testID="matrix-point-history-scroll"\s+accessibilityLabel="Set point history"\s+accessibilityHint="Swipe horizontally to review earlier points without changing their order\."\s+horizontal/,
+  );
+  assert.match(
+    screenSource,
+    /const point = matrixTiebreakPoints\[index\]/,
   );
 });
