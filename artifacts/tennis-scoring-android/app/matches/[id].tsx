@@ -2669,6 +2669,7 @@ export default function MatchScreen() {
 
         <ReportSectionPicker
           testID="player-report-sections"
+          reportType="player"
           sections={PLAYER_REPORT_SECTIONS}
           selected={selectedReportSections}
           onToggle={toggleReportSection}

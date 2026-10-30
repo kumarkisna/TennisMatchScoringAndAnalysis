@@ -55,6 +55,7 @@ const localMatchesPath = path.join(__dirname, '../lib/local-matches.ts');
 const localPlayersPath = path.join(__dirname, '../lib/local-players.ts');
 const localReportBenchmarksPath = path.join(__dirname, '../lib/local-benchmarks.ts');
 const localReportNameLabelsPath = path.join(__dirname, '../lib/local-report-labels.ts');
+const localReportLayoutsPath = path.join(__dirname, '../lib/local-report-layouts.ts');
 const homeScreenStatePath = path.join(__dirname, '../lib/home-screen-state.ts');
 const themePresetsPath = path.join(__dirname, '../lib/theme-presets.ts');
 const colorsPath = path.join(__dirname, '../constants/colors.ts');
@@ -65,12 +66,14 @@ function loadStorageModulesAfterRestart() {
   delete require.cache[require.resolve(localPlayersPath)];
   delete require.cache[require.resolve(localReportBenchmarksPath)];
   delete require.cache[require.resolve(localReportNameLabelsPath)];
+  delete require.cache[require.resolve(localReportLayoutsPath)];
 
   return {
     localMatches: require(localMatchesPath),
     localPlayers: require(localPlayersPath),
     localReportBenchmarks: require(localReportBenchmarksPath),
     localReportNameLabels: require(localReportNameLabelsPath),
+    localReportLayouts: require(localReportLayoutsPath),
   };
 }
 
@@ -1954,6 +1957,86 @@ test('custom neutral report labels stay local and survive app restart', async (t
     }),
     /label for both players/,
   );
+  assert.equal(networkRequestCount, 0);
+});
+
+test('named report layouts can be created, renamed, removed, and reused offline', async (t) => {
+  storageValues.clear();
+  const originalFetch = global.fetch;
+  let networkRequestCount = 0;
+  global.fetch = async () => {
+    networkRequestCount += 1;
+    throw new Error('Saved report layouts must stay on this device.');
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const beforeRestart = loadStorageModulesAfterRestart().localReportLayouts;
+  assert.deepEqual(await beforeRestart.listLocalReportLayouts(), []);
+  const playerLayouts = await beforeRestart.saveLocalReportLayout(
+    'player',
+    '  Coach   review ',
+    ['overview', 'coaching'],
+  );
+  const playerLayout = playerLayouts[0];
+  assert.equal(playerLayout.name, 'Coach review');
+  assert.deepEqual(playerLayout.sections, ['overview', 'coaching']);
+  const bothTypes = await beforeRestart.saveLocalReportLayout(
+    'head-to-head',
+    'Coach review',
+    ['overview', 'meetings', 'coaching'],
+  );
+  const headToHeadLayout = bothTypes.find(
+    (layout) => layout.reportType === 'head-to-head',
+  );
+  assert.ok(headToHeadLayout);
+  assert.notEqual(headToHeadLayout.id, playerLayout.id);
+  await assert.rejects(
+    beforeRestart.saveLocalReportLayout('player', 'coach REVIEW', ['overview']),
+    /already uses that name/,
+  );
+  await assert.rejects(
+    beforeRestart.saveLocalReportLayout('player', 'Invalid sections', ['meetings']),
+    /invalid report sections/,
+  );
+  await assert.rejects(
+    beforeRestart.saveLocalReportLayout('player', ' '.repeat(2), ['overview']),
+    /name for this layout/,
+  );
+
+  const afterRestart = loadStorageModulesAfterRestart().localReportLayouts;
+  const restored = await afterRestart.listLocalReportLayouts();
+  assert.deepEqual(restored, bothTypes);
+  const renamed = await afterRestart.renameLocalReportLayout(
+    playerLayout.id,
+    ' Match-day notes ',
+  );
+  assert.equal(renamed.find((layout) => layout.id === playerLayout.id)?.name, 'Match-day notes');
+  const removed = await afterRestart.deleteLocalReportLayout(headToHeadLayout.id);
+  assert.deepEqual(
+    removed.map(({ id, reportType, sections, name }) => ({
+      id,
+      reportType,
+      sections,
+      name,
+    })),
+    [
+      {
+        id: playerLayout.id,
+        name: 'Match-day notes',
+        reportType: 'player',
+        sections: ['overview', 'coaching'],
+      },
+    ],
+  );
+  await assert.rejects(
+    afterRestart.deleteLocalReportLayout(headToHeadLayout.id),
+    /layout not found/,
+  );
+  assert.deepEqual([...storageValues.keys()], [
+    '@tennis-scoring/report-layouts/record-v1',
+  ]);
   assert.equal(networkRequestCount, 0);
 });
 

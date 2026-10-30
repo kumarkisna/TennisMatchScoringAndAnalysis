@@ -1,7 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useColors } from '@/hooks/useColors';
+import { LocalReportLayoutManager } from '@/components/LocalReportLayoutManager';
 import type { ReportSectionPreset } from '@/lib/report-sections';
+import type { ReportLayoutType } from '@/lib/local-report-layouts';
 
 type Section<TSection extends string> = { id: TSection; label: string };
 
@@ -13,6 +15,7 @@ export function ReportSectionPicker<TSection extends string>({
   onClear,
   presets,
   onApplyPreset,
+  reportType,
   testID,
 }: {
   sections: readonly Section<TSection>[];
@@ -22,6 +25,7 @@ export function ReportSectionPicker<TSection extends string>({
   onClear: () => void;
   presets: readonly ReportSectionPreset<TSection>[];
   onApplyPreset: (sections: readonly TSection[]) => void;
+  reportType: ReportLayoutType;
   testID: string;
 }) {
   const colors = useColors();
@@ -104,6 +108,13 @@ export function ReportSectionPicker<TSection extends string>({
           })}
         </View>
       </View>
+      <LocalReportLayoutManager
+        reportType={reportType}
+        sections={sections}
+        selected={selected}
+        onApply={onApplyPreset}
+        testID={testID}
+      />
       <View style={styles.options}>
         {sections.map(({ id, label }) => {
           const checked = selected.includes(id);

@@ -115,6 +115,18 @@ const headToHeadScreenSource = fs.readFileSync(
   path.join(__dirname, '../app/head-to-head.tsx'),
   'utf8',
 );
+const playerMatchScreenSource = fs.readFileSync(
+  path.join(__dirname, '../app/matches/[id].tsx'),
+  'utf8',
+);
+const reportSectionPickerSource = fs.readFileSync(
+  path.join(__dirname, '../components/ReportSectionPicker.tsx'),
+  'utf8',
+);
+const localReportLayoutManagerSource = fs.readFileSync(
+  path.join(__dirname, '../components/LocalReportLayoutManager.tsx'),
+  'utf8',
+);
 const {
   calculateBreakPointStats,
   calculateLocalInsights,
@@ -172,6 +184,18 @@ test('report layouts provide overview, statistics, and full presets for both rep
     HEAD_TO_HEAD_REPORT_SECTION_PRESETS[2].sections,
     allHeadToHeadReportSections(),
   );
+});
+
+test('single-match and head-to-head report pickers expose saved local layouts', () => {
+  assert.match(playerMatchScreenSource, /reportType="player"/);
+  assert.match(headToHeadScreenSource, /reportType="head-to-head"/);
+  assert.match(reportSectionPickerSource, /<LocalReportLayoutManager/);
+  assert.match(reportSectionPickerSource, /onPress=\{\(\) => onToggle\(id\)\}/);
+  assert.match(localReportLayoutManagerSource, /saveLocalReportLayout\(/);
+  assert.match(localReportLayoutManagerSource, /renameLocalReportLayout\(/);
+  assert.match(localReportLayoutManagerSource, /deleteLocalReportLayout\(/);
+  assert.match(localReportLayoutManagerSource, /onApply\(validSections\)/);
+  assert.match(localReportLayoutManagerSource, /LOCAL_REPORT_LAYOUTS_KEY/);
 });
 
 const emptySide = {

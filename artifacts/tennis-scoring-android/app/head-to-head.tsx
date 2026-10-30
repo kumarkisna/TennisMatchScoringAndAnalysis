@@ -990,6 +990,7 @@ export default function HeadToHeadScreen() {
           <>
             <ReportSectionPicker
               testID="head-to-head-report-sections"
+              reportType="head-to-head"
               sections={HEAD_TO_HEAD_REPORT_SECTIONS}
               selected={selectedReportSections}
               onToggle={toggleReportSection}
