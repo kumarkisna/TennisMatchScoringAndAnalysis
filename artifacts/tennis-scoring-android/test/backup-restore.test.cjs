@@ -122,6 +122,14 @@ require.extensions['.ts'] = function (module, filename) {
 const localMatchesPath = path.join(__dirname, '../lib/local-matches.ts');
 const localPlayersPath = path.join(__dirname, '../lib/local-players.ts');
 const localBackupPath = path.join(__dirname, '../lib/local-backup.ts');
+const versionOneBackupFixturePath = path.join(
+  __dirname,
+  'fixtures/local-backup-v1.json',
+);
+
+function readVersionOneBackupFixture() {
+  return fs.readFileSync(versionOneBackupFixturePath, 'utf8');
+}
 
 function loadLocalModules() {
   delete require.cache[require.resolve(localMatchesPath)];
@@ -243,6 +251,7 @@ test('backup save, share, and restore preserve all players and sets without netw
   assert.equal(savedDeviceBackup.mimeType, 'application/json');
   const exported = JSON.parse(savedDeviceBackup.contents);
   assert.equal(exported.format, 'tennis-scoring-local-backup');
+  assert.equal(exported.version, 1);
   assert.equal(exported.activePlayerId, player.id);
   assert.equal(exported.players[0].dateOfBirth, '2005-07-09');
   assert.equal(exported.players[0].itfPlayerId, 'ITF-54321');
@@ -491,5 +500,65 @@ test('older backups without profile labels still restore their saved URLs', asyn
     '',
     '',
   ]);
+  assert.equal(networkRequestCount, 0);
+});
+
+test('version-one fixture restores representative player and match history', async () => {
+  storageValues.clear();
+  networkRequestCount = 0;
+  loadLocalModules();
+  selectedBackupContents = readVersionOneBackupFixture();
+
+  const result = await loadBackupModule().loadLocalBackupFromDevice();
+  const [restoredPlayer] = await activeModules.localPlayers.listLocalPlayers();
+  const restoredMatch = await activeModules.localMatches.getLocalMatch(
+    'fixture-match-v1',
+  );
+
+  assert.deepEqual(result, {
+    cancelled: false,
+    playersAdded: 1,
+    playersSkipped: 0,
+    matchesAdded: 1,
+    matchesSkipped: 0,
+  });
+  assert.equal(restoredPlayer.name, 'Ravi Fixture');
+  assert.equal(restoredPlayer.phoneNumbers.length, 0);
+  assert.deepEqual(restoredPlayer.profileUrlLabels, ['', '']);
+  assert.ok(restoredMatch);
+  assert.equal(restoredMatch.trackedPlayerId, restoredPlayer.id);
+  assert.equal(restoredMatch.points.length, 1);
+  assert.equal(restoredMatch.points[0].endingCode, 'A');
+  assert.equal(
+    restoredMatch.points[0].strokes[0].note,
+    'Serve down the T',
+  );
+  assert.equal(
+    await activeModules.localPlayers.getActiveLocalPlayerId(),
+    restoredPlayer.id,
+  );
+  assert.equal(networkRequestCount, 0);
+});
+
+test('unsupported backup versions are rejected without changing device data', async () => {
+  storageValues.clear();
+  networkRequestCount = 0;
+  loadLocalModules();
+  await createSampleRecords();
+  const existingData = [...storageValues.entries()];
+  const fixture = JSON.parse(readVersionOneBackupFixture());
+
+  for (const version of [0, 2, 99]) {
+    selectedBackupContents = JSON.stringify({ ...fixture, version });
+    await assert.rejects(
+      loadBackupModule().loadLocalBackupFromDevice(),
+      new RegExp(`Backup version ${version} is not supported`),
+    );
+    assert.deepEqual(
+      [...storageValues.entries()],
+      existingData,
+      `Unsupported backup version ${version} must not change device data.`,
+    );
+  }
   assert.equal(networkRequestCount, 0);
 });

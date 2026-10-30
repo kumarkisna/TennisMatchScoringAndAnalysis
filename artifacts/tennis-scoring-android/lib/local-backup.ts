@@ -26,9 +26,11 @@ import {
   type LocalPlayerDetailsInput,
 } from '@/lib/local-players';
 
+const CURRENT_LOCAL_BACKUP_VERSION = 1 as const;
+
 interface LocalBackup {
   format: 'tennis-scoring-local-backup';
-  version: 1;
+  version: typeof CURRENT_LOCAL_BACKUP_VERSION;
   exportedAt: string;
   activePlayerId: string | null;
   players: LocalPlayer[];
@@ -349,12 +351,13 @@ function parseLocalBackup(contents: string): LocalBackup {
   } catch {
     throw new Error('That file is not valid JSON.');
   }
-  if (
-    !isRecord(parsed) ||
-    parsed.format !== 'tennis-scoring-local-backup' ||
-    parsed.version !== 1
-  ) {
+  if (!isRecord(parsed) || parsed.format !== 'tennis-scoring-local-backup') {
     throw new Error('This is not a supported TennisScoring backup.');
+  }
+  if (parsed.version !== CURRENT_LOCAL_BACKUP_VERSION) {
+    throw new Error(
+      `Backup version ${String(parsed.version)} is not supported. No data was imported.`,
+    );
   }
   if (
     !isTimestamp(parsed.exportedAt) ||
@@ -404,7 +407,7 @@ export async function createLocalBackupJson(): Promise<string> {
   );
   const backup: LocalBackup = {
     format: 'tennis-scoring-local-backup',
-    version: 1,
+    version: CURRENT_LOCAL_BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     activePlayerId,
     players,

@@ -1,0 +1,86 @@
+{
+  "format": "tennis-scoring-local-backup",
+  "version": 1,
+  "exportedAt": "2026-04-12T15:30:00.000Z",
+  "activePlayerId": "player-v1",
+  "players": [
+    {
+      "id": "player-v1",
+      "name": "Ravi Fixture",
+      "dateOfBirth": "2008-02-14",
+      "atpPlayerId": "ATP-001",
+      "itfPlayerId": "ITF-001",
+      "atpRanking": null,
+      "itfRanking": 842,
+      "nationality": "India",
+      "playingHand": "right",
+      "heightCm": 176,
+      "weightKg": null,
+      "profileUrls": [
+        "https://atp.example.org/player-v1",
+        "https://itf.example.org/player-v1"
+      ],
+      "createdAt": "2026-04-12T15:00:00.000Z"
+    }
+  ],
+  "matches": [
+    {
+      "id": "fixture-match-v1",
+      "matchDate": "2026-04-12",
+      "event": "Fixture Open",
+      "round": "Quarterfinal",
+      "setNumber": 1,
+      "trackedPlayer": "Ravi Fixture",
+      "trackedPlayerId": "player-v1",
+      "opponent": "Opponent Sample",
+      "opponentPlayerId": null,
+      "chairCoach": null,
+      "surface": "Hard",
+      "firstServer": "tracked",
+      "setFormat": "standard",
+      "tiebreakTarget": 7,
+      "completedSets": [],
+      "matchStatus": "in_progress",
+      "matchOutcome": null,
+      "status": "in_progress",
+      "score": {
+        "trackedGames": 0,
+        "opponentGames": 0,
+        "trackedPoints": "15",
+        "opponentPoints": "0",
+        "trackedTiebreakPoints": 0,
+        "opponentTiebreakPoints": 0,
+        "nextServer": "tracked",
+        "isTiebreak": false,
+        "isComplete": false,
+        "winner": null
+      },
+      "points": [
+        {
+          "id": "fixture-point-v1",
+          "sequenceNumber": 1,
+          "setNumber": 1,
+          "gameNumber": 1,
+          "server": "tracked",
+          "isTiebreak": false,
+          "winner": "tracked",
+          "endingCode": "A",
+          "firstServeFault": false,
+          "strokes": [
+            {
+              "id": "fixture-stroke-v1",
+              "player": "tracked",
+              "strokeType": "first_serve",
+              "result": "winner",
+              "note": "Serve down the T"
+            }
+          ],
+          "createdAt": "2026-04-12T15:10:00.000Z"
+        }
+      ],
+      "gameNotes": [],
+      "createdAt": "2026-04-12T15:00:00.000Z",
+      "updatedAt": "2026-04-12T15:10:00.000Z"
+    }
+  ]
+}
