@@ -774,6 +774,23 @@ test('match details expose accessible controls for all points and break-point mo
   );
 });
 
+test('break-point markers show pre-point scores for both named players', () => {
+  const matchScreen = fs.readFileSync(
+    path.join(__dirname, '../app/matches/[id].tsx'),
+    'utf8',
+  );
+
+  assert.match(matchScreen, /point-log-break-point-score-/);
+  assert.match(
+    matchScreen,
+    /Before point · \{trackedName\} \{breakPointScoreBefore\.trackedScore\}/,
+  );
+  assert.match(
+    matchScreen,
+    /\{opponentName\} \{breakPointScoreBefore\.opponentScore\}/,
+  );
+});
+
 test('match detail edits preserve multi-set point history, score totals, and analytics', async () => {
   storageValues.clear();
   const { localMatches } = loadStorageModulesAfterRestart();

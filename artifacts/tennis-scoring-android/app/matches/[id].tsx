@@ -2821,7 +2821,12 @@ export default function MatchScreen() {
               </Text>
             </View>
           ) : (
-            pointHistoryEntries.map(({ point, breakPointOutcome }, index, historyEntries) => (
+            pointHistoryEntries.map(
+              (
+                { point, breakPointOutcome, breakPointScoreBefore },
+                index,
+                historyEntries,
+              ) => (
                 <View
                   key={point.id}
                   testID={`point-log-${point.id}`}
@@ -2867,44 +2872,58 @@ export default function MatchScreen() {
                         : ''}
                     </Text>
                     {breakPointOutcome ? (
-                      <View
-                        testID={`point-log-break-point-${point.id}`}
-                        accessible
-                        accessibilityLabel={
-                          breakPointOutcome === 'converted'
-                            ? 'Break point converted'
-                            : 'Break point saved'
-                        }
-                        style={[
-                          styles.breakPointMarker,
-                          {
-                            backgroundColor:
-                              breakPointOutcome === 'converted'
-                                ? colors.secondary
-                                : colors.background,
-                            borderColor:
-                              breakPointOutcome === 'converted'
-                                ? colors.primary
-                                : colors.accent,
-                          },
-                        ]}
-                      >
-                        <Text
+                      <>
+                        {breakPointScoreBefore ? (
+                          <Text
+                            testID={`point-log-break-point-score-${point.id}`}
+                            accessibilityLabel={`Score before break point. ${trackedName}: ${breakPointScoreBefore.trackedScore}, ${opponentName}: ${breakPointScoreBefore.opponentScore}`}
+                            style={[styles.logDetail, { color: colors.mutedForeground }]}
+                          >
+                            Before point · {trackedName} {breakPointScoreBefore.trackedScore} –{' '}
+                            {opponentName} {breakPointScoreBefore.opponentScore}
+                          </Text>
+                        ) : null}
+                        <View
+                          testID={`point-log-break-point-${point.id}`}
+                          accessible
+                          accessibilityLabel={
+                            breakPointScoreBefore
+                              ? `Break point ${breakPointOutcome}. Before the point, ${trackedName} ${breakPointScoreBefore.trackedScore}, ${opponentName} ${breakPointScoreBefore.opponentScore}`
+                              : breakPointOutcome === 'converted'
+                                ? 'Break point converted'
+                                : 'Break point saved'
+                          }
                           style={[
-                            styles.breakPointMarkerText,
+                            styles.breakPointMarker,
                             {
-                              color:
+                              backgroundColor:
+                                breakPointOutcome === 'converted'
+                                  ? colors.secondary
+                                  : colors.background,
+                              borderColor:
                                 breakPointOutcome === 'converted'
                                   ? colors.primary
-                                : colors.foreground,
+                                  : colors.accent,
                             },
                           ]}
                         >
-                          {breakPointOutcome === 'converted'
-                            ? 'BREAK POINT CONVERTED'
-                            : 'BREAK POINT SAVED'}
-                        </Text>
-                      </View>
+                          <Text
+                            style={[
+                              styles.breakPointMarkerText,
+                              {
+                                color:
+                                  breakPointOutcome === 'converted'
+                                    ? colors.primary
+                                    : colors.foreground,
+                              },
+                            ]}
+                          >
+                            {breakPointOutcome === 'converted'
+                              ? 'BREAK POINT CONVERTED'
+                              : 'BREAK POINT SAVED'}
+                          </Text>
+                        </View>
+                      </>
                     ) : null}
                     {point.strokes?.some((stroke) => stroke.note) ? (
                       <Text style={[styles.logDetail, { color: colors.mutedForeground }]}>

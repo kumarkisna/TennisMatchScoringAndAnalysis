@@ -74,6 +74,7 @@ const {
   calculateBreakPointStats,
   calculateLocalInsights,
   getBreakPointPointOutcomes,
+  getLocalPointHistory,
 } = localMatchExports;
 const {
   allHeadToHeadReportSections,
@@ -1218,6 +1219,100 @@ test('break-point counts, set aggregation, exclusions, and report rates match sc
   assert.match(defenseRows[1], /Set 2.*—.*—.*0\/1 \(0\.0%\).*1\/1 \(100\.0%\)/);
   assert.match(defenseRows[2], /Set 3 Excluded · match tie-break/);
   assert.match(defenseRows[3], /Match total.*3\/3 \(100\.0%\).*0\/3 \(0\.0%\).*1\/3 \(33\.3%\).*2\/3 \(66\.7%\)/);
+});
+
+test('break-point history shows pre-point scores through deuce and advantage', () => {
+  const {
+    savedZeroForty,
+    repeatedAdvantageChances,
+    standardTiebreakPoints,
+    match,
+  } = breakPointSampleMatch();
+
+  assert.deepEqual(
+    getLocalPointHistory(savedZeroForty, 'standard', 'break_points').map(
+      ({ breakPointScoreBefore }) => breakPointScoreBefore,
+    ),
+    [
+      { trackedScore: '30', opponentScore: '40' },
+      { trackedScore: '15', opponentScore: '40' },
+      { trackedScore: '0', opponentScore: '40' },
+    ],
+  );
+
+  assert.deepEqual(
+    getLocalPointHistory(
+      repeatedAdvantageChances,
+      'standard',
+      'break_points',
+    ).map(({ breakPointOutcome, breakPointScoreBefore }) => ({
+      outcome: breakPointOutcome,
+      score: breakPointScoreBefore,
+    })),
+    [
+      {
+        outcome: 'converted',
+        score: { trackedScore: 'AD', opponentScore: '40' },
+      },
+      {
+        outcome: 'saved',
+        score: { trackedScore: 'AD', opponentScore: '40' },
+      },
+    ],
+  );
+
+  const opponentAdvantageChances = gamePoints(
+    1,
+    3,
+    'tracked',
+    [
+      'tracked',
+      'opponent',
+      'tracked',
+      'opponent',
+      'tracked',
+      'opponent',
+      'opponent',
+      'tracked',
+      'opponent',
+      'opponent',
+    ],
+    false,
+    29,
+  );
+  assert.deepEqual(
+    getLocalPointHistory(
+      opponentAdvantageChances,
+      'standard',
+      'break_points',
+    ).map(({ breakPointScoreBefore }) => breakPointScoreBefore),
+    [
+      { trackedScore: '40', opponentScore: 'AD' },
+      { trackedScore: '40', opponentScore: 'AD' },
+    ],
+  );
+
+  const tieBreakHistory = getLocalPointHistory(
+    standardTiebreakPoints,
+    'standard',
+    'all',
+  );
+  assert.ok(
+    tieBreakHistory.every(
+      ({ breakPointOutcome, breakPointScoreBefore }) =>
+        breakPointOutcome === null && breakPointScoreBefore === null,
+    ),
+  );
+  assert.ok(
+    getLocalPointHistory(match.points, 'match_tiebreak', 'all').every(
+      ({ breakPointOutcome, breakPointScoreBefore }) =>
+        breakPointOutcome === null && breakPointScoreBefore === null,
+    ),
+  );
+  assert.equal(
+    Object.hasOwn(savedZeroForty[0], 'breakPointScoreBefore'),
+    false,
+  );
 });
 
 test('break-point report rates update after an outcome is undone and replaced', () => {

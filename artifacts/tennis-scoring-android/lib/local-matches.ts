@@ -591,17 +591,28 @@ function emptyBreakPointStats(): Record<PlayerSide, BreakPointStats> {
 export type BreakPointPointOutcome = 'converted' | 'saved';
 export type LocalPointHistoryFilter = 'all' | 'break_points';
 
+export interface BreakPointPointScore {
+  trackedScore: string;
+  opponentScore: string;
+}
+
 export interface LocalPointHistoryEntry<TPoint> {
   point: TPoint;
   breakPointOutcome: BreakPointPointOutcome | null;
+  breakPointScoreBefore: BreakPointPointScore | null;
 }
 
-export function getBreakPointPointOutcomes(
+interface BreakPointPointDetails {
+  outcome: BreakPointPointOutcome;
+  scoreBefore: BreakPointPointScore;
+}
+
+function getBreakPointPointDetails(
   points: Pick<LocalPoint, 'isTiebreak' | 'server' | 'winner'>[],
   format: SetFormat,
-): (BreakPointPointOutcome | null)[] {
-  const outcomes: (BreakPointPointOutcome | null)[] = points.map(() => null);
-  if (format === 'match_tiebreak') return outcomes;
+): (BreakPointPointDetails | null)[] {
+  const details: (BreakPointPointDetails | null)[] = points.map(() => null);
+  if (format === 'match_tiebreak') return details;
 
   const gamePoints: Record<PlayerSide, number> = { tracked: 0, opponent: 0 };
   for (let index = 0; index < points.length; index += 1) {
@@ -613,7 +624,21 @@ export function getBreakPointPointOutcomes(
     const isBreakPoint =
       gamePoints[returner] >= 3 && gamePoints[returner] > gamePoints[server];
     if (isBreakPoint) {
-      outcomes[index] = point.winner === returner ? 'converted' : 'saved';
+      details[index] = {
+        outcome: point.winner === returner ? 'converted' : 'saved',
+        scoreBefore: {
+          trackedScore: pointLabel(
+            gamePoints.tracked,
+            gamePoints.opponent,
+            'tracked',
+          ),
+          opponentScore: pointLabel(
+            gamePoints.tracked,
+            gamePoints.opponent,
+            'opponent',
+          ),
+        },
+      };
     }
 
     gamePoints[point.winner] += 1;
@@ -625,7 +650,16 @@ export function getBreakPointPointOutcomes(
       gamePoints.opponent = 0;
     }
   }
-  return outcomes;
+  return details;
+}
+
+export function getBreakPointPointOutcomes(
+  points: Pick<LocalPoint, 'isTiebreak' | 'server' | 'winner'>[],
+  format: SetFormat,
+): (BreakPointPointOutcome | null)[] {
+  return getBreakPointPointDetails(points, format).map(
+    (detail) => detail?.outcome ?? null,
+  );
 }
 
 export function getLocalPointHistory<
@@ -635,11 +669,12 @@ export function getLocalPointHistory<
   format: SetFormat,
   filter: LocalPointHistoryFilter = 'all',
 ): LocalPointHistoryEntry<TPoint>[] {
-  const outcomes = getBreakPointPointOutcomes([...points], format);
+  const details = getBreakPointPointDetails([...points], format);
   return points
     .map((point, index) => ({
       point,
-      breakPointOutcome: outcomes[index] ?? null,
+      breakPointOutcome: details[index]?.outcome ?? null,
+      breakPointScoreBefore: details[index]?.scoreBefore ?? null,
     }))
     .filter((entry) => filter === 'all' || entry.breakPointOutcome !== null)
     .reverse();
