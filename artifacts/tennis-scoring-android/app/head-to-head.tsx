@@ -77,6 +77,10 @@ function rateValue(wins: number, attempts: number): RateValue {
     : { value: '—', sample: 'No attempts recorded' };
 }
 
+function unavailableValue(sample: string): RateValue {
+  return { value: '—', sample };
+}
+
 function countValue(count: number, sample: number, sampleLabel: string): RateValue {
   return {
     value: String(count),
@@ -569,14 +573,14 @@ export default function HeadToHeadScreen() {
                   report.performance.rallyWinnerCount,
                   report.insights.pointCount,
                 )
-              : '—',
+              : unavailableValue('No rally-shot tags recorded'),
           opponent:
             report.performance.rallyWinnerTagCount > 0
               ? rateValue(
                   report.performance.opponentRallyWinnerCount,
                   report.insights.pointCount,
                 )
-              : '—',
+              : unavailableValue('No rally-shot tags recorded'),
         },
         {
           label: 'Unforced errors',
@@ -587,7 +591,7 @@ export default function HeadToHeadScreen() {
                   report.insights.pointCount,
                   'recorded points',
                 )
-              : '—',
+              : unavailableValue('No unforced-error tags recorded'),
           opponent:
             report.performance.unforcedErrorTagCount > 0
               ? countValue(
@@ -595,7 +599,7 @@ export default function HeadToHeadScreen() {
                   report.insights.pointCount,
                   'recorded points',
                 )
-              : '—',
+              : unavailableValue('No unforced-error tags recorded'),
         },
       ]
     : [];

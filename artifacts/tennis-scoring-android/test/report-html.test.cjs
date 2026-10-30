@@ -56,8 +56,8 @@ require.extensions['.ts'] = function (module, filename) {
 };
 
 localMatchExports = require('../lib/local-matches.ts');
-const { buildPlayerReportHtml } = require('../lib/player-report-html.ts');
-playerReportExports = { buildPlayerReportHtml };
+playerReportExports = require('../lib/player-report-html.ts');
+const { buildPlayerReportHtml } = playerReportExports;
 const { buildHeadToHeadReportHtml } = require('../lib/head-to-head-report-html.ts');
 const { summarizePlayerPerformance } = require('../lib/player-insights.ts');
 Module._load = originalLoad;
@@ -450,11 +450,11 @@ test('player statistics match a deterministic four-game point log', () => {
   const playerServeRows = reportRowsAfterHeading(playerHtml, 'Serve');
   assert.match(
     playerServeRows.find((row) => row.startsWith('First serve in')),
-    /10\/12 \(83\.3%\).*10\/12 \(83\.3%\)/,
+    /10\/12.*83\.3%.*10\/12.*83\.3%/,
   );
   assert.match(
     playerServeRows.find((row) => row.startsWith('Second serve in')),
-    /1\/2 \(50\.0%\).*1\/2 \(50\.0%\)/,
+    /1\/2.*50\.0%.*1\/2.*50\.0%/,
   );
   assert.match(
     playerServeRows.find((row) => row.startsWith('Aces per service game')),
@@ -477,11 +477,11 @@ test('player statistics match a deterministic four-game point log', () => {
   const headToHeadServeRows = reportRowsAfterHeading(headToHeadHtml, 'Serve');
   assert.match(
     headToHeadServeRows.find((row) => row.startsWith('First serve in')),
-    /10\/12 \(83\.3%\).*10\/12 \(83\.3%\)/,
+    /10\/12 · 83\.3%.*10\/12 · 83\.3%/,
   );
   assert.match(
     headToHeadServeRows.find((row) => row.startsWith('Second serve in')),
-    /1\/2 \(50\.0%\).*1\/2 \(50\.0%\)/,
+    /1\/2 · 50\.0%.*1\/2 · 50\.0%/,
   );
   assert.match(
     headToHeadServeRows.find((row) => row.startsWith('Aces per service game')),
@@ -497,7 +497,7 @@ test('player statistics match a deterministic four-game point log', () => {
   );
   assert.match(
     headToHeadHtml,
-    /Rally-shot winner points<\/td>\s*<td>5\/24 \(20\.8%\)<\/td>\s*<td>1\/24 \(4\.2%\)<\/td>/,
+    /Rally-shot winner points<\/td>\s*<td>5\/24 · 20\.8%<\/td>\s*<td>1\/24 · 4\.2%<\/td>/,
   );
   assert.match(
     headToHeadHtml,
