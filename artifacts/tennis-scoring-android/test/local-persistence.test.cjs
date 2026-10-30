@@ -668,6 +668,107 @@ test('renaming a saved player keeps trend history after restart and preserves ma
   );
 });
 
+test('game notes stay with their set and game after restart and can be edited', async () => {
+  storageValues.clear();
+  const { localMatches } = loadStorageModulesAfterRestart();
+  const match = await localMatches.createLocalMatch({
+    matchDate: '2026-10-30',
+    event: 'Autumn Open',
+    round: 'Final',
+    trackedPlayer: 'A',
+    opponent: 'B',
+    chairCoach: null,
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+
+  for (let point = 0; point < 4; point += 1) {
+    await localMatches.recordLocalPoint(match.id, { winner: 'tracked' });
+  }
+  await localMatches.updateLocalGameNote(
+    match.id,
+    1,
+    1,
+    'Set one game one: aggressive return',
+  );
+  for (let point = 0; point < 20; point += 1) {
+    await localMatches.recordLocalPoint(match.id, { winner: 'tracked' });
+  }
+
+  const secondSet = await localMatches.addLocalSet(match.id, 'standard');
+  assert.equal(secondSet.setNumber, 2);
+  for (let point = 0; point < 4; point += 1) {
+    await localMatches.recordLocalPoint(match.id, { winner: 'opponent' });
+  }
+  await localMatches.updateLocalGameNote(
+    match.id,
+    2,
+    1,
+    'Set two game one: serve placement',
+  );
+
+  const afterRestart = loadStorageModulesAfterRestart();
+  const reopenedMatch = await afterRestart.localMatches.getLocalMatch(match.id);
+  assert.ok(reopenedMatch);
+  const reopenedSets = afterRestart.localMatches.getLocalSetHistory(reopenedMatch);
+  assert.deepEqual(
+    reopenedSets.map((set) => ({
+      setNumber: set.setNumber,
+      isCurrent: set.isCurrent,
+      gameNotes: set.gameNotes,
+    })),
+    [
+      {
+        setNumber: 1,
+        isCurrent: false,
+        gameNotes: [
+          { gameNumber: 1, note: 'Set one game one: aggressive return' },
+        ],
+      },
+      {
+        setNumber: 2,
+        isCurrent: true,
+        gameNotes: [
+          { gameNumber: 1, note: 'Set two game one: serve placement' },
+        ],
+      },
+    ],
+  );
+
+  await afterRestart.localMatches.updateLocalGameNote(
+    match.id,
+    1,
+    1,
+    'Edited set one note',
+  );
+  await afterRestart.localMatches.updateLocalGameNote(
+    match.id,
+    2,
+    1,
+    'Edited set two note',
+  );
+
+  const afterEditRestart = loadStorageModulesAfterRestart();
+  const editedMatch = await afterEditRestart.localMatches.getLocalMatch(match.id);
+  assert.ok(editedMatch);
+  assert.deepEqual(
+    afterEditRestart.localMatches
+      .getLocalSetHistory(editedMatch)
+      .map((set) => ({ setNumber: set.setNumber, gameNotes: set.gameNotes })),
+    [
+      {
+        setNumber: 1,
+        gameNotes: [{ gameNumber: 1, note: 'Edited set one note' }],
+      },
+      {
+        setNumber: 2,
+        gameNotes: [{ gameNumber: 1, note: 'Edited set two note' }],
+      },
+    ],
+  );
+});
+
 test('legacy match links preserve names and trend metrics count points from every set', async () => {
   storageValues.clear();
   const { localMatches, localPlayers } = loadStorageModulesAfterRestart();
