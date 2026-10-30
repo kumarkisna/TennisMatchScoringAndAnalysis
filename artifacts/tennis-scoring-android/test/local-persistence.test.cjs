@@ -621,6 +621,90 @@ test('older saved player records without profile URL fields remain readable', as
   assert.deepEqual(player.profileUrlLabels, []);
 });
 
+test('undoing and replacing a converted break point recomputes saved match stats', async () => {
+  storageValues.clear();
+  const { localMatches } = loadStorageModulesAfterRestart();
+  const match = await localMatches.createLocalMatch({
+    matchDate: '2026-10-30',
+    event: 'City Open',
+    round: 'Final',
+    trackedPlayer: 'Sana Iyer',
+    opponent: 'Maya Rao',
+    chairCoach: null,
+    surface: 'Hard',
+    firstServer: 'opponent',
+    setNumber: 1,
+  });
+  const recordedWinners = [
+    'tracked',
+    'tracked',
+    'tracked',
+    'opponent',
+    'opponent',
+    'opponent',
+    'tracked',
+    'tracked',
+  ];
+  let current = match;
+  for (const winner of recordedWinners) {
+    current = await localMatches.recordLocalPoint(match.id, { winner });
+  }
+
+  const percentage = (value, total) =>
+    total === 0 ? null : Number(((value / total) * 100).toFixed(1));
+  const assertBreakPointRates = (insights, expectedConversion, expectedSave) => {
+    assert.equal(
+      percentage(
+        insights.breakPoints.tracked.converted,
+        insights.breakPoints.tracked.opportunities,
+      ),
+      expectedConversion,
+    );
+    assert.equal(
+      percentage(
+        insights.breakPoints.opponent.saved,
+        insights.breakPoints.opponent.faced,
+      ),
+      expectedSave,
+    );
+  };
+
+  const convertedInsights = localMatches.calculateLocalInsights(current);
+  assert.deepEqual(convertedInsights.breakPoints, {
+    tracked: { opportunities: 4, converted: 1, faced: 0, saved: 0 },
+    opponent: { opportunities: 0, converted: 0, faced: 4, saved: 3 },
+  });
+  assertBreakPointRates(convertedInsights, 25, 75);
+
+  const undone = await localMatches.undoLocalPoint(match.id);
+  assert.equal(undone.points.length, 7);
+  const savedAfterUndo = await localMatches.getLocalMatch(match.id);
+  assert.ok(savedAfterUndo);
+  assert.deepEqual(
+    savedAfterUndo.points.map((point) => point.winner),
+    recordedWinners.slice(0, -1),
+  );
+  const undoneInsights = localMatches.calculateLocalInsights(savedAfterUndo);
+  assert.deepEqual(undoneInsights.breakPoints, {
+    tracked: { opportunities: 3, converted: 0, faced: 0, saved: 0 },
+    opponent: { opportunities: 0, converted: 0, faced: 3, saved: 3 },
+  });
+  assertBreakPointRates(undoneInsights, 0, 100);
+
+  const replacement = await localMatches.recordLocalPoint(match.id, {
+    winner: 'opponent',
+  });
+  assert.equal(replacement.points.length, 8);
+  assert.equal(replacement.points.at(-1).winner, 'opponent');
+  const replacementInsights =
+    localMatches.calculateLocalInsights(replacement);
+  assert.deepEqual(replacementInsights.breakPoints, {
+    tracked: { opportunities: 4, converted: 0, faced: 0, saved: 0 },
+    opponent: { opportunities: 0, converted: 0, faced: 4, saved: 4 },
+  });
+  assertBreakPointRates(replacementInsights, 0, 100);
+});
+
 test('match detail edits preserve multi-set point history, score totals, and analytics', async () => {
   storageValues.clear();
   const { localMatches } = loadStorageModulesAfterRestart();

@@ -1220,6 +1220,91 @@ test('break-point counts, set aggregation, exclusions, and report rates match sc
   assert.match(defenseRows[3], /Match total.*3\/3 \(100\.0%\).*0\/3 \(0\.0%\).*1\/3 \(33\.3%\).*2\/3 \(66\.7%\)/);
 });
 
+test('break-point report rates update after an outcome is undone and replaced', () => {
+  const { match } = breakPointSampleMatch();
+  const [setOne, ...otherCompletedSets] = match.completedSets;
+  assert.ok(setOne);
+  const convertedPoint = setOne.points.at(-1);
+  assert.ok(convertedPoint);
+  assert.equal(
+    getBreakPointPointOutcomes(setOne.points, 'standard').at(-1),
+    'converted',
+  );
+
+  const buildBreakPointReport = (completedSetPoints) => {
+    const updatedMatch = {
+      ...match,
+      completedSets: [
+        { ...setOne, points: completedSetPoints },
+        ...otherCompletedSets,
+      ],
+    };
+    const insights = calculateLocalInsights(updatedMatch);
+    const html = buildPlayerReportHtml(
+      {
+        matchDate: '2026-10-30',
+        event: 'Test match',
+        round: 'Final',
+        trackedPlayer: 'Tracked',
+        opponent: 'Opponent',
+        surface: 'Hard',
+        matchStatus: 'complete',
+      },
+      { ...emptyInsight, ...insights },
+      emptyPerformance,
+      ['break-points'],
+    );
+    const totalRow = (heading) => {
+      const row = reportRows(html, heading).find((item) =>
+        item.startsWith('Match total'),
+      );
+      assert.ok(row, `Missing match total for ${heading}`);
+      return row;
+    };
+    return {
+      breakPoints: insights.breakPoints,
+      conversionTotal: totalRow('Returning · opportunities created'),
+      defenseTotal: totalRow('Serving · break points faced'),
+    };
+  };
+
+  const afterUndo = buildBreakPointReport(setOne.points.slice(0, -1));
+  assert.deepEqual(afterUndo.breakPoints, {
+    tracked: { opportunities: 2, converted: 1, faced: 3, saved: 3 },
+    opponent: { opportunities: 3, converted: 0, faced: 2, saved: 1 },
+  });
+  assert.match(
+    afterUndo.conversionTotal,
+    /Match total.*1\/2 \(50\.0%\).*1\/2 \(50\.0%\).*0\/3 \(0\.0%\).*3\/3 \(100\.0%\)/,
+  );
+  assert.match(
+    afterUndo.defenseTotal,
+    /Match total.*3\/3 \(100\.0%\).*0\/3 \(0\.0%\).*1\/2 \(50\.0%\).*1\/2 \(50\.0%\)/,
+  );
+
+  const replacementPoint = {
+    ...convertedPoint,
+    id: 'replacement-break-point',
+    winner: 'opponent',
+  };
+  const afterReplacement = buildBreakPointReport([
+    ...setOne.points.slice(0, -1),
+    replacementPoint,
+  ]);
+  assert.deepEqual(afterReplacement.breakPoints, {
+    tracked: { opportunities: 3, converted: 1, faced: 3, saved: 3 },
+    opponent: { opportunities: 3, converted: 0, faced: 3, saved: 2 },
+  });
+  assert.match(
+    afterReplacement.conversionTotal,
+    /Match total.*1\/3 \(33\.3%\).*2\/3 \(66\.7%\).*0\/3 \(0\.0%\).*3\/3 \(100\.0%\)/,
+  );
+  assert.match(
+    afterReplacement.defenseTotal,
+    /Match total.*3\/3 \(100\.0%\).*0\/3 \(0\.0%\).*2\/3 \(66\.7%\).*1\/3 \(33\.3%\)/,
+  );
+});
+
 test('head-to-head report removes URL-like text and keeps names and statistics', () => {
   const html = buildHeadToHeadReportHtml({
     trackedPlayer: 'Alex https://players.example.com/alex',
