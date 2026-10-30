@@ -10,6 +10,7 @@
     "test:offline-persistence": "node --test test/local-persistence.test.cjs test/backup-restore.test.cjs",
     "test:reports": "node --test test/report-html.test.cjs",
     "test:score-progress": "node --test test/score-progress.test.cjs",
+    "test:match-ui": "node --test test/game-notes-section.test.cjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
