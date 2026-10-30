@@ -98,6 +98,9 @@ Module._load = function (request, parent, isMain) {
   }
   if (request === '@/lib/local-matches') return activeModules.localMatches;
   if (request === '@/lib/local-players') return activeModules.localPlayers;
+  if (request === '@/lib/local-report-labels') {
+    return activeModules.localReportLabels;
+  }
   if (request === 'expo-file-system/legacy') return fileSystem;
   if (request === 'expo-document-picker') {
     return { __esModule: true, ...documentPicker };
@@ -121,6 +124,10 @@ require.extensions['.ts'] = function (module, filename) {
 
 const localMatchesPath = path.join(__dirname, '../lib/local-matches.ts');
 const localPlayersPath = path.join(__dirname, '../lib/local-players.ts');
+const localReportLabelsPath = path.join(
+  __dirname,
+  '../lib/local-report-labels.ts',
+);
 const localBackupPath = path.join(__dirname, '../lib/local-backup.ts');
 const versionOneBackupFixturePath = path.join(
   __dirname,
@@ -134,9 +141,11 @@ function readVersionOneBackupFixture() {
 function loadLocalModules() {
   delete require.cache[require.resolve(localMatchesPath)];
   delete require.cache[require.resolve(localPlayersPath)];
+  delete require.cache[require.resolve(localReportLabelsPath)];
   activeModules = {
     localMatches: require(localMatchesPath),
     localPlayers: require(localPlayersPath),
+    localReportLabels: require(localReportLabelsPath),
   };
 }
 
@@ -239,6 +248,13 @@ test('backup save, share, and restore preserve all players and sets without netw
   networkRequestCount = 0;
   loadLocalModules();
   const { player, match } = await createSampleRecords();
+  const reportNameLabels = {
+    trackedPlayer: 'Local Athlete',
+    opponent: 'Guest Player',
+  };
+  await activeModules.localReportLabels.saveLocalReportNameLabels(
+    reportNameLabels,
+  );
   await activeModules.localMatches.recordLocalMatchOutcome(match.id, {
     reason: 'retirement',
     winner: 'opponent',
@@ -253,6 +269,7 @@ test('backup save, share, and restore preserve all players and sets without netw
   assert.equal(exported.format, 'tennis-scoring-local-backup');
   assert.equal(exported.version, 1);
   assert.equal(exported.activePlayerId, player.id);
+  assert.deepEqual(exported.reportNameLabels, reportNameLabels);
   assert.equal(exported.players[0].dateOfBirth, '2005-07-09');
   assert.equal(exported.players[0].itfPlayerId, 'ITF-54321');
   assert.equal(exported.players[0].atpRanking, 285);
@@ -308,6 +325,7 @@ test('backup save, share, and restore preserve all players and sets without netw
   await backup.shareLocalBackup();
   assert.ok(sharedUri.startsWith('file://cache/'));
   assert.equal(JSON.parse(sharedBackup).matches[0].completedSets[0].points.length, 24);
+  assert.deepEqual(JSON.parse(sharedBackup).reportNameLabels, reportNameLabels);
   assert.equal(networkRequestCount, 0);
 
   const legacyBackup = JSON.parse(savedDeviceBackup.contents);
@@ -337,6 +355,10 @@ test('backup save, share, and restore preserve all players and sets without netw
   const restoredPlayer = (await activeModules.localPlayers.listLocalPlayers())[0];
   const restoredMatch = await activeModules.localMatches.getLocalMatch(match.id);
   assert.equal(restoredPlayer.name, 'Sana Iyer');
+  assert.deepEqual(
+    await activeModules.localReportLabels.getLocalReportNameLabels(),
+    reportNameLabels,
+  );
   assert.equal(restoredPlayer.dateOfBirth, '2005-07-09');
   assert.equal(restoredPlayer.itfPlayerId, 'ITF-54321');
   assert.equal(restoredPlayer.atpRanking, 285);
@@ -428,6 +450,22 @@ test('backup save, share, and restore preserve all players and sets without netw
       `A backup with a ${caseName} profile URL must not partially import players or matches.`,
     );
   }
+
+  const invalidLabelsBackup = JSON.parse(savedDeviceBackup.contents);
+  invalidLabelsBackup.reportNameLabels = {
+    trackedPlayer: 'Same label',
+    opponent: ' same   label ',
+  };
+  selectedBackupContents = JSON.stringify(invalidLabelsBackup);
+  await assert.rejects(
+    loadBackupModule().loadLocalBackupFromDevice(),
+    /invalid report labels\. No data was imported/,
+  );
+  assert.deepEqual(
+    [...storageValues.entries()],
+    beforeInvalidImport,
+    'Invalid report labels must not partially import players or matches.',
+  );
 
   const duplicateBackup = JSON.parse(savedDeviceBackup.contents);
   duplicateBackup.matches.push(duplicateBackup.matches[0]);
@@ -567,6 +605,52 @@ test('backup restore remaps both saved player links and keeps each player histor
   assert.equal(networkRequestCount, 0);
 });
 
+test('restoring custom report labels leaves saved records unchanged', async () => {
+  storageValues.clear();
+  networkRequestCount = 0;
+  loadLocalModules();
+  const { match } = await createSampleRecords();
+  const backupLabels = {
+    trackedPlayer: 'Court One',
+    opponent: 'Court Two',
+  };
+  await activeModules.localReportLabels.saveLocalReportNameLabels(backupLabels);
+  const backupContents = await loadBackupModule().createLocalBackupJson();
+
+  await activeModules.localReportLabels.saveLocalReportNameLabels({
+    trackedPlayer: 'Private A',
+    opponent: 'Private B',
+  });
+  const playersBeforeRestore = await activeModules.localPlayers.listLocalPlayers();
+  const matchBeforeRestore = await activeModules.localMatches.getLocalMatch(
+    match.id,
+  );
+  selectedBackupContents = backupContents;
+
+  const result = await loadBackupModule().loadLocalBackupFromDevice();
+
+  assert.deepEqual(result, {
+    cancelled: false,
+    playersAdded: 0,
+    playersSkipped: 1,
+    matchesAdded: 0,
+    matchesSkipped: 1,
+  });
+  assert.deepEqual(
+    await activeModules.localPlayers.listLocalPlayers(),
+    playersBeforeRestore,
+  );
+  assert.deepEqual(
+    await activeModules.localMatches.getLocalMatch(match.id),
+    matchBeforeRestore,
+  );
+  assert.deepEqual(
+    await activeModules.localReportLabels.getLocalReportNameLabels(),
+    backupLabels,
+  );
+  assert.equal(networkRequestCount, 0);
+});
+
 test('backups written before match outcomes still restore offline', async () => {
   storageValues.clear();
   savedDeviceBackup = null;
@@ -625,6 +709,13 @@ test('version-one fixture restores representative player and match history', asy
   storageValues.clear();
   networkRequestCount = 0;
   loadLocalModules();
+  const existingLabels = {
+    trackedPlayer: 'Saved Tracked',
+    opponent: 'Saved Opponent',
+  };
+  await activeModules.localReportLabels.saveLocalReportNameLabels(
+    existingLabels,
+  );
   selectedBackupContents = readVersionOneBackupFixture();
 
   const result = await loadBackupModule().loadLocalBackupFromDevice();
@@ -654,6 +745,10 @@ test('version-one fixture restores representative player and match history', asy
   assert.equal(
     await activeModules.localPlayers.getActiveLocalPlayerId(),
     restoredPlayer.id,
+  );
+  assert.deepEqual(
+    await activeModules.localReportLabels.getLocalReportNameLabels(),
+    existingLabels,
   );
   assert.equal(networkRequestCount, 0);
 });

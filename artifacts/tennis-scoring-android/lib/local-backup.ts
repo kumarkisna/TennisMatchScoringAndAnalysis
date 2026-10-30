@@ -25,6 +25,12 @@ import {
   type LocalPlayer,
   type LocalPlayerDetailsInput,
 } from '@/lib/local-players';
+import {
+  getLocalReportNameLabels,
+  getLocalReportNameLabelsError,
+  saveLocalReportNameLabels,
+  type LocalReportNameLabels,
+} from '@/lib/local-report-labels';
 
 const CURRENT_LOCAL_BACKUP_VERSION = 1 as const;
 
@@ -33,6 +39,7 @@ interface LocalBackup {
   version: typeof CURRENT_LOCAL_BACKUP_VERSION;
   exportedAt: string;
   activePlayerId: string | null;
+  reportNameLabels?: LocalReportNameLabels;
   players: LocalPlayer[];
   matches: LocalMatchBackupRecord[];
 }
@@ -167,6 +174,20 @@ function isBackupPlayer(value: unknown): value is LocalPlayer {
     profileUrlLabels: (value.profileUrlLabels ?? []) as string[],
   };
   return validateLocalPlayerDetails(details) === null;
+}
+
+function isBackupReportNameLabels(
+  value: unknown,
+): value is LocalReportNameLabels {
+  return (
+    isRecord(value) &&
+    typeof value.trackedPlayer === 'string' &&
+    typeof value.opponent === 'string' &&
+    getLocalReportNameLabelsError({
+      trackedPlayer: value.trackedPlayer,
+      opponent: value.opponent,
+    }) === null
+  );
 }
 
 function isScore(value: unknown): boolean {
@@ -368,6 +389,12 @@ function parseLocalBackup(contents: string): LocalBackup {
   ) {
     throw new Error('The backup file is incomplete or damaged. No data was imported.');
   }
+  if (
+    parsed.reportNameLabels !== undefined &&
+    !isBackupReportNameLabels(parsed.reportNameLabels)
+  ) {
+    throw new Error('The backup contains invalid report labels. No data was imported.');
+  }
   if (!parsed.players.every(isBackupPlayer)) {
     throw new Error('The backup contains invalid player details. No data was imported.');
   }
@@ -391,10 +418,11 @@ function parseLocalBackup(contents: string): LocalBackup {
 }
 
 export async function createLocalBackupJson(): Promise<string> {
-  const [players, summaries, activePlayerId] = await Promise.all([
+  const [players, summaries, activePlayerId, reportNameLabels] = await Promise.all([
     listLocalPlayers(),
     listLocalMatches(),
     getActiveLocalPlayerId(),
+    getLocalReportNameLabels(),
   ]);
   const matches = await Promise.all(
     summaries.map(async (summary) => {
@@ -410,6 +438,7 @@ export async function createLocalBackupJson(): Promise<string> {
     version: CURRENT_LOCAL_BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     activePlayerId,
+    reportNameLabels,
     players,
     matches,
   };
@@ -497,6 +526,9 @@ export async function loadLocalBackupFromDevice(): Promise<
       : null,
   }));
   const matchResult = await mergeLocalMatchesFromBackup(matchesWithMappedPlayers);
+  if (backup.reportNameLabels) {
+    await saveLocalReportNameLabels(backup.reportNameLabels);
+  }
   return {
     cancelled: false,
     playersAdded,
