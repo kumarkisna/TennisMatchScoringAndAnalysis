@@ -1520,6 +1520,75 @@ test('legacy match names that match multiple saved identities stay unlinked', as
   assert.equal(unchanged.trackedPlayer, 'Alex Kim');
 });
 
+test('match book results use completed-set majorities and keep ties and live matches neutral', async () => {
+  storageValues.clear();
+  const { localMatches } = loadStorageModulesAfterRestart();
+
+  async function createMatch(setWinners, completeMatch) {
+    const match = await localMatches.createLocalMatch({
+      matchDate: '2026-10-30',
+      event: 'Match book result test',
+      round: 'Final',
+      trackedPlayer: 'Tracked Player',
+      opponent: 'Opponent Player',
+      surface: 'Hard',
+      firstServer: 'tracked',
+      setNumber: 1,
+    });
+    for (const [setIndex, setWinner] of setWinners.entries()) {
+      if (setIndex > 0) await localMatches.addLocalSet(match.id, 'standard');
+      for (let point = 0; point < 24; point += 1) {
+        await localMatches.recordLocalPoint(match.id, { winner: setWinner });
+      }
+    }
+    if (completeMatch) await localMatches.finishLocalMatch(match.id);
+    return match.id;
+  }
+
+  const trackedWinId = await createMatch(['tracked'], true);
+  const opponentWinId = await createMatch(['opponent'], true);
+  const tiedId = await createMatch(['tracked', 'opponent'], true);
+  const liveId = await createMatch(['tracked'], false);
+  const summaries = new Map(
+    (await localMatches.listLocalMatches()).map((summary) => [summary.id, summary]),
+  );
+  const trackedWin = summaries.get(trackedWinId);
+  const opponentWin = summaries.get(opponentWinId);
+  const tied = summaries.get(tiedId);
+  const live = summaries.get(liveId);
+
+  assert.equal(trackedWin.winner, 'tracked');
+  assert.equal(
+    localMatches.getLocalMatchSummaryResultLabel(trackedWin),
+    'Winner: Tracked Player',
+  );
+  assert.equal(opponentWin.winner, 'opponent');
+  assert.equal(
+    localMatches.getLocalMatchSummaryResultLabel(opponentWin),
+    'Winner: Opponent Player',
+  );
+  assert.equal(tied.status, 'complete');
+  assert.equal(tied.winner, null);
+  assert.equal(
+    localMatches.getLocalMatchSummaryResultLabel(tied),
+    'Complete · no set majority',
+  );
+  assert.equal(live.status, 'in_progress');
+  assert.equal(live.winner, null);
+  assert.equal(localMatches.getLocalMatchSummaryResultLabel(live), null);
+  assert.equal(
+    localMatches.getLocalMatchSummaryResultLabel({ ...live, winner: 'tracked' }),
+    null,
+  );
+
+  const homeScreen = fs.readFileSync(
+    path.join(__dirname, '../app/index.tsx'),
+    'utf8',
+  );
+  assert.match(homeScreen, /getLocalMatchSummaryResultLabel\(item\)/);
+  assert.match(homeScreen, /testID=\{`match-result-\$\{item\.id\}`\}/);
+});
+
 test('report benchmark presets can be managed offline and survive app restart', async (t) => {
   storageValues.clear();
   const originalFetch = global.fetch;

@@ -255,6 +255,19 @@ export interface LocalMatchSummary {
   updatedAt: string;
 }
 
+export function getLocalMatchSummaryResultLabel(
+  summary: Pick<
+    LocalMatchSummary,
+    'status' | 'winner' | 'trackedPlayer' | 'opponent'
+  >,
+): string | null {
+  if (summary.status !== 'complete') return null;
+  if (summary.winner === null) return 'Complete · no set majority';
+  const winnerName =
+    summary.winner === 'tracked' ? summary.trackedPlayer : summary.opponent;
+  return `Winner: ${winnerName}`;
+}
+
 export interface LocalInsights {
   pointCount: number;
   trackedPointsWon: number;

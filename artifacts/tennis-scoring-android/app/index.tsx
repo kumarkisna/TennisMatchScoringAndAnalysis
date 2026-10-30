@@ -16,6 +16,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useColors } from '@/hooks/useColors';
 import {
   deleteLocalMatch,
+  getLocalMatchSummaryResultLabel,
   localInsightsKey,
   localMatchKey,
   listLocalMatches,
@@ -396,6 +397,7 @@ export default function HomeScreen() {
         }
         renderItem={({ item }) => {
           const finished = item.status === 'complete';
+          const resultLabel = getLocalMatchSummaryResultLabel(item);
           return (
             <View
               testID={`match-card-${item.id}`}
@@ -458,6 +460,22 @@ export default function HomeScreen() {
                   <Text style={[styles.matchOpponent, { color: colors.mutedForeground }]}>
                     {item.opponent}
                   </Text>
+                  {resultLabel ? (
+                    <Text
+                      testID={`match-result-${item.id}`}
+                      accessibilityLabel={resultLabel}
+                      style={[
+                        styles.matchResult,
+                        {
+                          color: item.winner
+                            ? colors.primary
+                            : colors.mutedForeground,
+                        },
+                      ]}
+                    >
+                      {resultLabel}
+                    </Text>
+                  ) : null}
                 </View>
               </View>
               <View style={styles.matchSetScores}>
@@ -741,6 +759,7 @@ const styles = StyleSheet.create({
   matchNames: { flex: 1, gap: 7, paddingRight: 12 },
   matchPlayer: { fontFamily: 'DMSans_700Bold', fontSize: 15 },
   matchOpponent: { fontFamily: 'DMSans_400Regular', fontSize: 13 },
+  matchResult: { fontFamily: 'DMSans_700Bold', fontSize: 10 },
   matchSetScores: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 13 },
   matchSetScore: { minHeight: 29, borderRadius: 6, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 6 },
   matchSetNumber: { fontFamily: 'DMSans_700Bold', fontSize: 8, letterSpacing: 0.5 },
