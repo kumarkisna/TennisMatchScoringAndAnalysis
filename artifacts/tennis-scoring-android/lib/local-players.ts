@@ -14,6 +14,7 @@ export interface LocalPlayer {
   weightKg: number | null;
   phoneNumbers: string[];
   profileUrls: string[];
+  profileUrlLabels: string[];
   createdAt: string;
 }
 
@@ -31,6 +32,7 @@ export interface LocalPlayerDetailsInput {
   weightKg?: string | number | null;
   phoneNumbers?: string[] | null;
   profileUrls?: string[] | null;
+  profileUrlLabels?: string[] | null;
 }
 
 export const LOCAL_PLAYERS_KEY = ['device-players'] as const;
@@ -87,6 +89,9 @@ async function readPlayers(): Promise<LocalPlayer[]> {
         (player.profileUrls !== undefined &&
           (!Array.isArray(player.profileUrls) ||
             player.profileUrls.some((url: unknown) => typeof url !== 'string'))) ||
+        (player.profileUrlLabels !== undefined &&
+          (!Array.isArray(player.profileUrlLabels) ||
+            player.profileUrlLabels.some((label: unknown) => typeof label !== 'string'))) ||
         (player.phoneNumbers !== undefined &&
           (!Array.isArray(player.phoneNumbers) ||
             player.phoneNumbers.some((phone: unknown) => typeof phone !== 'string'))) ||
@@ -96,26 +101,32 @@ async function readPlayers(): Promise<LocalPlayer[]> {
     throw new Error('Saved player list is damaged. No player data was changed.');
   }
 
-  return value.map((player) => ({
-    ...player,
-    dateOfBirth:
-      typeof player.dateOfBirth === 'string' ? player.dateOfBirth : null,
-    atpPlayerId: typeof player.atpPlayerId === 'string' ? player.atpPlayerId : null,
-    itfPlayerId: typeof player.itfPlayerId === 'string' ? player.itfPlayerId : null,
-    atpRanking: typeof player.atpRanking === 'number' ? player.atpRanking : null,
-    itfRanking: typeof player.itfRanking === 'number' ? player.itfRanking : null,
-    nationality: typeof player.nationality === 'string' ? player.nationality : null,
-    playingHand:
-      player.playingHand === 'right' ||
-      player.playingHand === 'left' ||
-      player.playingHand === 'ambidextrous'
-        ? player.playingHand
-        : null,
-    heightCm: typeof player.heightCm === 'number' ? player.heightCm : null,
-    weightKg: typeof player.weightKg === 'number' ? player.weightKg : null,
-    phoneNumbers: normalizePhoneNumbers(player.phoneNumbers ?? []),
-    profileUrls: normalizeProfileUrls(player.profileUrls ?? []),
-  })) as LocalPlayer[];
+  return value.map((player) => {
+    const profileLinks = normalizeProfileLinks(
+      player.profileUrls ?? [],
+      player.profileUrlLabels ?? [],
+    );
+    return {
+      ...player,
+      dateOfBirth:
+        typeof player.dateOfBirth === 'string' ? player.dateOfBirth : null,
+      atpPlayerId: typeof player.atpPlayerId === 'string' ? player.atpPlayerId : null,
+      itfPlayerId: typeof player.itfPlayerId === 'string' ? player.itfPlayerId : null,
+      atpRanking: typeof player.atpRanking === 'number' ? player.atpRanking : null,
+      itfRanking: typeof player.itfRanking === 'number' ? player.itfRanking : null,
+      nationality: typeof player.nationality === 'string' ? player.nationality : null,
+      playingHand:
+        player.playingHand === 'right' ||
+        player.playingHand === 'left' ||
+        player.playingHand === 'ambidextrous'
+          ? player.playingHand
+          : null,
+      heightCm: typeof player.heightCm === 'number' ? player.heightCm : null,
+      weightKg: typeof player.weightKg === 'number' ? player.weightKg : null,
+      phoneNumbers: normalizePhoneNumbers(player.phoneNumbers ?? []),
+      ...profileLinks,
+    };
+  }) as LocalPlayer[];
 }
 
 async function writePlayers(players: LocalPlayer[]) {
@@ -308,12 +319,26 @@ function normalizeDateOfBirth(value: string | null): string | null {
   return dateText;
 }
 
-function normalizeProfileUrls(values: string[] | null | undefined): string[] {
+function normalizeProfileLinks(
+  values: string[] | null | undefined,
+  labels: string[] | null | undefined,
+): Pick<LocalPlayer, 'profileUrls' | 'profileUrlLabels'> {
   const urls: string[] = [];
+  const normalizedLabels: string[] = [];
   const seen = new Set<string>();
+  const sourceUrls = values ?? [];
+  const sourceLabels = labels ?? [];
 
-  for (const value of values ?? []) {
+  for (let index = 0; index < sourceUrls.length; index += 1) {
+    const value = sourceUrls[index];
     const text = value.trim();
+    const label = (sourceLabels[index] ?? '').trim();
+    if (label.length > 40) {
+      throw new Error('Profile link labels must be 40 characters or fewer.');
+    }
+    if (!text && label) {
+      throw new Error('Add a profile link before adding its label.');
+    }
     if (!text) continue;
     if (text.length > 2048) {
       throw new Error('Profile links must be 2,048 characters or fewer.');
@@ -347,9 +372,14 @@ function normalizeProfileUrls(values: string[] | null | undefined): string[] {
     }
     seen.add(dedupeKey);
     urls.push(normalized);
+    normalizedLabels.push(label);
   }
 
-  return urls;
+  if (sourceLabels.slice(sourceUrls.length).some((label) => label.trim())) {
+    throw new Error('Add a profile link before adding its label.');
+  }
+
+  return { profileUrls: urls, profileUrlLabels: normalizedLabels };
 }
 
 function normalizePhoneNumbers(values: string[] | null | undefined): string[] {
@@ -415,6 +445,11 @@ function normalizeProfileDetails(details: LocalPlayerDetailsInput): Omit<LocalPl
     throw new Error('Choose a valid playing hand.');
   }
 
+  const profileLinks = normalizeProfileLinks(
+    details.profileUrls,
+    details.profileUrlLabels,
+  );
+
   return {
     dateOfBirth: normalizeDateOfBirth(details.dateOfBirth ?? null),
     atpPlayerId: normalizeText(details.atpPlayerId, 'ATP player ID', 64),
@@ -426,7 +461,7 @@ function normalizeProfileDetails(details: LocalPlayerDetailsInput): Omit<LocalPl
     heightCm: normalizeInteger(details.heightCm, 'Height in centimeters', 50, 250),
     weightKg: normalizeInteger(details.weightKg, 'Weight in kilograms', 10, 300),
     phoneNumbers: normalizePhoneNumbers(details.phoneNumbers),
-    profileUrls: normalizeProfileUrls(details.profileUrls),
+    ...profileLinks,
   };
 }
 

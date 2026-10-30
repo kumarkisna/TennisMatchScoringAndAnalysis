@@ -109,7 +109,11 @@ test('saved match points and editable player profiles survive offline app restar
     nationality: 'India',
     playingHand: 'right',
     phoneNumbers: ['+1 415 555 0123'],
-    profileUrls: ['https://example.org/players/sana-iyer'],
+    profileUrls: [
+      'https://example.org/players/sana-iyer',
+      'https://club.example.org/players/sana-iyer',
+    ],
+    profileUrlLabels: ['ATP profile', 'Club page'],
   });
   await beforeRestart.localPlayers.setActiveLocalPlayerId(player.id);
 
@@ -161,7 +165,9 @@ test('saved match points and editable player profiles survive offline app restar
   assert.deepEqual(restoredPlayer.phoneNumbers, ['+1 415 555 0123']);
   assert.deepEqual(restoredPlayer.profileUrls, [
     'https://example.org/players/sana-iyer',
+    'https://club.example.org/players/sana-iyer',
   ]);
+  assert.deepEqual(restoredPlayer.profileUrlLabels, ['ATP profile', 'Club page']);
   assert.equal(activePlayerId, player.id);
 
   assert.equal(matchSummaries.length, 1);
@@ -190,6 +196,7 @@ test('saved match points and editable player profiles survive offline app restar
     weightKg: restoredPlayer.weightKg,
     phoneNumbers: restoredPlayer.phoneNumbers,
     profileUrls: restoredPlayer.profileUrls,
+    profileUrlLabels: restoredPlayer.profileUrlLabels,
   });
 
   const afterEditRestart = loadStorageModulesAfterRestart();
@@ -215,8 +222,42 @@ test('saved match points and editable player profiles survive offline app restar
   assert.deepEqual(editedPlayer.phoneNumbers, ['+1 415 555 0123']);
   assert.deepEqual(editedPlayer.profileUrls, [
     'https://example.org/players/sana-iyer',
+    'https://club.example.org/players/sana-iyer',
   ]);
+  assert.deepEqual(editedPlayer.profileUrlLabels, ['ATP profile', 'Club page']);
   assert.equal(networkRequestCount, 0);
+});
+
+test('older saved players without profile labels stay readable', async () => {
+  storageValues.clear();
+  storageValues.set(
+    '@tennis-scoring/players/record-v1',
+    JSON.stringify([
+      {
+        id: 'legacy-player',
+        name: 'Legacy Player',
+        dateOfBirth: null,
+        atpPlayerId: null,
+        itfPlayerId: null,
+        atpRanking: null,
+        itfRanking: null,
+        nationality: null,
+        playingHand: null,
+        heightCm: null,
+        weightKg: null,
+        phoneNumbers: [],
+        profileUrls: ['https://example.org/legacy-player'],
+        createdAt: '2026-10-30T00:00:00.000Z',
+      },
+    ]),
+  );
+
+  const { localPlayers } = loadStorageModulesAfterRestart();
+  const [player] = await localPlayers.listLocalPlayers();
+
+  assert.equal(player.id, 'legacy-player');
+  assert.deepEqual(player.profileUrls, ['https://example.org/legacy-player']);
+  assert.deepEqual(player.profileUrlLabels, ['']);
 });
 
 test('match detail edits preserve multi-set point history, score totals, and analytics', async () => {

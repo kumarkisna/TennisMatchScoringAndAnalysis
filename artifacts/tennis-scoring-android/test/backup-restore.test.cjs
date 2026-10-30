@@ -150,6 +150,7 @@ async function createSampleRecords() {
     weightKg: 75,
     phoneNumbers: ['+1 415 555 0123'],
     profileUrls: ['https://example.org/players/sana-iyer'],
+    profileUrlLabels: ['ATP profile'],
   });
   await activeModules.localPlayers.setActiveLocalPlayerId(player.id);
 
@@ -235,6 +236,7 @@ test('backup save, share, and restore preserve all players and sets without netw
   assert.equal(exported.players[0].heightCm, 180);
   assert.equal(exported.players[0].weightKg, 75);
   assert.deepEqual(exported.players[0].phoneNumbers, ['+1 415 555 0123']);
+  assert.deepEqual(exported.players[0].profileUrlLabels, ['ATP profile']);
   assert.equal(exported.matches[0].id, match.id);
   assert.equal(exported.matches[0].completedSets.length, 1);
   assert.equal(exported.matches[0].completedSets[0].points.length, 24);
@@ -280,6 +282,7 @@ test('backup save, share, and restore preserve all players and sets without netw
   assert.deepEqual(restoredPlayer.profileUrls, [
     'https://example.org/players/sana-iyer',
   ]);
+  assert.deepEqual(restoredPlayer.profileUrlLabels, ['ATP profile']);
   assert.equal(
     await activeModules.localPlayers.getActiveLocalPlayerId(),
     restoredPlayer.id,
@@ -326,5 +329,27 @@ test('backup save, share, and restore preserve all players and sets without netw
     /invalid match or point history/,
   );
   assert.deepEqual([...storageValues.entries()], beforeInvalidImport);
+  assert.equal(networkRequestCount, 0);
+});
+
+test('older backups without profile labels still restore their saved URLs', async () => {
+  storageValues.clear();
+  networkRequestCount = 0;
+  loadLocalModules();
+  await createSampleRecords();
+  const backup = JSON.parse(await loadBackupModule().createLocalBackupJson());
+  delete backup.players[0].profileUrlLabels;
+
+  storageValues.clear();
+  loadLocalModules();
+  selectedBackupContents = JSON.stringify(backup);
+  const restoreResult = await loadBackupModule().loadLocalBackupFromDevice();
+  const [restoredPlayer] = await activeModules.localPlayers.listLocalPlayers();
+
+  assert.equal(restoreResult.cancelled, false);
+  assert.deepEqual(restoredPlayer.profileUrls, [
+    'https://example.org/players/sana-iyer',
+  ]);
+  assert.deepEqual(restoredPlayer.profileUrlLabels, ['']);
   assert.equal(networkRequestCount, 0);
 });

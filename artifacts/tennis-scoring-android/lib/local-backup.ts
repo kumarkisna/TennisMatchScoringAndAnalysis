@@ -135,6 +135,9 @@ function isBackupPlayer(value: unknown): value is LocalPlayer {
         value.phoneNumbers.every((phone) => typeof phone === 'string'))) &&
     Array.isArray(value.profileUrls) &&
     value.profileUrls.every((url) => typeof url === 'string') &&
+    (value.profileUrlLabels === undefined ||
+      (Array.isArray(value.profileUrlLabels) &&
+        value.profileUrlLabels.every((label) => typeof label === 'string'))) &&
     isTimestamp(value.createdAt);
   if (!hasValidShape) return false;
 
@@ -150,6 +153,7 @@ function isBackupPlayer(value: unknown): value is LocalPlayer {
     weightKg: value.weightKg as number | null,
     phoneNumbers: (value.phoneNumbers ?? []) as string[],
     profileUrls: value.profileUrls as string[],
+    profileUrlLabels: (value.profileUrlLabels ?? []) as string[],
   };
   return validateLocalPlayerDetails(details) === null;
 }
@@ -455,6 +459,7 @@ export async function loadLocalBackupFromDevice(): Promise<
       weightKg: player.weightKg,
       phoneNumbers: player.phoneNumbers,
       profileUrls: player.profileUrls,
+      profileUrlLabels: player.profileUrlLabels,
     });
     playerIdMap.set(player.id, saved.id);
     playersAdded += 1;
