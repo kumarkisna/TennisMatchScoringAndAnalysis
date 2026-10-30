@@ -142,7 +142,7 @@ async function createSampleRecords() {
     activeModules.localPlayers.pairLocalPlayerProfileLinks(
       [
         'https://atp.example.org/players/sana-iyer',
-        'https://club.example.org/players/sana-iyer',
+        'http://club.example.org/players/sana-iyer',
         'https://itf.example.org/player/sana-iyer',
       ],
       ['ATP profile', 'Club page', 'ITF profile'],
@@ -248,7 +248,7 @@ test('backup save, share, and restore preserve all players and sets without netw
   assert.equal(exported.players[0].weightKg, 75);
   assert.deepEqual(exported.players[0].phoneNumbers, ['+1 415 555 0123']);
   assert.deepEqual(exported.players[0].profileUrls, [
-    'https://club.example.org/players/sana-iyer',
+    'http://club.example.org/players/sana-iyer',
     'https://atp.example.org/players/sana-iyer',
     'https://itf.example.org/player/sana-iyer',
   ]);
@@ -300,7 +300,7 @@ test('backup save, share, and restore preserve all players and sets without netw
   assert.equal(restoredPlayer.heightCm, 180);
   assert.equal(restoredPlayer.weightKg, 75);
   assert.deepEqual(restoredPlayer.profileUrls, [
-    'https://club.example.org/players/sana-iyer',
+    'http://club.example.org/players/sana-iyer',
     'https://atp.example.org/players/sana-iyer',
     'https://itf.example.org/player/sana-iyer',
   ]);
@@ -338,6 +338,32 @@ test('backup save, share, and restore preserve all players and sets without netw
   assert.equal(repeatedImport.matchesSkipped, 1);
 
   const beforeInvalidImport = [...storageValues.entries()];
+  const invalidProfileUrls = [
+    ['unsupported scheme', 'ftp://example.org/players/new-player'],
+    ['embedded credentials', 'https://player:secret@example.org/profile'],
+  ];
+  for (const [caseName, invalidUrl] of invalidProfileUrls) {
+    const invalidProfileBackup = JSON.parse(savedDeviceBackup.contents);
+    invalidProfileBackup.players[0].name = `New valid player before ${caseName}`;
+    invalidProfileBackup.players.push({
+      ...invalidProfileBackup.players[0],
+      id: `invalid-profile-${caseName.replace(/\s+/g, '-')}`,
+      name: `Player with ${caseName}`,
+      profileUrls: [invalidUrl],
+      profileUrlLabels: ['Invalid profile'],
+    });
+    selectedBackupContents = JSON.stringify(invalidProfileBackup);
+    await assert.rejects(
+      loadBackupModule().loadLocalBackupFromDevice(),
+      /invalid player details\. No data was imported/,
+    );
+    assert.deepEqual(
+      [...storageValues.entries()],
+      beforeInvalidImport,
+      `A backup with a ${caseName} profile URL must not partially import players or matches.`,
+    );
+  }
+
   const duplicateBackup = JSON.parse(savedDeviceBackup.contents);
   duplicateBackup.matches.push(duplicateBackup.matches[0]);
   selectedBackupContents = JSON.stringify(duplicateBackup);
@@ -374,10 +400,11 @@ test('older backups without profile labels still restore their saved URLs', asyn
 
   assert.equal(restoreResult.cancelled, false);
   assert.deepEqual(restoredPlayer.profileUrls, [
-    'https://club.example.org/players/sana-iyer',
+    'http://club.example.org/players/sana-iyer',
     'https://atp.example.org/players/sana-iyer',
     'https://itf.example.org/player/sana-iyer',
   ]);
+  assert.ok(restoredPlayer.profileUrls.every((url) => /^https?:\/\//i.test(url)));
   assert.deepEqual(restoredPlayer.profileUrlLabels, [
     '',
     '',
