@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useAppTheme } from '@/hooks/ThemeContext';
 import { useColors } from '@/hooks/useColors';
 import { applyColorDepth, type CustomThemeColors } from '@/lib/theme-presets';
@@ -42,8 +42,51 @@ const colorRoles: { key: ColorKey; label: string; options: string[] }[] = [
   },
 ];
 
+const colorNames: Record<string, string> = {
+  '#0077ff': 'Blue',
+  '#e6007e': 'Pink',
+  '#7c00ff': 'Violet',
+  '#00b85a': 'Green',
+  '#ff3b1f': 'Coral',
+  '#ff7a00': 'Orange',
+  '#0d98ba': 'Teal',
+  '#d00049': 'Crimson',
+  '#7020e5': 'Purple',
+  '#00a2ff': 'Sky blue',
+  '#eab900': 'Saffron',
+  '#14a800': 'Leaf green',
+  '#ff2e63': 'Rose',
+  '#ffb800': 'Golden yellow',
+  '#00c2a8': 'Turquoise',
+  '#00b8f5': 'Cyan',
+  '#9b5de5': 'Lavender',
+  '#f15bb5': 'Orchid pink',
+  '#00d6b2': 'Mint',
+  '#ff6d00': 'Tangerine',
+  '#7a00ff': 'Electric purple',
+  '#e8006f': 'Berry',
+  '#00a3ff': 'Bright blue',
+  '#b7e000': 'Lime',
+  '#f9f5ef': 'Warm ivory',
+  '#f2f7ff': 'Ice blue',
+  '#fff3e9': 'Peach cream',
+  '#f5f0ff': 'Soft lavender',
+  '#fff1f6': 'Blush',
+  '#f0fff6': 'Pale mint',
+  '#f6f7fb': 'Cloud',
+  '#fdf8df': 'Sunshine cream',
+  '#eafbff': 'Pale cyan',
+  '#f9f0e7': 'Linen',
+  '#f2ffe9': 'Pale green',
+  '#fff0e8': 'Warm peach',
+};
+
 function isValidHexColor(value: string) {
   return /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(value.trim());
+}
+
+function getColorName(value: string) {
+  return colorNames[value.trim().toLowerCase()] ?? 'Current color';
 }
 
 export function CustomThemeEditor() {
@@ -83,6 +126,9 @@ export function CustomThemeEditor() {
         primary: draft.primary.trim(),
         accent: draft.accent.trim(),
         background: draft.background.trim(),
+        primaryDepth: draft.primaryDepth ?? 50,
+        accentDepth: draft.accentDepth ?? 50,
+        backgroundDepth: draft.backgroundDepth ?? 50,
       });
     } catch (error) {
       Alert.alert(
@@ -105,7 +151,7 @@ export function CustomThemeEditor() {
             Make your own palette
           </Text>
           <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-            Choose colors or enter their hex values. Your palette stays on this device.
+            Tap a color in the grid to choose it. Your palette stays on this device.
           </Text>
         </View>
         <Ionicons name="color-palette-outline" size={21} color={colors.primary} />
@@ -115,27 +161,30 @@ export function CustomThemeEditor() {
         <View key={key} style={styles.colorRole}>
           <View style={styles.roleHeading}>
             <Text style={[styles.roleLabel, { color: colors.foreground }]}>{label}</Text>
-            <TextInput
-              testID={`custom-theme-input-${key}`}
-              accessibilityLabel={`${label} hex color`}
-              autoCapitalize="none"
-              autoCorrect={false}
-              maxLength={7}
-              onChangeText={(value) =>
-                setDraft((current) => ({ ...current, [key]: value }))
-              }
-              placeholder="#RRGGBB"
-              placeholderTextColor={colors.mutedForeground}
-              value={draft[key]}
-              style={[
-                styles.hexInput,
-                {
-                  color: colors.foreground,
-                  borderColor: colors.border,
-                  backgroundColor: colors.background,
-                },
-              ]}
-            />
+            <View
+              testID={`custom-theme-current-color-${key}`}
+              style={styles.selectedColor}
+              accessible
+              accessibilityLabel={`${label} color: ${getColorName(draft[key])}`}
+            >
+              <View
+                style={[
+                  styles.selectedColorSwatch,
+                  {
+                    backgroundColor: isValidHexColor(draft[key])
+                      ? applyColorDepth(
+                          draft[key],
+                          draft[depthKeyForColor[key]] ?? 50,
+                        )
+                      : colors.muted,
+                    borderColor: colors.border,
+                  },
+                ]}
+              />
+              <Text style={[styles.selectedColorName, { color: colors.foreground }]}>
+                {getColorName(draft[key])}
+              </Text>
+            </View>
           </View>
           <View style={styles.swatches}>
             {options.map((option) => {
@@ -146,7 +195,7 @@ export function CustomThemeEditor() {
                   key={option}
                   testID={`custom-theme-swatch-${key}-${option.slice(1)}`}
                   accessibilityRole="button"
-                  accessibilityLabel={`Set ${label.toLowerCase()} color to ${option}`}
+                  accessibilityLabel={`Set ${label.toLowerCase()} color to ${getColorName(option)}`}
                   accessibilityState={{ selected }}
                   onPress={() => setDraft((current) => ({ ...current, [key]: option }))}
                   style={[
@@ -165,20 +214,9 @@ export function CustomThemeEditor() {
             <Text style={[styles.depthLabel, { color: colors.mutedForeground }]}>
               Color depth
             </Text>
-            <View
-              style={[
-                styles.depthPreview,
-                {
-                  backgroundColor: isValidHexColor(draft[key])
-                    ? applyColorDepth(
-                        draft[key],
-                        draft[depthKeyForColor[key]] ?? 50,
-                      )
-                    : colors.muted,
-                  borderColor: colors.border,
-                },
-              ]}
-            />
+            <Text style={[styles.depthValue, { color: colors.mutedForeground }]}>
+              {draft[depthKeyForColor[key]] ?? 50}%
+            </Text>
           </View>
           <ThemeSlider
             testID={`custom-theme-depth-${key}`}
@@ -255,25 +293,34 @@ const styles = StyleSheet.create({
   colorRole: { gap: 8 },
   roleHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
   roleLabel: { fontFamily: 'DMSans_600SemiBold', fontSize: 12 },
-  hexInput: {
-    minWidth: 92,
-    height: 34,
-    paddingHorizontal: 9,
+  selectedColor: {
+    minWidth: 116,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 7,
+  },
+  selectedColorSwatch: {
+    width: 31,
+    height: 31,
+    borderRadius: 9,
     borderWidth: 1,
-    borderRadius: 7,
+  },
+  selectedColorName: {
+    minWidth: 68,
+    textAlign: 'right',
     fontFamily: 'DMSans_500Medium',
-    fontSize: 12,
-    textAlign: 'center',
+    fontSize: 11,
   },
   swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
-  swatch: { width: 23, height: 23, borderRadius: 12 },
+  swatch: { width: 42, height: 42, borderRadius: 12 },
   depthHeading: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   depthLabel: { fontFamily: 'DMSans_600SemiBold', fontSize: 10 },
-  depthPreview: { width: 20, height: 20, borderRadius: 10, borderWidth: 1 },
+  depthValue: { fontFamily: 'DMSans_500Medium', fontSize: 10 },
   depthLabels: {
     flexDirection: 'row',
     justifyContent: 'space-between',

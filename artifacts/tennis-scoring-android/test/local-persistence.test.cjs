@@ -3077,5 +3077,9 @@ test('two hundred classic and vibrant themes plus custom colors persist locally'
   );
   assert.match(settingsSource, /testID="theme-intensity-slider"/);
   assert.match(customEditorSource, /custom-theme-depth-\$\{key\}/);
+  assert.match(customEditorSource, /Tap a color in the grid to choose it/);
+  assert.match(customEditorSource, /custom-theme-current-color-\$\{key\}/);
+  assert.match(customEditorSource, /primaryDepth: draft\.primaryDepth \?\? 50/);
+  assert.doesNotMatch(customEditorSource, /TextInput|hex values|#RRGGBB/);
   assert.match(sliderSource, /accessibilityRole="adjustable"/);
 });
