@@ -66,6 +66,12 @@ export interface PlayerSetPerformance {
   unforcedErrors: SetPerformanceMetric;
 }
 
+export interface SetStrokeRatingComparison {
+  strokeType: StrokeType;
+  label: string;
+  setRatings: { setNumber: number; rating: number | null }[];
+}
+
 export interface PlayerPerformanceSummary {
   overallWinPercent: number | null;
   serviceWinPercent: number | null;
@@ -1116,6 +1122,21 @@ function matchNoteRelatedStats(
   return evidence.length
     ? evidence.slice(0, 4)
     : ['No directly related match statistic was recorded.'];
+}
+
+export function getSetStrokeRatingComparisons(
+  insights: Pick<LocalInsights, 'sets'>,
+): SetStrokeRatingComparison[] {
+  return STROKE_TYPE_OPTIONS.map((option) => ({
+    strokeType: option.value,
+    label: option.label,
+    setRatings: insights.sets.map((set) => ({
+      setNumber: set.setNumber,
+      rating: set.review.strokeRatings[option.value] ?? null,
+    })),
+  })).filter((comparison) =>
+    comparison.setRatings.some(({ rating }) => rating !== null),
+  );
 }
 
 export function summarizeMatchNotes(

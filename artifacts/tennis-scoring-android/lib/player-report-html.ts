@@ -11,7 +11,10 @@ import type {
   PlayerReportInsights,
   SetPerformanceMetric,
 } from '@/lib/player-insights';
-import { summarizeMatchNotes } from '@/lib/player-insights';
+import {
+  getSetStrokeRatingComparisons,
+  summarizeMatchNotes,
+} from '@/lib/player-insights';
 import type { LocalReportBenchmarkPreset } from '@/lib/local-benchmarks';
 import {
   getAnonymizedReportPlayerLabels,
@@ -709,6 +712,33 @@ export function buildPlayerReportHtml(
   const coach = displayText(match.chairCoach?.trim() || 'Not specified');
   const reportDate = formatReportDate(match.matchDate);
   const matchWinner = matchWinnerLabel(displayMatch, insights.sets);
+  const setStrokeRatingComparisons = getSetStrokeRatingComparisons(insights);
+  const setStrokeRatingRows = setStrokeRatingComparisons
+    .map((comparison) =>
+      comparison.setRatings
+        .map(
+          ({ setNumber, rating }, index) => `
+            <tr>
+              ${
+                index === 0
+                  ? `<th scope="rowgroup" rowspan="${comparison.setRatings.length}">${escape(comparison.label)}</th>`
+                  : ''
+              }
+              <td>Set ${setNumber}</td>
+              <td${rating === null ? ' aria-label="No rating recorded"' : ''}>${rating === null ? '' : `${rating}/10`}</td>
+            </tr>`,
+        )
+        .join(''),
+    )
+    .join('');
+  const setStrokeRatingComparisonHtml = setStrokeRatingComparisons.length
+    ? `<h3>Stroke self-ratings by set</h3>
+       <p class="context-coverage">The tracked player's self-ratings on a 1–10 scale are grouped by stroke. Blank cells mean no rating was recorded for that set.</p>
+       <table class="stroke-rating-comparison">
+         <thead><tr><th>Stroke</th><th>Set</th><th>Self-rating / 10</th></tr></thead>
+         <tbody>${setStrokeRatingRows}</tbody>
+       </table>`
+    : '';
 
   return `<!doctype html>
 <html>
@@ -927,7 +957,8 @@ export function buildPlayerReportHtml(
         </tr>
       </thead>
       <tbody>${setPerformanceRows}</tbody>
-    </table>` : ''}
+    </table>
+    ${setStrokeRatingComparisonHtml}` : ''}
 
     ${includes('game-notes') && gameNoteSections ? `
     <h2>Game notes</h2>

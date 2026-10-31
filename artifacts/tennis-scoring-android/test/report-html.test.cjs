@@ -3682,6 +3682,72 @@ test('single-match reports show per-set samples and keep unsupported metrics una
   assert.match(html, /No unforced-error tags/);
 });
 
+test('single-match report groups stroke self-ratings by set and leaves missing values blank', () => {
+  const match = performanceSampleMatch();
+  const initialInsights = calculateLocalInsights(match);
+  const baseSet = initialInsights.sets[0];
+  const makeReview = (strokeRatings) => ({
+    ...baseSet.review,
+    strokeRatingScale: 10,
+    strokeRatings,
+  });
+  const insights = {
+    ...initialInsights,
+    sets: [
+      {
+        ...baseSet,
+        setNumber: 1,
+        review: makeReview({ first_serve: 8, forehand_drive: 6 }),
+      },
+      {
+        ...baseSet,
+        setNumber: 2,
+        review: makeReview({ forehand_drive: 9 }),
+      },
+      {
+        ...baseSet,
+        setNumber: 3,
+        review: makeReview({ backhand_drive: 5 }),
+      },
+    ],
+  };
+  const summary = summarizePlayerPerformance(insights);
+  const html = buildPlayerReportHtml(match, insights, summary);
+  const comparisonRows = reportRowsInTable(html, 'stroke-rating-comparison');
+  const forehandRow = comparisonRows.findIndex((row) => /forehand/i.test(row));
+  const backhandRow = comparisonRows.findIndex((row) => /backhand/i.test(row));
+
+  assert.match(html, /Stroke self-ratings by set/);
+  assert.match(html, /Self-rating \/ 10/);
+  assert.match(html, /self-ratings on a 1–10 scale/);
+  assert.match(html, /Blank cells mean no rating was recorded/);
+  assert.match(html, /aria-label="No rating recorded"><\/td>/);
+  assert.ok(forehandRow >= 0, 'Forehand ratings should be grouped together');
+  assert.match(comparisonRows[forehandRow], /Set 1 6\/10/);
+  assert.equal(comparisonRows[forehandRow + 1], 'Set 2 9/10');
+  assert.equal(comparisonRows[forehandRow + 2], 'Set 3');
+  assert.ok(backhandRow >= 0, 'Backhand ratings should be grouped together');
+  assert.match(comparisonRows[backhandRow], /Backhand.*Set 1$/i);
+  assert.equal(comparisonRows[backhandRow + 1], 'Set 2');
+  assert.equal(comparisonRows[backhandRow + 2], 'Set 3 5/10');
+
+  const noRatingsInsights = calculateLocalInsights(match);
+  const noRatingsHtml = buildPlayerReportHtml(
+    match,
+    noRatingsInsights,
+    summarizePlayerPerformance(noRatingsInsights),
+  );
+  assert.doesNotMatch(noRatingsHtml, /stroke-rating-comparison/);
+
+  const overviewOnlyHtml = buildPlayerReportHtml(
+    match,
+    insights,
+    summary,
+    ['overview'],
+  );
+  assert.doesNotMatch(overviewOnlyHtml, /stroke-rating-comparison/);
+});
+
 test('match detail does not default an undetermined set winner to the tracked player', () => {
   const source = fs.readFileSync(
     path.join(__dirname, '../app/matches/[id].tsx'),
