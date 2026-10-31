@@ -21,6 +21,7 @@ import {
   localMatchKey,
   listLocalMatches,
   LOCAL_MATCH_LIST_KEY,
+  PLAYER_PERFORMANCE_HISTORY_KEY,
   type LocalMatchSummary,
 } from '@/lib/local-matches';
 import {
@@ -103,7 +104,12 @@ export default function HomeScreen() {
         ...current,
         expandedMatchIds: current.expandedMatchIds.filter((id) => id !== matchId),
       }));
-      await queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY }),
+        queryClient.invalidateQueries({
+          queryKey: PLAYER_PERFORMANCE_HISTORY_KEY,
+        }),
+      ]);
     },
     onError: (error) => Alert.alert('Could not delete match', error.message),
   });

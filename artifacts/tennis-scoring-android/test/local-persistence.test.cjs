@@ -2422,6 +2422,185 @@ test('player trend summaries separate match outcomes without inventing point sam
   assert.match(developmentScreen, /No \$\{value\.countLabel\} recorded/);
 });
 
+test('player development history refreshes after one and final match deletion', async () => {
+  storageValues.clear();
+  const { localMatches, localPlayers } = loadStorageModulesAfterRestart();
+  const player = await localPlayers.addLocalPlayer('Alex Player');
+  const firstOpponent = await localPlayers.addLocalPlayer('Bailey Player');
+  const secondOpponent = await localPlayers.addLocalPlayer('Casey Player');
+
+  async function createMatch({
+    matchDate,
+    event,
+    trackedPlayer,
+    trackedOpponent,
+    pointWinners,
+  }) {
+    const match = await localMatches.createLocalMatch({
+      matchDate,
+      event,
+      round: 'Round 1',
+      trackedPlayer: trackedPlayer.name,
+      trackedPlayerId: trackedPlayer.id,
+      opponent: trackedOpponent.name,
+      opponentPlayerId: trackedOpponent.id,
+      chairCoach: null,
+      surface: 'Hard',
+      firstServer: 'tracked',
+      setNumber: 1,
+    });
+    for (const winner of pointWinners) {
+      await localMatches.recordLocalPoint(match.id, { winner });
+    }
+    return match;
+  }
+
+  const firstMatch = await createMatch({
+    matchDate: '2026-10-01',
+    event: 'October Open',
+    trackedPlayer: player,
+    trackedOpponent: firstOpponent,
+    pointWinners: ['tracked', 'opponent'],
+  });
+  const secondMatch = await createMatch({
+    matchDate: '2026-10-05',
+    event: 'Autumn Cup',
+    trackedPlayer: secondOpponent,
+    trackedOpponent: player,
+    pointWinners: ['opponent', 'tracked', 'opponent'],
+  });
+
+  const playerInsights = loadPlayerInsights();
+  async function getDevelopmentHistory() {
+    const roster = await localPlayers.listLocalPlayers();
+    const records = await localMatches.listLocalPlayerMatchInsights(
+      player.id,
+      roster,
+    );
+    return playerInsights.buildPlayerPerformanceHistory(records);
+  }
+
+  const historyBefore = await getDevelopmentHistory();
+  assert.deepEqual(
+    historyBefore.map(({ id, date, event, opponent }) => ({
+      id,
+      date,
+      event,
+      opponent,
+    })),
+    [
+      {
+        id: firstMatch.id,
+        date: '2026-10-01',
+        event: 'October Open',
+        opponent: 'Bailey Player',
+      },
+      {
+        id: secondMatch.id,
+        date: '2026-10-05',
+        event: 'Autumn Cup',
+        opponent: 'Casey Player',
+      },
+    ],
+  );
+  assert.deepEqual(
+    playerInsights.summarizePlayerTrendMetric(historyBefore, 'overall'),
+    {
+      percent: 60,
+      won: 3,
+      total: 5,
+      countLabel: 'points',
+      matchCount: 2,
+      sampledMatchCount: 2,
+    },
+  );
+
+  assert.equal(await localMatches.deleteLocalMatch(firstMatch.id), true);
+  const afterOneDeletion = await getDevelopmentHistory();
+  assert.deepEqual(
+    afterOneDeletion.map(({ id, date, event, opponent }) => ({
+      id,
+      date,
+      event,
+      opponent,
+    })),
+    [
+      {
+        id: secondMatch.id,
+        date: '2026-10-05',
+        event: 'Autumn Cup',
+        opponent: 'Casey Player',
+      },
+    ],
+  );
+  assert.deepEqual(
+    playerInsights.summarizePlayerTrendMetric(afterOneDeletion, 'overall'),
+    {
+      percent: 67,
+      won: 2,
+      total: 3,
+      countLabel: 'points',
+      matchCount: 1,
+      sampledMatchCount: 1,
+    },
+  );
+  assert.equal(await localMatches.getLocalMatch(firstMatch.id), null);
+  assert.ok(await localMatches.getLocalMatch(secondMatch.id));
+
+  assert.equal(await localMatches.deleteLocalMatch(secondMatch.id), true);
+  const afterFinalDeletion = await getDevelopmentHistory();
+  assert.deepEqual(afterFinalDeletion, []);
+  assert.deepEqual(
+    playerInsights.summarizePlayerTrendMetric(afterFinalDeletion, 'overall'),
+    {
+      percent: null,
+      won: 0,
+      total: 0,
+      countLabel: 'points',
+      matchCount: 0,
+      sampledMatchCount: 0,
+    },
+  );
+
+  const developmentScreen = fs.readFileSync(
+    path.join(__dirname, '../app/players/[id]/development.tsx'),
+    'utf8',
+  );
+  const homeScreen = fs.readFileSync(
+    path.join(__dirname, '../app/index.tsx'),
+    'utf8',
+  );
+  const historyScreen = fs.readFileSync(
+    path.join(__dirname, '../app/history.tsx'),
+    'utf8',
+  );
+  const matchDetailsScreen = fs.readFileSync(
+    path.join(__dirname, '../app/matches/[id].tsx'),
+    'utf8',
+  );
+  assert.match(
+    developmentScreen,
+    /queryKey:\s*\[\.\.\.PLAYER_PERFORMANCE_HISTORY_KEY,\s*primaryPlayerId\]/,
+  );
+  assert.match(
+    developmentScreen,
+    /allMatches\.length === 0 && !comparisonPlayerId/,
+  );
+  assert.match(developmentScreen, /No recorded match points yet/);
+  assert.match(
+    homeScreen,
+    /queryClient\.invalidateQueries\(\{\s*queryKey:\s*PLAYER_PERFORMANCE_HISTORY_KEY,?\s*\}\)/,
+  );
+  assert.match(
+    historyScreen,
+    /queryClient\.invalidateQueries\(\{\s*queryKey:\s*PLAYER_PERFORMANCE_HISTORY_KEY,?\s*\}\)/,
+  );
+  assert.match(
+    matchDetailsScreen,
+    /queryKey:\s*PLAYER_PERFORMANCE_HISTORY_KEY/,
+  );
+});
+
 test('legacy match names that match multiple saved identities stay unlinked', async () => {
   storageValues.clear();
   const { localMatches } = loadStorageModulesAfterRestart();

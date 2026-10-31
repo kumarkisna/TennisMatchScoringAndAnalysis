@@ -390,6 +390,9 @@ export interface LocalSetInsights {
 }
 
 export const LOCAL_MATCH_LIST_KEY = ['device-matches'] as const;
+export const PLAYER_PERFORMANCE_HISTORY_KEY = [
+  'player-performance-history',
+] as const;
 export const localMatchKey = (id: string) => ['device-match', id] as const;
 export const localInsightsKey = (id: string) => ['device-insights', id] as const;
 

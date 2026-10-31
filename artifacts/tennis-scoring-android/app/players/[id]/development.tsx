@@ -15,7 +15,10 @@ import {
 import Svg, { Circle, G, Line, Path, Text as SvgText } from 'react-native-svg';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
-import { listLocalPlayerMatchInsights } from '@/lib/local-matches';
+import {
+  listLocalPlayerMatchInsights,
+  PLAYER_PERFORMANCE_HISTORY_KEY,
+} from '@/lib/local-matches';
 import { listLocalPlayers } from '@/lib/local-players';
 import {
   buildPlayerPerformanceHistory,
@@ -791,12 +794,12 @@ export default function PlayerDevelopmentScreen() {
   });
   const players = playersQuery.data ?? [];
   const historyQuery = useQuery({
-    queryKey: ['player-performance-history', primaryPlayerId],
+    queryKey: [...PLAYER_PERFORMANCE_HISTORY_KEY, primaryPlayerId],
     enabled: Boolean(primaryPlayerId),
     queryFn: () => loadPlayerTrendHistory(primaryPlayerId),
   });
   const comparisonQuery = useQuery({
-    queryKey: ['player-performance-history', comparisonPlayerId],
+    queryKey: [...PLAYER_PERFORMANCE_HISTORY_KEY, comparisonPlayerId],
     enabled: Boolean(comparisonPlayerId && comparisonPlayerId !== primaryPlayerId),
     queryFn: () => loadPlayerTrendHistory(comparisonPlayerId ?? ''),
   });

@@ -36,6 +36,7 @@ import {
   getLocalPointHistory,
   getLocalSetHistory,
   LOCAL_MATCH_LIST_KEY,
+  PLAYER_PERFORMANCE_HISTORY_KEY,
   LOCAL_MATCH_NOTE_PROMPTS,
   appendLocalNotePrompt,
   addLocalSet,
@@ -494,7 +495,9 @@ export default function MatchScreen() {
     queryClient.setQueryData(localMatchKey(matchId), updatedMatch);
     void queryClient.invalidateQueries({ queryKey: LOCAL_MATCH_LIST_KEY });
     void queryClient.invalidateQueries({ queryKey: localInsightsKey(matchId) });
-    void queryClient.invalidateQueries({ queryKey: ['player-performance-history'] });
+    void queryClient.invalidateQueries({
+      queryKey: PLAYER_PERFORMANCE_HISTORY_KEY,
+    });
   };
 
   const recordPoint = useMutation({
