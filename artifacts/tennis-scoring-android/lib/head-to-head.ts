@@ -27,7 +27,7 @@ export interface HeadToHeadMeeting {
   insights: LocalInsights;
 }
 
-export type PersonalAverageCourtSurface = Exclude<CourtSurface, 'Other'>;
+export type PersonalAverageCourtSurface = CourtSurface;
 
 export interface SurfaceBreakPointBaseline {
   surface: PersonalAverageCourtSurface;
@@ -40,6 +40,7 @@ export const PERSONAL_AVERAGE_COURT_SURFACES = [
   'Clay',
   'Grass',
   'Carpet',
+  'Other',
 ] as const satisfies readonly PersonalAverageCourtSurface[];
 
 export interface HeadToHeadReport {

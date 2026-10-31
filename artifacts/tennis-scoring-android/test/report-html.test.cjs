@@ -523,7 +523,7 @@ function reportRowsAfterHeading(html, heading) {
 }
 
 function emptySurfaceBreakPointBaselines() {
-  return ['Hard', 'Clay', 'Grass', 'Carpet'].map((surface) => ({
+  return ['Hard', 'Clay', 'Grass', 'Carpet', 'Other'].map((surface) => ({
     surface,
     matchCount: 0,
     breakPoints: { ...emptyBreakPoints },
@@ -947,13 +947,22 @@ test('surface break-point averages pool chances and mark missing rates unavailab
     '2026-10-06',
     'Other',
   );
+  const otherSurfaceWithoutChances = breakPointMeeting(
+    'alex-gale-other-no-chances',
+    'Alex',
+    'Gale',
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    '2026-10-07',
+    'Other',
+  );
   const reverseOriented = breakPointMeeting(
     'bailey-alex-hard',
     'Bailey',
     'Alex',
     { opportunities: 100, converted: 100, faced: 100, saved: 0 },
     { opportunities: 100, converted: 0, faced: 100, saved: 0 },
-    '2026-10-07',
+    '2026-10-08',
     'Hard',
   );
 
@@ -968,11 +977,12 @@ test('surface break-point averages pool chances and mark missing rates unavailab
       grassWithoutChances,
       carpet,
       otherSurface,
+      otherSurfaceWithoutChances,
       reverseOriented,
     ],
   );
 
-  assert.equal(report.personalAverageMatches, 6);
+  assert.equal(report.personalAverageMatches, 7);
   assert.deepEqual(
     report.personalAverageBreakPointsBySurface.map(
       ({ surface, matchCount, breakPoints }) => ({
@@ -1002,6 +1012,11 @@ test('surface break-point averages pool chances and mark missing rates unavailab
         matchCount: 1,
         breakPoints: { opportunities: 3, converted: 2, faced: 2, saved: 1 },
       },
+      {
+        surface: 'Other',
+        matchCount: 2,
+        breakPoints: { opportunities: 9, converted: 8, faced: 8, saved: 4 },
+      },
     ],
   );
 
@@ -1009,20 +1024,48 @@ test('surface break-point averages pool chances and mark missing rates unavailab
   assert.deepEqual(
     reportRows(html, 'Personal break-point rates by court surface'),
     [
-      'Matches included 2 1 1 1',
-      'Break points converted 5/10 · 50.0% 1/2 · 50.0% — 2/3 · 66.7%',
-      'Break points missed 5/10 · 50.0% 1/2 · 50.0% — 1/3 · 33.3%',
-      'Break points saved 5/9 · 55.6% 1/2 · 50.0% — 1/2 · 50.0%',
-      'Break points lost while serving 4/9 · 44.4% 1/2 · 50.0% — 1/2 · 50.0%',
+      'Matches included 2 1 1 1 2',
+      'Break points converted 5/10 · 50.0% 1/2 · 50.0% — 2/3 · 66.7% 8/9 · 88.9%',
+      'Break points missed 5/10 · 50.0% 1/2 · 50.0% — 1/3 · 33.3% 1/9 · 11.1%',
+      'Break points saved 5/9 · 55.6% 1/2 · 50.0% — 1/2 · 50.0% 4/8 · 50.0%',
+      'Break points lost while serving 4/9 · 44.4% 1/2 · 50.0% — 1/2 · 50.0% 4/8 · 50.0%',
     ],
   );
   assert.match(
     html,
-    /Each rate pools recorded chances from saved matches on that surface/,
+    /Other is included as its own group/,
   );
   assert.doesNotMatch(
     buildHeadToHeadReportHtml(report, ['overview']),
     /Personal break-point rates by court surface/,
+  );
+
+  const otherWithoutChancesReport = buildHeadToHeadReport(
+    'Alex',
+    'Gale',
+    [otherSurfaceWithoutChances],
+    [otherSurfaceWithoutChances],
+  );
+  const otherWithoutChancesHtml = buildHeadToHeadReportHtml(
+    otherWithoutChancesReport,
+  );
+  assert.deepEqual(
+    reportRows(otherWithoutChancesHtml, 'Personal break-point rates by court surface'),
+    [
+      'Matches included 0 0 0 0 1',
+      'Break points converted — — — — —',
+      'Break points missed — — — — —',
+      'Break points saved — — — — —',
+      'Break points lost while serving — — — — —',
+    ],
+  );
+  assert.match(
+    headToHeadScreenSource,
+    /Hard · Clay · Grass · Carpet · Other/,
+  );
+  assert.match(
+    headToHeadScreenSource,
+    /including Other/,
   );
 });
 

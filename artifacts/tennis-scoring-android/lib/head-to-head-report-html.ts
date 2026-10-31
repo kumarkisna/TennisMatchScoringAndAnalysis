@@ -639,7 +639,7 @@ export function buildHeadToHeadReportHtml(
       <p class="note">Pooled break-point chances across ${report.personalAverageMatches} saved ${report.personalAverageMatches === 1 ? 'match' : 'matches'} where this player was recorded as the tracked player, including this pairing when present.</p>
       <table><thead><tr><th>Statistic</th><th>Personal average</th></tr></thead><tbody>${personalBreakPointRows}</tbody></table>
       <h3>Personal break-point rates by court surface</h3>
-      <p class="note">Each rate pools recorded chances from saved matches on that surface. The match count is shown separately; surfaces recorded as Other are excluded. Rates are unavailable where no chances were recorded.</p>
+      <p class="note">Each rate pools recorded chances from point-recorded matches on that surface. The match count is shown separately, and Other is included as its own group. Rates are unavailable where no chances were recorded.</p>
       <table class="surface-break-point-table">
         <thead><tr><th>Statistic</th>${personalAverageSurfaces.map(({ surface }) => `<th>${escapeHtml(surface)}</th>`).join('')}</tr></thead>
         <tbody>${personalAverageSurfaceRows}</tbody>

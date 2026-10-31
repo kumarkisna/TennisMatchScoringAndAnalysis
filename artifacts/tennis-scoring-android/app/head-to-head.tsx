@@ -1161,7 +1161,7 @@ export default function HeadToHeadScreen() {
                       { color: colors.mutedForeground },
                     ]}
                   >
-                    Hard · Clay · Grass · Carpet
+                    Hard · Clay · Grass · Carpet · Other
                   </Text>
                 </View>
                 <Ionicons
@@ -1181,7 +1181,7 @@ export default function HeadToHeadScreen() {
                       { color: colors.mutedForeground },
                     ]}
                   >
-                    Rates pool recorded chances. Match counts include tracked-player matches on each surface; other surfaces are excluded.
+                    Rates pool recorded chances. Match counts include point-recorded matches on each surface, including Other.
                   </Text>
                   {personalSurfaceBreakPointRows.map(
                     ({ surface, matchCount, rows }) => (
