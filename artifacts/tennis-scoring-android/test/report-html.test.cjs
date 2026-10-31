@@ -1269,6 +1269,222 @@ test('head-to-head break-point rates compare each surface and separate missing l
   ]);
 });
 
+test('head-to-head serve rates pool both players by surface and distinguish unavailable samples', () => {
+  const withServeStats = (
+    meeting,
+    trackedServe,
+    opponentServe,
+    trackedGames,
+    opponentGames,
+  ) => {
+    meeting.insights = {
+      ...meeting.insights,
+      serveStats: {
+        tracked: { ...emptySide, ...trackedServe },
+        opponent: { ...emptySide, ...opponentServe },
+      },
+      serviceGames: {
+        tracked: { gamesPlayed: trackedGames.played, gamesWon: trackedGames.won },
+        opponent: {
+          gamesPlayed: opponentGames.played,
+          gamesWon: opponentGames.won,
+        },
+      },
+    };
+    return meeting;
+  };
+  const hardOne = withServeStats(
+    breakPointMeeting('serve-hard-one', 'Alex', 'Bailey', emptyBreakPoints, emptyBreakPoints, '2026-10-01', 'Hard'),
+    { firstServePoints: 8, firstServePointsWon: 6, secondServePoints: 4, secondServePointsWon: 1 },
+    { firstServePoints: 10, firstServePointsWon: 7, secondServePoints: 3, secondServePointsWon: 1 },
+    { played: 5, won: 3 },
+    { played: 4, won: 2 },
+  );
+  const hardTwo = withServeStats(
+    breakPointMeeting('serve-hard-two', 'Alex', 'Bailey', emptyBreakPoints, emptyBreakPoints, '2026-10-02', 'Hard'),
+    { firstServePoints: 4, firstServePointsWon: 2, secondServePoints: 6, secondServePointsWon: 4 },
+    { firstServePoints: 8, firstServePointsWon: 5, secondServePoints: 5, secondServePointsWon: 3 },
+    { played: 7, won: 5 },
+    { played: 6, won: 3 },
+  );
+  const clayWithoutLog = breakPointMeeting(
+    'serve-clay-no-log',
+    'Alex',
+    'Bailey',
+    emptyBreakPoints,
+    emptyBreakPoints,
+    '2026-10-03',
+    'Clay',
+  );
+  clayWithoutLog.insights.pointCount = 0;
+  const grassWithoutChances = withServeStats(
+    breakPointMeeting('serve-grass-no-chances', 'Alex', 'Bailey', emptyBreakPoints, emptyBreakPoints, '2026-10-04', 'Grass'),
+    {
+      firstServePoints: 0,
+      firstServePointsWon: 0,
+      secondServePoints: 0,
+      secondServePointsWon: 0,
+    },
+    {
+      firstServePoints: 0,
+      firstServePointsWon: 0,
+      secondServePoints: 0,
+      secondServePointsWon: 0,
+    },
+    { played: 0, won: 0 },
+    { played: 0, won: 0 },
+  );
+  const reverseOriented = withServeStats(
+    breakPointMeeting('serve-reverse', 'Bailey', 'Alex', emptyBreakPoints, emptyBreakPoints, '2026-10-05', 'Hard'),
+    { firstServePoints: 100, firstServePointsWon: 100, secondServePoints: 100, secondServePointsWon: 100 },
+    { firstServePoints: 100, firstServePointsWon: 0, secondServePoints: 100, secondServePointsWon: 0 },
+    { played: 100, won: 100 },
+    { played: 100, won: 0 },
+  );
+
+  const report = buildHeadToHeadReport('Alex', 'Bailey', [
+    hardOne,
+    hardTwo,
+    clayWithoutLog,
+    grassWithoutChances,
+    reverseOriented,
+  ]);
+
+  assert.deepEqual(
+    report.serveStatsBySurface.map(
+      ({ surface, matchCount, pointLogCount, tracked, opponent }) => ({
+        surface,
+        matchCount,
+        pointLogCount,
+        tracked,
+        opponent,
+      }),
+    ),
+    [
+      {
+        surface: 'Hard',
+        matchCount: 2,
+        pointLogCount: 2,
+        tracked: {
+          firstServePoints: 12,
+          firstServePointsWon: 8,
+          secondServePoints: 10,
+          secondServePointsWon: 5,
+          serviceGamesPlayed: 12,
+          serviceGamesWon: 8,
+        },
+        opponent: {
+          firstServePoints: 18,
+          firstServePointsWon: 12,
+          secondServePoints: 8,
+          secondServePointsWon: 4,
+          serviceGamesPlayed: 10,
+          serviceGamesWon: 5,
+        },
+      },
+      {
+        surface: 'Clay',
+        matchCount: 1,
+        pointLogCount: 0,
+        tracked: {
+          firstServePoints: 0,
+          firstServePointsWon: 0,
+          secondServePoints: 0,
+          secondServePointsWon: 0,
+          serviceGamesPlayed: 0,
+          serviceGamesWon: 0,
+        },
+        opponent: {
+          firstServePoints: 0,
+          firstServePointsWon: 0,
+          secondServePoints: 0,
+          secondServePointsWon: 0,
+          serviceGamesPlayed: 0,
+          serviceGamesWon: 0,
+        },
+      },
+      {
+        surface: 'Grass',
+        matchCount: 1,
+        pointLogCount: 1,
+        tracked: {
+          firstServePoints: 0,
+          firstServePointsWon: 0,
+          secondServePoints: 0,
+          secondServePointsWon: 0,
+          serviceGamesPlayed: 0,
+          serviceGamesWon: 0,
+        },
+        opponent: {
+          firstServePoints: 0,
+          firstServePointsWon: 0,
+          secondServePoints: 0,
+          secondServePointsWon: 0,
+          serviceGamesPlayed: 0,
+          serviceGamesWon: 0,
+        },
+      },
+      {
+        surface: 'Carpet',
+        matchCount: 0,
+        pointLogCount: 0,
+        tracked: {
+          firstServePoints: 0,
+          firstServePointsWon: 0,
+          secondServePoints: 0,
+          secondServePointsWon: 0,
+          serviceGamesPlayed: 0,
+          serviceGamesWon: 0,
+        },
+        opponent: {
+          firstServePoints: 0,
+          firstServePointsWon: 0,
+          secondServePoints: 0,
+          secondServePointsWon: 0,
+          serviceGamesPlayed: 0,
+          serviceGamesWon: 0,
+        },
+      },
+      {
+        surface: 'Other',
+        matchCount: 0,
+        pointLogCount: 0,
+        tracked: {
+          firstServePoints: 0,
+          firstServePointsWon: 0,
+          secondServePoints: 0,
+          secondServePointsWon: 0,
+          serviceGamesPlayed: 0,
+          serviceGamesWon: 0,
+        },
+        opponent: {
+          firstServePoints: 0,
+          firstServePointsWon: 0,
+          secondServePoints: 0,
+          secondServePointsWon: 0,
+          serviceGamesPlayed: 0,
+          serviceGamesWon: 0,
+        },
+      },
+    ],
+  );
+
+  const html = buildHeadToHeadReportHtml(report);
+  assert.deepEqual(
+    reportRows(html, 'Head-to-head serve performance by court surface'),
+    [
+      'Matches recorded 2 1 1 0 0',
+      'Matches with point logs 2 0 1 0 0',
+      'Alex · first-serve points won 8/12 · 66.7% No point log No chances No point log No point log',
+      'Alex · second-serve points won 5/10 · 50.0% No point log No chances No point log No point log',
+      'Alex · service games won 8/12 · 66.7% No point log No chances No point log No point log',
+      'Bailey · first-serve points won 12/18 · 66.7% No point log No chances No point log No point log',
+      'Bailey · second-serve points won 4/8 · 50.0% No point log No chances No point log No point log',
+      'Bailey · service games won 5/10 · 50.0% No point log No chances No point log No point log',
+    ],
+  );
+});
+
 test('head-to-head match outcomes count only saved winners and status for each surface', () => {
   const hardWin = breakPointMeeting(
     'hard-win',

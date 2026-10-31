@@ -45,6 +45,23 @@ export interface HeadToHeadSurfaceBreakPoints {
   opponent: BreakPointStats;
 }
 
+export interface HeadToHeadSurfaceServeStats {
+  firstServePoints: number;
+  firstServePointsWon: number;
+  secondServePoints: number;
+  secondServePointsWon: number;
+  serviceGamesPlayed: number;
+  serviceGamesWon: number;
+}
+
+export interface HeadToHeadSurfaceServe {
+  surface: PersonalAverageCourtSurface;
+  matchCount: number;
+  pointLogCount: number;
+  tracked: HeadToHeadSurfaceServeStats;
+  opponent: HeadToHeadSurfaceServeStats;
+}
+
 export interface HeadToHeadSurfaceMatchOutcomes {
   surface: PersonalAverageCourtSurface;
   matchCount: number;
@@ -85,6 +102,7 @@ export interface HeadToHeadReport {
   personalAverageMatches: number;
   personalAverageBreakPointsBySurface: SurfaceBreakPointBaseline[];
   breakPointsBySurface: HeadToHeadSurfaceBreakPoints[];
+  serveStatsBySurface: HeadToHeadSurfaceServe[];
   matchOutcomesBySurface: HeadToHeadSurfaceMatchOutcomes[];
 }
 
@@ -367,6 +385,35 @@ export function buildHeadToHeadReport(
       };
     },
   );
+  const serveStatsBySurface = PERSONAL_AVERAGE_COURT_SURFACES.map(
+    (surface) => {
+      const surfaceMeetings = meetings.filter(
+        ({ summary }) => summary.surface === surface,
+      );
+      const pointSampledSurfaceMeetings = surfaceMeetings.filter(
+        (meeting) => meeting.insights.pointCount > 0,
+      );
+      const surfaceInsights = aggregateLocalInsights(
+        pointSampledSurfaceMeetings.map((meeting) => meeting.insights),
+      );
+      const sideStats = (side: PlayerSide): HeadToHeadSurfaceServeStats => ({
+        firstServePoints: surfaceInsights.serveStats[side].firstServePoints,
+        firstServePointsWon: surfaceInsights.serveStats[side].firstServePointsWon,
+        secondServePoints: surfaceInsights.serveStats[side].secondServePoints,
+        secondServePointsWon:
+          surfaceInsights.serveStats[side].secondServePointsWon,
+        serviceGamesPlayed: surfaceInsights.serviceGames[side].gamesPlayed,
+        serviceGamesWon: surfaceInsights.serviceGames[side].gamesWon,
+      });
+      return {
+        surface,
+        matchCount: surfaceMeetings.length,
+        pointLogCount: pointSampledSurfaceMeetings.length,
+        tracked: sideStats('tracked'),
+        opponent: sideStats('opponent'),
+      };
+    },
+  );
   const matchOutcomesBySurface = PERSONAL_AVERAGE_COURT_SURFACES.map(
     (surface) => {
       const surfaceMeetings = meetings.filter(
@@ -455,6 +502,7 @@ export function buildHeadToHeadReport(
     personalAverageMatches: pointSampledPersonalMeetings.length,
     personalAverageBreakPointsBySurface,
     breakPointsBySurface,
+    serveStatsBySurface,
     matchOutcomesBySurface,
   };
 }

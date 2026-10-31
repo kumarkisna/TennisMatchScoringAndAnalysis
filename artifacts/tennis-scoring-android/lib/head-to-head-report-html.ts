@@ -623,6 +623,89 @@ export function buildHeadToHeadReportHtml(
       ),
     ],
   ]);
+  const headToHeadServeSurfaces = report.serveStatsBySurface ?? [];
+  const serveSurfaceRate = (
+    pointLogCount: number,
+    won: number,
+    attempts: number,
+  ) =>
+    pointLogCount === 0
+      ? 'No point log'
+      : attempts === 0
+        ? 'No chances'
+        : rate(won, attempts);
+  const headToHeadServeSurfaceRows = tableRows([
+    [
+      'Matches recorded',
+      ...headToHeadServeSurfaces.map(({ matchCount }) => String(matchCount)),
+    ],
+    [
+      'Matches with point logs',
+      ...headToHeadServeSurfaces.map(({ pointLogCount }) =>
+        String(pointLogCount),
+      ),
+    ],
+    [
+      `${trackedPlayer} · first-serve points won`,
+      ...headToHeadServeSurfaces.map(({ pointLogCount, tracked }) =>
+        serveSurfaceRate(
+          pointLogCount,
+          tracked.firstServePointsWon,
+          tracked.firstServePoints,
+        ),
+      ),
+    ],
+    [
+      `${trackedPlayer} · second-serve points won`,
+      ...headToHeadServeSurfaces.map(({ pointLogCount, tracked }) =>
+        serveSurfaceRate(
+          pointLogCount,
+          tracked.secondServePointsWon,
+          tracked.secondServePoints,
+        ),
+      ),
+    ],
+    [
+      `${trackedPlayer} · service games won`,
+      ...headToHeadServeSurfaces.map(({ pointLogCount, tracked }) =>
+        serveSurfaceRate(
+          pointLogCount,
+          tracked.serviceGamesWon,
+          tracked.serviceGamesPlayed,
+        ),
+      ),
+    ],
+    [
+      `${opponent} · first-serve points won`,
+      ...headToHeadServeSurfaces.map(({ pointLogCount, opponent: stats }) =>
+        serveSurfaceRate(
+          pointLogCount,
+          stats.firstServePointsWon,
+          stats.firstServePoints,
+        ),
+      ),
+    ],
+    [
+      `${opponent} · second-serve points won`,
+      ...headToHeadServeSurfaces.map(({ pointLogCount, opponent: stats }) =>
+        serveSurfaceRate(
+          pointLogCount,
+          stats.secondServePointsWon,
+          stats.secondServePoints,
+        ),
+      ),
+    ],
+    [
+      `${opponent} · service games won`,
+      ...headToHeadServeSurfaces.map(({ pointLogCount, opponent: stats }) =>
+        serveSurfaceRate(
+          pointLogCount,
+          stats.serviceGamesWon,
+          stats.serviceGamesPlayed,
+        ),
+      ),
+    ],
+  ]);
   const matchOutcomesBySurface = report.matchOutcomesBySurface ?? [];
   const matchOutcomeSurfaceRows = tableRows([
     [
@@ -861,6 +944,12 @@ export function buildHeadToHeadReportHtml(
       ${includes('serve') ? `
       <h2>Serve</h2>
       <table><thead><tr><th>Statistic</th><th>${escapeHtml(trackedPlayer)}</th><th>${escapeHtml(opponent)}</th>${benchmarkHeaders}</tr></thead><tbody>${serveRows}</tbody></table>
+      <h3>Head-to-head serve performance by court surface</h3>
+      <p class="note">Rates pool recorded serve points and service games across matches on each surface. Match counts include meetings without point logs; the logged-match count shows how many contribute point samples. No point log and No chances are unavailable, not zero performance.</p>
+      <table class="surface-break-point-table">
+        <thead><tr><th>Statistic</th>${headToHeadServeSurfaces.map(({ surface }) => `<th>${escapeHtml(surface)}</th>`).join('')}</tr></thead>
+        <tbody>${headToHeadServeSurfaceRows}</tbody>
+      </table>
       ` : ''}
       ${includes('return-points') ? `
       <h2>Return and points</h2>
