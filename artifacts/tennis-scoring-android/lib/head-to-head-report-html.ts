@@ -2,7 +2,10 @@ import {
   getSetWinner,
   type HeadToHeadReport,
 } from '@/lib/head-to-head';
-import { getLocalPointHistory } from '@/lib/local-matches';
+import {
+  calculateBreakPointStats,
+  getLocalPointHistory,
+} from '@/lib/local-matches';
 import { POINT_CODE_LABELS } from '@/lib/player-report-html';
 import {
   getAnonymizedReportPlayerLabels,
@@ -134,8 +137,9 @@ function breakPointMeetingTables(
   report: HeadToHeadReport,
   trackedPlayer: string,
   opponent: string,
-): { coverageRows: string; momentRows: string } {
+): { coverageRows: string; resultRows: string; momentRows: string } {
   const coverageRows: string[] = [];
+  const resultRows: string[] = [];
   const momentRows: string[] = [];
 
   report.meetings.forEach((meeting, meetingIndex) => {
@@ -148,6 +152,14 @@ function breakPointMeetingTables(
           <td>${escapeHtml(meetingLabel)}</td>
           <td>No point log saved</td>
           <td>Unavailable — no point log</td>
+        </tr>`);
+      resultRows.push(`
+        <tr>
+          <td>${escapeHtml(meetingLabel)}</td>
+          <td>No point log</td>
+          <td>No point log</td>
+          <td>No point log</td>
+          <td>No point log</td>
         </tr>`);
       return;
     }
@@ -164,6 +176,20 @@ function breakPointMeetingTables(
       (total, set) => total + set.points.length,
       0,
     );
+    const pointStats = calculateBreakPointStats([], 'standard');
+    for (const set of sets) {
+      const setStats = calculateBreakPointStats(set.points, set.format);
+      for (const side of ['tracked', 'opponent'] as const) {
+        for (const metric of [
+          'opportunities',
+          'converted',
+          'faced',
+          'saved',
+        ] as const) {
+          pointStats[side][metric] += setStats[side][metric];
+        }
+      }
+    }
     const meetingMomentRows = sets
       .flatMap((set) =>
         getLocalPointHistory(set.points, set.format, 'break_points')
@@ -200,11 +226,31 @@ function breakPointMeetingTables(
         <td>${savedPointCount === 0 ? 'No point log saved' : `${savedPointCount} points saved`}</td>
         <td>${momentsFound}</td>
       </tr>`);
+    const resultCell = (
+      numerator: number,
+      denominator: number,
+    ): string => {
+      if (savedPointCount === 0) return 'No point log';
+      if (denominator === 0) return 'No chances';
+      return `${numerator}/${denominator} · ${(
+        (numerator / denominator) *
+        100
+      ).toFixed(1)}%`;
+    };
+    resultRows.push(`
+      <tr>
+        <td>${escapeHtml(meetingLabel)}</td>
+        <td>${escapeHtml(resultCell(pointStats.tracked.converted, pointStats.tracked.opportunities))}</td>
+        <td>${escapeHtml(resultCell(pointStats.tracked.saved, pointStats.tracked.faced))}</td>
+        <td>${escapeHtml(resultCell(pointStats.opponent.converted, pointStats.opponent.opportunities))}</td>
+        <td>${escapeHtml(resultCell(pointStats.opponent.saved, pointStats.opponent.faced))}</td>
+      </tr>`);
     momentRows.push(...meetingMomentRows);
   });
 
   return {
     coverageRows: coverageRows.join(''),
+    resultRows: resultRows.join(''),
     momentRows: momentRows.join(''),
   };
 }
@@ -679,6 +725,11 @@ export function buildHeadToHeadReportHtml(
       .break-point-coverage-table th:nth-child(2), .break-point-coverage-table td:nth-child(2) { width: 29%; }
       .break-point-coverage-table th:nth-child(3), .break-point-coverage-table td:nth-child(3) { width: 39%; }
       .break-point-coverage-table tr { break-inside: avoid; page-break-inside: avoid; }
+      .break-point-results-table { break-inside: auto; font-size: 7.5px; page-break-inside: auto; table-layout: fixed; }
+      .break-point-results-table th:first-child, .break-point-results-table td:first-child { width: 20%; }
+      .break-point-results-table th:not(:first-child), .break-point-results-table td:not(:first-child) { width: 20%; text-align: center; }
+      .break-point-results-table thead { display: table-header-group; }
+      .break-point-results-table tr { break-inside: avoid; page-break-inside: avoid; }
       .break-point-context-table { break-inside: auto; font-size: 8px; page-break-inside: auto; table-layout: fixed; }
       .break-point-context-table th:first-child, .break-point-context-table td:first-child { width: 23%; }
       .break-point-context-table th:nth-child(2), .break-point-context-table td:nth-child(2),
@@ -752,6 +803,14 @@ export function buildHeadToHeadReportHtml(
       <table class="break-point-coverage-table">
         <thead><tr><th>Meeting</th><th>Saved point records</th><th>Break-point moments found</th></tr></thead>
         <tbody>${breakPointTables.coverageRows || '<tr><td colspan="3">No meetings are available.</td></tr>'}</tbody>
+      </table>
+      <p class="note">Each rate is successes/chances: returns show converted break points/opportunities, and serves show saved break points/faced chances. “No point log” and “No chances” are unavailable, not zero performance.</p>
+      <table class="break-point-results-table">
+        <thead>
+          <tr><th rowspan="2">Meeting</th><th colspan="2">${escapeHtml(trackedPlayer)}</th><th colspan="2">${escapeHtml(opponent)}</th></tr>
+          <tr><th>Return · converted / chances</th><th>Serve · saved / faced</th><th>Return · converted / chances</th><th>Serve · saved / faced</th></tr>
+        </thead>
+        <tbody>${breakPointTables.resultRows || '<tr><td colspan="5">No meetings are available.</td></tr>'}</tbody>
       </table>
       <p class="note">Meetings are listed newest first. Scores are the tracked player's and opponent's game scores immediately before each chance. Saved means the server won; converted means the returner won. Tie-break points are excluded from the break-point moments below.</p>
       <table class="break-point-context-table">

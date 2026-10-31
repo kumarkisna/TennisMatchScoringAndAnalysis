@@ -45,4 +45,4 @@ Single-match and head-to-head reports can hide player names behind editable neut
 
 **Why:** Coaches should be able to review the score context for each chance without reopening point history, and distinguish missing point logs from recorded logs with no moments found.
 
-**How to apply:** Derive outcomes, scores, and point coverage from saved point sequences at report generation. Count only saved point records; a missing log is unavailable, not zero break-point events. Label head-to-head rows by meeting date and order. Do not persist duplicate score data; use anonymized report labels and respect the selected-section list.
+**How to apply:** Derive outcomes, scores, point coverage, and per-meeting converted/opportunities and saved/faced rates from saved point sequences at report generation. Count only saved point records; a missing log or zero denominator is unavailable, not zero performance. Label head-to-head rows by meeting date and order. Do not persist duplicate score data; use anonymized report labels and respect the selected-section list.

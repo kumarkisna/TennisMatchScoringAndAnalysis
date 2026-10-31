@@ -1294,9 +1294,29 @@ test('head-to-head report lists anonymized break-point moments by meeting', () =
     /Meeting 4 · September 29, 2026 No point log saved Unavailable — no point log/,
   );
   assert.doesNotMatch(coverageRows[2], /24 points saved/);
+  const resultRows = reportRowsInTable(html, 'break-point-results-table');
+  assert.equal(resultRows.length, 4);
+  assert.match(
+    resultRows[0],
+    /Meeting 1 · October 5, 2026 2\/3 · 66\.7% 3\/3 · 100\.0% 0\/3 · 0\.0% 1\/3 · 33\.3%/,
+  );
+  assert.match(
+    resultRows[2],
+    /Meeting 3 · September 30, 2026 No chances No chances No chances No chances/,
+  );
+  assert.match(
+    resultRows[3],
+    /Meeting 4 · September 29, 2026 No point log No point log No point log No point log/,
+  );
+  assert.match(html, /Return · converted \/ chances/);
+  assert.match(html, /Serve · saved \/ faced/);
   assert.doesNotMatch(
     buildHeadToHeadReportHtml(report, ['overview']),
     /<h2>Break-point moments by meeting<\/h2>/,
+  );
+  assert.doesNotMatch(
+    buildHeadToHeadReportHtml(report, ['overview']),
+    /<table class="break-point-results-table">/,
   );
   assert.equal(
     Object.hasOwn(
@@ -1322,6 +1342,18 @@ test('head-to-head report lists anonymized break-point moments by meeting', () =
     correctedRows[0],
     /Meeting 1 · October 5, 2026 Set 1 Game 1 4 0 40 Converted by Visitor/,
   );
+  const correctedResultRows = reportRowsInTable(
+    buildHeadToHeadReportHtml(
+      report,
+      ['break-point-context'],
+      {
+        hidePlayerNames: true,
+        labels: { trackedPlayer: 'Main athlete', opponent: 'Visitor' },
+      },
+    ),
+    'break-point-results-table',
+  );
+  assert.notEqual(correctedResultRows[0], resultRows[0]);
 
   const noPointDataHtml = buildHeadToHeadReportHtml(
     buildHeadToHeadReport(
@@ -1335,6 +1367,10 @@ test('head-to-head report lists anonymized break-point moments by meeting', () =
   assert.match(
     noPointDataHtml,
     /No moments are available to list; see point-log coverage above\./,
+  );
+  assert.match(
+    reportRowsInTable(noPointDataHtml, 'break-point-results-table')[0],
+    /No point log No point log No point log No point log/,
   );
 });
 
