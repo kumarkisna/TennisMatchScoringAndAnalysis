@@ -56,3 +56,9 @@ description: Product requirements for multi-set tennis records, tiebreak-only se
 **Why:** The user expects to review each set independently, retain the chosen history filter while switching sets, and see an explicit empty result for match tiebreaks.
 
 **How to apply:** Build history from the selected set's points and format, preserve the filter during set selection, and restore that set's own list when returning to it.
+
+**Rule:** The Android app records tennis matches only; standalone practice-only sessions are out of scope.
+
+**Why:** The user said separate practice-session recording would add too much and asked to leave it out.
+
+**How to apply:** Keep practice-only sessions out of the data model and navigation unless the user later requests them.

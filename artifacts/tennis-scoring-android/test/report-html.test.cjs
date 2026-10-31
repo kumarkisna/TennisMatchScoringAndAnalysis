@@ -147,14 +147,17 @@ const {
   createLocalMatch,
   deleteLocalMatch,
   editLocalPointWinner,
+  finishLocalMatch,
   getLocalInsights,
   getLocalMatch,
   getBreakPointPointOutcomes,
   getLocalPointHistory,
   LOCAL_MATCH_NOTE_PROMPTS,
   listLocalMatches,
+  recordLocalMatchOutcome,
   recordLocalPoint,
   undoLocalPoint,
+  updateLocalMatchDetails,
 } = localMatchExports;
 const {
   allHeadToHeadReportSections,
@@ -1636,6 +1639,125 @@ test('head-to-head match outcomes count only saved winners and status for each s
     html,
     /Counts use each saved match's status and recorded winner only, not point statistics/,
   );
+});
+
+test('saved match edits refresh head-to-head surface outcome groups', async () => {
+  storageValues.clear();
+
+  const createMatch = (matchDate, surface) =>
+    createLocalMatch({
+      matchDate,
+      event: null,
+      round: null,
+      trackedPlayer: 'Alex',
+      opponent: 'Bailey',
+      chairCoach: null,
+      surface,
+      firstServer: 'tracked',
+      setNumber: 1,
+    });
+
+  const outcomeMatch = await createMatch('2026-10-01', 'Hard');
+  await recordLocalMatchOutcome(outcomeMatch.id, {
+    reason: 'retirement',
+    winner: 'tracked',
+  });
+
+  const tiedMatch = await createMatch('2026-10-02', 'Hard');
+  for (let point = 0; point < 24; point += 1) {
+    await recordLocalPoint(tiedMatch.id, { winner: 'tracked' });
+  }
+  await addLocalSet(tiedMatch.id, 'match_tiebreak', 7);
+  for (let point = 0; point < 7; point += 1) {
+    await recordLocalPoint(tiedMatch.id, { winner: 'opponent' });
+  }
+  await finishLocalMatch(tiedMatch.id);
+
+  async function savedReport() {
+    const summaries = await listLocalMatches();
+    const meetings = await Promise.all(
+      summaries.map(async (summary) => {
+        const insights = await getLocalInsights(summary.id);
+        assert.ok(insights, `Expected saved insights for match ${summary.id}`);
+        return { summary, insights };
+      }),
+    );
+    return buildHeadToHeadReport('Alex', 'Bailey', meetings, meetings);
+  }
+
+  function assertSurface(report, surface, expected) {
+    const record = report.matchOutcomesBySurface.find(
+      (item) => item.surface === surface,
+    );
+    assert.ok(record, `Expected a ${surface} outcome record`);
+    assert.deepEqual(record, { surface, ...expected });
+  }
+
+  const initialReport = await savedReport();
+  assertSurface(initialReport, 'Hard', {
+    matchCount: 2,
+    wins: 1,
+    losses: 0,
+    completedWithoutWinner: 1,
+    inProgress: 0,
+  });
+
+  const savedOutcomeMatch = await getLocalMatch(outcomeMatch.id);
+  assert.ok(savedOutcomeMatch);
+  await updateLocalMatchDetails(outcomeMatch.id, {
+    matchDate: savedOutcomeMatch.matchDate,
+    event: savedOutcomeMatch.event,
+    round: savedOutcomeMatch.round,
+    trackedPlayer: savedOutcomeMatch.trackedPlayer,
+    opponent: savedOutcomeMatch.opponent,
+    chairCoach: savedOutcomeMatch.chairCoach,
+    surface: 'Clay',
+    firstServer: savedOutcomeMatch.firstServer,
+  });
+
+  const afterSurfaceEdit = await savedReport();
+  assertSurface(afterSurfaceEdit, 'Hard', {
+    matchCount: 1,
+    wins: 0,
+    losses: 0,
+    completedWithoutWinner: 1,
+    inProgress: 0,
+  });
+  assertSurface(afterSurfaceEdit, 'Clay', {
+    matchCount: 1,
+    wins: 1,
+    losses: 0,
+    completedWithoutWinner: 0,
+    inProgress: 0,
+  });
+
+  await recordLocalMatchOutcome(outcomeMatch.id, {
+    reason: 'retirement',
+    winner: 'opponent',
+  });
+  const afterWinnerEdit = await savedReport();
+  assertSurface(afterWinnerEdit, 'Clay', {
+    matchCount: 1,
+    wins: 0,
+    losses: 1,
+    completedWithoutWinner: 0,
+    inProgress: 0,
+  });
+
+  await addLocalSet(tiedMatch.id, 'standard');
+  const reopenedMatch = await getLocalMatch(tiedMatch.id);
+  assert.ok(reopenedMatch);
+  assert.equal(reopenedMatch.matchStatus, 'in_progress');
+  assert.equal(reopenedMatch.matchOutcome, null);
+
+  const afterReopen = await savedReport();
+  assertSurface(afterReopen, 'Hard', {
+    matchCount: 1,
+    wins: 0,
+    losses: 0,
+    completedWithoutWinner: 0,
+    inProgress: 1,
+  });
 });
 
 test('head-to-head screen shows surface records and separates unresolved outcomes', () => {
