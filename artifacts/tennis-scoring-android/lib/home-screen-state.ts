@@ -9,6 +9,19 @@ export interface HomeScreenPreferences {
   expandedMatchIds: string[];
 }
 
+export type MatchBookResultFilter =
+  | 'all'
+  | 'tracked_win'
+  | 'opponent_win'
+  | 'no_set_majority'
+  | 'in_progress';
+
+export interface MatchBookFilters {
+  opponentQuery: string;
+  result: MatchBookResultFilter;
+  showCompletedMatches: boolean;
+}
+
 export const HOME_SCREEN_PREFERENCES_KEY = '@tennis-scoring/home-screen/preferences-v1';
 
 export const DEFAULT_HOME_SCREEN_PREFERENCES: HomeScreenPreferences = {
@@ -28,6 +41,45 @@ export function splitHomeMatches(matches: readonly LocalMatchSummary[]) {
     recent: ordered.slice(0, 2),
     history: ordered.slice(2),
   };
+}
+
+function normalizeOpponentSearch(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLocaleLowerCase();
+}
+
+export function filterMatchBookSummaries(
+  matches: readonly LocalMatchSummary[],
+  filters: MatchBookFilters,
+): LocalMatchSummary[] {
+  const opponentQuery = normalizeOpponentSearch(filters.opponentQuery);
+
+  return matches.filter((match) => {
+    if (!filters.showCompletedMatches && match.status === 'complete') return false;
+    if (
+      opponentQuery &&
+      !normalizeOpponentSearch(match.opponent).includes(opponentQuery)
+    ) {
+      return false;
+    }
+
+    const winner = match.matchOutcome?.winner ?? match.winner;
+    switch (filters.result) {
+      case 'tracked_win':
+        return match.status === 'complete' && winner === 'tracked';
+      case 'opponent_win':
+        return match.status === 'complete' && winner === 'opponent';
+      case 'no_set_majority':
+        return match.status === 'complete' && winner === null;
+      case 'in_progress':
+        return match.status === 'in_progress';
+      default:
+        return true;
+    }
+  });
 }
 
 function normalizePreferences(value: unknown): HomeScreenPreferences {

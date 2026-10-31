@@ -3427,6 +3427,95 @@ test('home match sections sort by match date and remember tabs and expanded card
   assert.match(homeSource, /saveHomeScreenPreferences\(next\)/);
 });
 
+test('match book filters search opponents, distinguish results, and compose with completed visibility', () => {
+  storageValues.clear();
+  delete require.cache[require.resolve(homeScreenStatePath)];
+  const homeState = require(homeScreenStatePath);
+  const summaries = [
+    {
+      id: 'tracked-win',
+      opponent: 'Maya Rao',
+      status: 'complete',
+      winner: 'tracked',
+      matchOutcome: null,
+    },
+    {
+      id: 'opponent-win',
+      opponent: 'Maya Rao',
+      status: 'complete',
+      winner: 'opponent',
+      matchOutcome: null,
+    },
+    {
+      id: 'no-majority',
+      opponent: 'Maya Rao',
+      status: 'complete',
+      winner: null,
+      matchOutcome: null,
+    },
+    {
+      id: 'retirement',
+      opponent: 'Jae Kim',
+      status: 'complete',
+      winner: null,
+      matchOutcome: { reason: 'retirement', winner: 'tracked' },
+    },
+    {
+      id: 'live',
+      opponent: 'Maya Rao',
+      status: 'in_progress',
+      winner: null,
+      matchOutcome: null,
+    },
+  ];
+  const filter = (opponentQuery, result, showCompletedMatches = true) =>
+    homeState.filterMatchBookSummaries(summaries, {
+      opponentQuery,
+      result,
+      showCompletedMatches,
+    });
+
+  assert.deepEqual(
+    filter('  MAYA ', 'all').map(({ id }) => id),
+    ['tracked-win', 'opponent-win', 'no-majority', 'live'],
+  );
+  assert.deepEqual(
+    filter('', 'tracked_win').map(({ id }) => id),
+    ['tracked-win', 'retirement'],
+  );
+  assert.deepEqual(
+    filter('maya', 'opponent_win').map(({ id }) => id),
+    ['opponent-win'],
+  );
+  assert.deepEqual(
+    filter('', 'no_set_majority').map(({ id }) => id),
+    ['no-majority'],
+  );
+  assert.deepEqual(
+    filter('', 'in_progress', false).map(({ id }) => id),
+    ['live'],
+  );
+  assert.deepEqual(filter('', 'tracked_win', false), []);
+  assert.deepEqual(summaries.map(({ id }) => id), [
+    'tracked-win',
+    'opponent-win',
+    'no-majority',
+    'retirement',
+    'live',
+  ]);
+
+  const historySource = fs.readFileSync(
+    path.join(__dirname, '../app/history.tsx'),
+    'utf8',
+  );
+  assert.match(historySource, /filterMatchBookSummaries\(allHistoryMatches/);
+  assert.match(historySource, /showCompletedMatches: preferences\.showCompletedMatches/);
+  assert.match(historySource, /testID="history-opponent-filter"/);
+  assert.match(historySource, /history-result-filter-\$\{option\.value\}/);
+  assert.match(historySource, /testID="history-clear-filters"/);
+  assert.doesNotMatch(historySource, /\bfetch\s*\(/);
+});
+
 test('saved player pickers search device profiles and preserve explicit links', () => {
   const pickerSource = fs.readFileSync(
     path.join(__dirname, '../components/LocalPlayerPicker.tsx'),
