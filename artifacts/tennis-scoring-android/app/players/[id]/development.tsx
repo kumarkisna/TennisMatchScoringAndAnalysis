@@ -24,6 +24,7 @@ import {
   buildPlayerPerformanceHistory,
   formatPlayerMatchOutcomeSummary,
   filterPlayerTrendMatchesByDateRange,
+  getPlayerTrendComparisonSampleNotice,
   isValidPlayerTrendDate,
   PLAYER_TREND_METRICS,
   summarizePlayerMatchOutcomes,
@@ -511,7 +512,9 @@ function TrendSummaryCard({
         {summary.percent === null ? 'Unavailable' : `${summary.percent}%`}
       </Text>
       <Text style={[styles.summaryMeta, { color: colors.mutedForeground }]}>
-        {summary.won} of {summary.total} {summary.countLabel}
+        {summary.total === 0
+          ? `0 recorded ${summary.countLabel}`
+          : `${summary.won} of ${summary.total} ${summary.countLabel}`}
       </Text>
       <Text style={[styles.summaryMeta, { color: colors.mutedForeground }]}>
         {summary.sampledMatchCount} of {summary.matchCount} matches sampled
@@ -860,6 +863,15 @@ export default function PlayerDevelopmentScreen() {
     allPointSampledMatches.length + allComparisonPointSampledMatches.length;
   const chartHasEnoughHistory = pointSampledMatches.length >= 2;
   const comparisonHasEnoughHistory = comparisonRangePointSampleCount >= 2;
+  const comparisonSampleNotice =
+    player && comparisonPlayer
+      ? getPlayerTrendComparisonSampleNotice(
+          player.name,
+          summarizePlayerTrendMetric(matches, selectedMetric),
+          comparisonPlayer.name,
+          summarizePlayerTrendMetric(comparisonMatches, selectedMetric),
+        )
+      : null;
 
   function selectPlayer(playerId: string) {
     if (pickerTarget === 'primary') {
@@ -1102,6 +1114,34 @@ export default function PlayerDevelopmentScreen() {
                 </View>
               ) : (
                 <>
+                  {comparisonSampleNotice ? (
+                    <View
+                      testID="player-trend-sample-balance-notice"
+                      accessible
+                      accessibilityLabel={comparisonSampleNotice}
+                      style={[
+                        styles.sampleBalanceNotice,
+                        {
+                          backgroundColor: colors.secondary,
+                          borderColor: colors.border,
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        name="information-circle-outline"
+                        size={17}
+                        color={colors.primary}
+                      />
+                      <Text
+                        style={[
+                          styles.sampleBalanceText,
+                          { color: colors.foreground },
+                        ]}
+                      >
+                        {comparisonSampleNotice}
+                      </Text>
+                    </View>
+                  ) : null}
                   <View
                     testID="player-trend-comparison-chart"
                     style={[
@@ -1358,6 +1398,8 @@ const styles = StyleSheet.create({
   summaryCards: { flexDirection: 'row', gap: 8, marginTop: 9 },
   outcomeSummaryCards: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   summaryCard: { flex: 1, minWidth: 0, borderWidth: 1, borderRadius: 11, padding: 10, gap: 4 },
+  sampleBalanceNotice: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, padding: 10, borderWidth: 1, borderRadius: 10, marginBottom: 10 },
+  sampleBalanceText: { flex: 1, fontFamily: 'DMSans_500Medium', fontSize: 11, lineHeight: 16 },
   summaryNameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   playerDot: { width: 8, height: 8, borderRadius: 4 },
   summaryName: { flex: 1, fontFamily: 'DMSans_700Bold', fontSize: 10 },

@@ -2599,6 +2599,86 @@ test('legacy match links preserve names and trend metrics count points from ever
   assert.equal(noSecondServeSummary.sampledMatchCount, 0);
 });
 
+test('player comparison notices use selected attempt totals and keep missing metrics unavailable', () => {
+  const {
+    getPlayerTrendComparisonSampleNotice,
+  } = loadPlayerInsights();
+  const summary = (won, total, countLabel) => ({
+    percent: total === 0 ? null : Math.round((won / total) * 100),
+    won,
+    total,
+    countLabel,
+    matchCount: 3,
+    sampledMatchCount: total === 0 ? 0 : 2,
+  });
+
+  const unevenNotice = getPlayerTrendComparisonSampleNotice(
+    'Player A',
+    summary(35, 50, 'first-serve points'),
+    'Player B',
+    summary(14, 20, 'first-serve points'),
+  );
+  assert.equal(
+    unevenNotice,
+    'Uneven sample sizes for first-serve points: Player A has 50 attempts and Player B has 20. These percentages use different numbers of recorded attempts.',
+  );
+
+  assert.equal(
+    getPlayerTrendComparisonSampleNotice(
+      'Player A',
+      summary(2, 10, 'points'),
+      'Player B',
+      summary(1, 5, 'points'),
+    ),
+    null,
+  );
+  assert.equal(
+    getPlayerTrendComparisonSampleNotice(
+      'Player A',
+      summary(9, 18, 'service points'),
+      'Player B',
+      summary(4, 9, 'service points'),
+    ),
+    null,
+  );
+
+  const unavailableNotice = getPlayerTrendComparisonSampleNotice(
+    'Player A',
+    summary(0, 0, 'second-serve points'),
+    'Player B',
+    summary(12, 21, 'second-serve points'),
+  );
+  assert.match(unavailableNotice, /Player A/);
+  assert.match(unavailableNotice, /0 attempts/);
+  assert.match(unavailableNotice, /percentage is unavailable/);
+  assert.match(unavailableNotice, /21 recorded second-serve points/);
+  assert.doesNotMatch(unavailableNotice, /0%/);
+
+  const bothUnavailableNotice = getPlayerTrendComparisonSampleNotice(
+    'Player A',
+    summary(0, 0, 'return points'),
+    'Player B',
+    summary(0, 0, 'return points'),
+  );
+  assert.match(bothUnavailableNotice, /both percentages are unavailable/);
+  assert.doesNotMatch(bothUnavailableNotice, /0%/);
+
+  const developmentScreen = fs.readFileSync(
+    path.join(__dirname, '../app/players/[id]/development.tsx'),
+    'utf8',
+  );
+  assert.match(
+    developmentScreen,
+    /getPlayerTrendComparisonSampleNotice\(\s*player\.name,\s*summarizePlayerTrendMetric\(matches,\s*selectedMetric\),\s*comparisonPlayer\.name,\s*summarizePlayerTrendMetric\(comparisonMatches,\s*selectedMetric\)/s,
+  );
+  assert.match(developmentScreen, /testID="player-trend-sample-balance-notice"/);
+  assert.match(
+    developmentScreen,
+    /summary\.percent === null \? 'Unavailable'/,
+  );
+  assert.match(developmentScreen, /0 recorded \$\{summary\.countLabel\}/);
+});
+
 test('player trend summaries separate match outcomes without inventing point samples', async () => {
   storageValues.clear();
   const { localMatches, localPlayers } = loadStorageModulesAfterRestart();

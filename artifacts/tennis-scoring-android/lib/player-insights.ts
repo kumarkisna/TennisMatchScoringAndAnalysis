@@ -387,6 +387,37 @@ export function summarizePlayerTrendMetric(
   };
 }
 
+const unevenSampleRatio = 2;
+const unevenSampleMinimumDifference = 10;
+
+export function getPlayerTrendComparisonSampleNotice(
+  primaryName: string,
+  primary: PlayerTrendMetricSummary,
+  comparisonName: string,
+  comparison: PlayerTrendMetricSummary,
+): string | null {
+  if (primary.total === 0 && comparison.total === 0) {
+    return `No ${primary.countLabel} were recorded for either player (0 attempts each); both percentages are unavailable.`;
+  }
+  if (primary.total === 0) {
+    return `No ${primary.countLabel} were recorded for ${primaryName} (0 attempts), so that percentage is unavailable. ${comparisonName} has ${comparison.total} recorded ${comparison.countLabel}.`;
+  }
+  if (comparison.total === 0) {
+    return `No ${comparison.countLabel} were recorded for ${comparisonName} (0 attempts), so that percentage is unavailable. ${primaryName} has ${primary.total} recorded ${primary.countLabel}.`;
+  }
+
+  const largerSample = Math.max(primary.total, comparison.total);
+  const smallerSample = Math.min(primary.total, comparison.total);
+  if (
+    largerSample / smallerSample < unevenSampleRatio ||
+    largerSample - smallerSample < unevenSampleMinimumDifference
+  ) {
+    return null;
+  }
+
+  return `Uneven sample sizes for ${primary.countLabel}: ${primaryName} has ${primary.total} attempts and ${comparisonName} has ${comparison.total}. These percentages use different numbers of recorded attempts.`;
+}
+
 const allPointCodes: PointCode[] = [...shotCodes, 'N', 'L', 'W', 'D', 'FE'];
 
 function isPointCode(value: string): value is PointCode {
