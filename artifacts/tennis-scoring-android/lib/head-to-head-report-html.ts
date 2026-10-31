@@ -2,6 +2,7 @@ import {
   getSetWinner,
   type HeadToHeadReport,
 } from '@/lib/head-to-head';
+import { getLocalPointHistory } from '@/lib/local-matches';
 import { POINT_CODE_LABELS } from '@/lib/player-report-html';
 import {
   getAnonymizedReportPlayerLabels,
@@ -126,6 +127,52 @@ function tableRows(rows: readonly (readonly string[])[]): string {
           ${values.map((value) => `<td>${escapeHtml(value ?? '—')}</td>`).join('')}
         </tr>`;
     })
+    .join('');
+}
+
+function breakPointMomentRows(
+  report: HeadToHeadReport,
+  trackedPlayer: string,
+  opponent: string,
+): string {
+  return report.meetings
+    .flatMap((meeting, meetingIndex) => {
+      const match = meeting.match;
+      if (!match) return [];
+
+      const sets = [
+        ...match.completedSets,
+        {
+          setNumber: match.setNumber,
+          format: match.setFormat,
+          points: match.points,
+        },
+      ];
+      const meetingLabel =
+        `Meeting ${meetingIndex + 1} · ${formatDate(meeting.summary.matchDate)}`;
+
+      return sets.flatMap((set) =>
+        getLocalPointHistory(set.points, set.format, 'break_points')
+          .reverse()
+          .map(({ point, breakPointOutcome, breakPointScoreBefore }) => {
+            if (!breakPointOutcome || !breakPointScoreBefore) return '';
+            const outcome = breakPointOutcome === 'saved' ? 'Saved by' : 'Converted by';
+            const pointWinner =
+              point.winner === 'tracked' ? trackedPlayer : opponent;
+            return `
+              <tr>
+                <td>${escapeHtml(meetingLabel)}</td>
+                <td>Set ${set.setNumber}</td>
+                <td>Game ${point.gameNumber}</td>
+                <td>${point.sequenceNumber}</td>
+                <td>${escapeHtml(breakPointScoreBefore.trackedScore)}</td>
+                <td>${escapeHtml(breakPointScoreBefore.opponentScore)}</td>
+                <td>${escapeHtml(`${outcome} ${pointWinner}`)}</td>
+              </tr>`;
+          }),
+      );
+    })
+    .filter(Boolean)
     .join('');
 }
 
@@ -461,6 +508,11 @@ export function buildHeadToHeadReportHtml(
         </tr>`;
     })
     .join('');
+  const breakPointContextRows = breakPointMomentRows(
+    report,
+    trackedPlayer,
+    opponent,
+  );
 
   const latestMeeting = report.meetings[0];
   const latestMeetingScores = latestMeeting?.summary.setScores.length
@@ -589,6 +641,16 @@ export function buildHeadToHeadReportHtml(
       .surface-break-point-table th:not(:first-child), .surface-break-point-table td:not(:first-child) { text-align: center; }
       .surface-break-point-table th { font-size: 7.5px; padding-left: 3px; padding-right: 3px; }
       .surface-break-point-table td:not(:first-child) { white-space: nowrap; }
+      .break-point-context-table { break-inside: auto; font-size: 8px; page-break-inside: auto; table-layout: fixed; }
+      .break-point-context-table th:first-child, .break-point-context-table td:first-child { width: 23%; }
+      .break-point-context-table th:nth-child(2), .break-point-context-table td:nth-child(2),
+      .break-point-context-table th:nth-child(3), .break-point-context-table td:nth-child(3),
+      .break-point-context-table th:nth-child(4), .break-point-context-table td:nth-child(4) { width: 8%; }
+      .break-point-context-table th:nth-child(5), .break-point-context-table td:nth-child(5),
+      .break-point-context-table th:nth-child(6), .break-point-context-table td:nth-child(6) { width: 16%; }
+      .break-point-context-table th:nth-child(7), .break-point-context-table td:nth-child(7) { width: 21%; }
+      .break-point-context-table thead { display: table-header-group; }
+      .break-point-context-table tr { break-inside: avoid; page-break-inside: avoid; }
       @media print { html, body { margin: 0; } main { padding: 14mm; } }
     </style>
   </head>
@@ -643,6 +705,15 @@ export function buildHeadToHeadReportHtml(
       <table class="surface-break-point-table">
         <thead><tr><th>Statistic</th>${personalAverageSurfaces.map(({ surface }) => `<th>${escapeHtml(surface)}</th>`).join('')}</tr></thead>
         <tbody>${personalAverageSurfaceRows}</tbody>
+      </table>
+      ` : ''}
+
+      ${includes('break-point-context') ? `
+      <h2>Break-point moments by meeting</h2>
+      <p class="note">Meetings are listed newest first. Scores are the tracked player's and opponent's game scores immediately before the chance. Saved means the server won; converted means the returner won. Tie-break points are excluded.</p>
+      <table class="break-point-context-table">
+        <thead><tr><th>Meeting</th><th>Set</th><th>Game</th><th>Point</th><th>${escapeHtml(trackedPlayer)} score before</th><th>${escapeHtml(opponent)} score before</th><th>Outcome</th></tr></thead>
+        <tbody>${breakPointContextRows || '<tr><td colspan="7">No saved point-level break-point moments were found for these meetings.</td></tr>'}</tbody>
       </table>
       ` : ''}
 

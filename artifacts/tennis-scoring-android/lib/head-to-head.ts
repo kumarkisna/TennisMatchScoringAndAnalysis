@@ -6,6 +6,7 @@ import {
   type CourtSurface,
   type LocalContextInsight,
   type LocalInsights,
+  type LocalMatch,
   type LocalMatchSummary,
   type PointCode,
   type PlayerSide,
@@ -25,6 +26,7 @@ import {
 export interface HeadToHeadMeeting {
   summary: LocalMatchSummary;
   insights: LocalInsights;
+  match?: LocalMatch;
 }
 
 export type PersonalAverageCourtSurface = CourtSurface;

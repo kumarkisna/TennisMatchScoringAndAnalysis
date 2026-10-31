@@ -19,6 +19,7 @@ import { ReportAnonymityToggle } from '@/components/ReportAnonymityToggle';
 import { ReportSectionPicker } from '@/components/ReportSectionPicker';
 import {
   type BreakPointStats,
+  getLocalMatch,
   getLocalInsights,
   listLocalMatches,
   LOCAL_MATCH_LIST_KEY,
@@ -435,10 +436,16 @@ export default function HeadToHeadScreen() {
         ({ summary }) =>
           normalizedName(summary.opponent) === normalizedName(selectedOpponent),
       );
+      const meetingsWithPointData = await Promise.all(
+        meetings.map(async (meeting) => {
+          const match = await getLocalMatch(meeting.summary.id);
+          return match ? { ...meeting, match } : meeting;
+        }),
+      );
       return buildHeadToHeadReport(
         selectedTrackedPlayer,
         selectedOpponent,
-        meetings,
+        meetingsWithPointData,
         allTrackedMeetings,
       );
     },

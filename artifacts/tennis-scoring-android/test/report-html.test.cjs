@@ -207,6 +207,17 @@ test('report layouts provide overview, statistics, and full presets for both rep
     HEAD_TO_HEAD_REPORT_SECTION_PRESETS[2].sections,
     allHeadToHeadReportSections(),
   );
+  assert.ok(allHeadToHeadReportSections().includes('break-point-context'));
+  assert.ok(
+    HEAD_TO_HEAD_REPORT_SECTION_PRESETS[2].sections.includes(
+      'break-point-context',
+    ),
+  );
+  assert.ok(
+    !HEAD_TO_HEAD_REPORT_SECTION_PRESETS[1].sections.includes(
+      'break-point-context',
+    ),
+  );
 });
 
 test('single-match and head-to-head report pickers expose saved local layouts', () => {
@@ -214,6 +225,7 @@ test('single-match and head-to-head report pickers expose saved local layouts', 
   assert.match(headToHeadScreenSource, /reportType="head-to-head"/);
   assert.match(reportSectionPickerSource, /<LocalReportLayoutManager/);
   assert.match(reportSectionPickerSource, /onPress=\{\(\) => onToggle\(id\)\}/);
+  assert.match(headToHeadScreenSource, /getLocalMatch\(meeting\.summary\.id\)/);
   assert.match(localReportLayoutManagerSource, /saveLocalReportLayout\(/);
   assert.match(localReportLayoutManagerSource, /renameLocalReportLayout\(/);
   assert.match(localReportLayoutManagerSource, /deleteLocalReportLayout\(/);
@@ -1155,6 +1167,111 @@ test('head-to-head break-point rates are unavailable for empty samples', () => {
     'Break points saved 1/2 · 50.0% —',
     'Break points lost while serving 1/2 · 50.0% —',
   ]);
+});
+
+test('head-to-head report lists anonymized break-point moments by meeting', () => {
+  function meetingWithPointLog(id, matchDate) {
+    const meeting = breakPointMeeting(
+      id,
+      'Alex',
+      'Bailey',
+      { opportunities: 2, converted: 1, faced: 3, saved: 3 },
+      { opportunities: 3, converted: 0, faced: 2, saved: 1 },
+      matchDate,
+    );
+    const { match: sampleMatch } = breakPointSampleMatch();
+    return {
+      ...meeting,
+      match: {
+        ...sampleMatch,
+        id,
+        matchDate,
+        trackedPlayer: 'Alex',
+        opponent: 'Bailey',
+      },
+    };
+  }
+
+  const olderMeeting = meetingWithPointLog('alex-bailey-older', '2026-10-01');
+  const newerMeeting = meetingWithPointLog('alex-bailey-newer', '2026-10-05');
+  const report = buildHeadToHeadReport(
+    'Alex',
+    'Bailey',
+    [olderMeeting, newerMeeting],
+    [olderMeeting, newerMeeting],
+  );
+  const html = buildHeadToHeadReportHtml(
+    report,
+    ['break-point-context'],
+    {
+      hidePlayerNames: true,
+      labels: { trackedPlayer: 'Main athlete', opponent: 'Visitor' },
+    },
+  );
+  const rows = reportRowsAfterHeading(html, 'Break-point moments by meeting');
+
+  assert.equal(rows.length, 12);
+  assert.match(
+    rows[0],
+    /Meeting 1 · October 5, 2026 Set 1 Game 1 4 0 40 Saved by Main athlete/,
+  );
+  assert.match(
+    rows[6],
+    /Meeting 2 · October 1, 2026 Set 1 Game 1 4 0 40 Saved by Main athlete/,
+  );
+  assert.match(html, /Main athlete score before/);
+  assert.match(html, /Visitor score before/);
+  assert.doesNotMatch(html, /Alex|Bailey/);
+  assert.doesNotMatch(
+    buildHeadToHeadReportHtml(report, ['overview']),
+    /<h2>Break-point moments by meeting<\/h2>/,
+  );
+  assert.equal(
+    Object.hasOwn(
+      newerMeeting.match.completedSets[0].points[3],
+      'breakPointScoreBefore',
+    ),
+    false,
+  );
+
+  newerMeeting.match.completedSets[0].points[3].winner = 'opponent';
+  const correctedRows = reportRowsAfterHeading(
+    buildHeadToHeadReportHtml(
+      report,
+      ['break-point-context'],
+      {
+        hidePlayerNames: true,
+        labels: { trackedPlayer: 'Main athlete', opponent: 'Visitor' },
+      },
+    ),
+    'Break-point moments by meeting',
+  );
+  assert.match(
+    correctedRows[0],
+    /Meeting 1 · October 5, 2026 Set 1 Game 1 4 0 40 Converted by Visitor/,
+  );
+
+  const meetingWithoutPointLog = breakPointMeeting(
+    'alex-bailey-no-point-log',
+    'Alex',
+    'Bailey',
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    '2026-10-06',
+  );
+  const noPointDataHtml = buildHeadToHeadReportHtml(
+    buildHeadToHeadReport(
+      'Alex',
+      'Bailey',
+      [meetingWithoutPointLog],
+      [meetingWithoutPointLog],
+    ),
+    ['break-point-context'],
+  );
+  assert.match(
+    noPointDataHtml,
+    /No saved point-level break-point moments were found for these meetings\./,
+  );
 });
 
 test('deleting matches clears final head-to-head history and invalidates reviewed PDFs', async () => {

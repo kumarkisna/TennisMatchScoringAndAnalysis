@@ -41,8 +41,8 @@ Single-match and head-to-head reports can hide player names behind editable neut
 
 ## Break-point moment context
 
-**Rule:** Single-match reports may include an optional timeline of saved and converted break-point moments by set and game, with both players' pre-point scores and the outcome.
+**Rule:** Single-match and head-to-head reports may include optional timelines of saved and converted break-point moments by set and game, with both players' pre-point scores and the outcome.
 
 **Why:** Coaches should be able to review the score context for each chance without reopening the point history.
 
-**How to apply:** Derive outcomes and scores from each saved set's point sequence at report generation. Do not persist duplicate score data; use anonymized report labels and respect the selected-section list.
+**How to apply:** Derive outcomes and scores from each saved set's point sequence at report generation. Label head-to-head rows by meeting date and order. Do not persist duplicate score data; use anonymized report labels and respect the selected-section list.
