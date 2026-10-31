@@ -105,7 +105,11 @@ const {
   isReportReviewCurrent,
 } = require('../lib/report-review.ts');
 const { summarizeMatchNotes, summarizePlayerPerformance } = playerInsightsExports;
-const { buildHeadToHeadReport, getHeadToHeadOpponentOptions } = headToHeadExports;
+const {
+  aggregateLocalInsights,
+  buildHeadToHeadReport,
+  getHeadToHeadOpponentOptions,
+} = headToHeadExports;
 Module._load = originalLoad;
 const {
   createAndPreviewLocalPdf,
@@ -558,19 +562,12 @@ function headToHeadReportFixture(insights, performance, matchesRecorded = 1) {
   };
 }
 
-async function createSavedPointReportFixture() {
-  const match = await createLocalMatch({
-    matchDate: '2026-10-30',
-    event: 'Saved-point report check',
-    round: 'Final',
-    trackedPlayer: 'Tracked',
-    opponent: 'Opponent',
-    chairCoach: null,
-    surface: 'Hard',
-    firstServer: 'tracked',
-    setNumber: 1,
-  });
-  const inputs = [
+async function createSavedPointReportFixture({
+  matchDate = '2026-10-30',
+  event = 'Saved-point report check',
+  rallyPointIndex = 2,
+  errorPointIndex = 3,
+  pointInputs = [
     { winner: 'opponent' },
     { winner: 'tracked', endingCode: 'A' },
     { winner: 'tracked', endingCode: 'F' },
@@ -585,17 +582,28 @@ async function createSavedPointReportFixture() {
     { winner: 'opponent' },
     { winner: 'opponent', endingCode: 'A' },
     { winner: 'opponent' },
-  ];
-
+  ],
+} = {}) {
+  const match = await createLocalMatch({
+    matchDate,
+    event,
+    round: 'Final',
+    trackedPlayer: 'Tracked',
+    opponent: 'Opponent',
+    chairCoach: null,
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
   let savedMatch = match;
-  for (const input of inputs) {
+  for (const input of pointInputs) {
     savedMatch = await recordLocalPoint(match.id, input);
   }
 
   return {
     matchId: match.id,
-    rallyPointId: savedMatch.points[2].id,
-    errorPointId: savedMatch.points[3].id,
+    rallyPointId: savedMatch.points[rallyPointIndex].id,
+    errorPointId: savedMatch.points[errorPointIndex].id,
   };
 }
 
@@ -640,19 +648,31 @@ async function createTwoSetSavedPointReportFixture() {
   };
 }
 
-async function buildSavedPointReportSnapshot(matchId) {
+async function buildSavedPointReportSnapshot(
+  matchId,
+  meetingIds = [matchId],
+) {
   const match = await getLocalMatch(matchId);
   assert.ok(match, 'Expected the corrected match to remain saved locally');
   const insights = calculateLocalInsights(match);
   const performance = summarizePlayerPerformance(insights, 1);
   const playerHtml = buildPlayerReportHtml(match, insights, performance);
-  const summary = (await listLocalMatches()).find(({ id }) => id === matchId);
+  const summaries = await listLocalMatches();
+  const summary = summaries.find(({ id }) => id === matchId);
   assert.ok(summary, 'Expected a match-book entry for the saved match');
-  const meeting = { summary, insights };
+  const meetings = await Promise.all(
+    meetingIds.map(async (meetingId) => {
+      const meetingSummary = summaries.find(({ id }) => id === meetingId);
+      assert.ok(meetingSummary, `Expected saved meeting ${meetingId}`);
+      const meetingInsights = await getLocalInsights(meetingId);
+      assert.ok(meetingInsights, `Expected insights for meeting ${meetingId}`);
+      return { summary: meetingSummary, insights: meetingInsights };
+    }),
+  );
   const headToHeadReport = buildHeadToHeadReport(
     match.trackedPlayer,
     match.opponent,
-    [meeting],
+    meetings,
   );
 
   return {
@@ -660,6 +680,7 @@ async function buildSavedPointReportSnapshot(matchId) {
     insights,
     performance,
     playerHtml,
+    headToHeadReport,
     headToHeadHtml: buildHeadToHeadReportHtml(headToHeadReport),
   };
 }
@@ -1547,6 +1568,165 @@ test('saved-point corrections and undo refresh match and head-to-head report sta
     errorOpponent: '—',
     pointCount: 2,
   });
+});
+
+test('head-to-head pooled stats update after editing one of multiple meetings', async () => {
+  storageValues.clear();
+  const trackedMeeting = await createSavedPointReportFixture({
+    rallyPointIndex: 0,
+    errorPointIndex: 1,
+    pointInputs: [
+      { winner: 'tracked', endingCode: 'F' },
+      { winner: 'opponent', endingCode: 'N' },
+      { winner: 'opponent', firstServeFault: true },
+      { winner: 'tracked', endingCode: 'A' },
+    ],
+  });
+  const controlMeeting = await createSavedPointReportFixture({
+    matchDate: '2026-10-29',
+    event: 'Unedited control meeting',
+    pointInputs: [
+      { winner: 'tracked', endingCode: 'A' },
+      { winner: 'tracked', endingCode: 'V' },
+      { winner: 'opponent', endingCode: 'N' },
+      { winner: 'opponent', firstServeFault: true },
+      { winner: 'tracked' },
+      { winner: 'opponent' },
+    ],
+  });
+  const meetingIds = [trackedMeeting.matchId, controlMeeting.matchId];
+  const initial = await buildSavedPointReportSnapshot(
+    trackedMeeting.matchId,
+    meetingIds,
+  );
+  const controlBefore = await buildSavedPointReportSnapshot(
+    controlMeeting.matchId,
+  );
+  const initialHeadToHead = initial.headToHeadReport;
+
+  assert.equal(initialHeadToHead.matchesRecorded, 2);
+  assert.deepEqual(
+    initialHeadToHead.meetings.map(({ summary }) => summary.id),
+    meetingIds,
+  );
+  assert.deepEqual(
+    initialHeadToHead.insights,
+    aggregateLocalInsights([initial.insights, controlBefore.insights]),
+  );
+  assert.equal(
+    initialHeadToHead.insights.serveStats.tracked.aces,
+    2,
+    'both meetings should contribute one tracked-player ace',
+  );
+  assert.equal(initialHeadToHead.performance.rallyWinnerCount, 2);
+  assert.equal(initialHeadToHead.performance.trackedUnforcedErrors, 2);
+
+  await editLocalPointWinner(
+    trackedMeeting.matchId,
+    1,
+    trackedMeeting.rallyPointId,
+    'opponent',
+  );
+  await editLocalPointWinner(
+    trackedMeeting.matchId,
+    1,
+    trackedMeeting.errorPointId,
+    'tracked',
+  );
+
+  const afterCorrections = await buildSavedPointReportSnapshot(
+    trackedMeeting.matchId,
+    meetingIds,
+  );
+  const controlAfterCorrections = await buildSavedPointReportSnapshot(
+    controlMeeting.matchId,
+  );
+  const correctedHeadToHead = afterCorrections.headToHeadReport;
+  assert.deepEqual(controlAfterCorrections.insights, controlBefore.insights);
+  assert.equal(controlAfterCorrections.playerHtml, controlBefore.playerHtml);
+  assert.deepEqual(
+    correctedHeadToHead.insights,
+    aggregateLocalInsights([
+      afterCorrections.insights,
+      controlAfterCorrections.insights,
+    ]),
+  );
+  assert.equal(correctedHeadToHead.matchesRecorded, 2);
+  assert.equal(correctedHeadToHead.insights.serveStats.tracked.aces, 2);
+  assert.equal(correctedHeadToHead.performance.rallyWinnerCount, 1);
+  assert.equal(correctedHeadToHead.performance.trackedUnforcedErrors, 1);
+  assert.equal(correctedHeadToHead.performance.opponentUnforcedErrors, 1);
+  assert.notDeepEqual(
+    correctedHeadToHead.performance,
+    initialHeadToHead.performance,
+  );
+
+  await undoLocalPoint(trackedMeeting.matchId);
+  const afterTaggedAceUndo = await buildSavedPointReportSnapshot(
+    trackedMeeting.matchId,
+    meetingIds,
+  );
+  const controlAfterUndo = await buildSavedPointReportSnapshot(
+    controlMeeting.matchId,
+  );
+  const finalHeadToHead = afterTaggedAceUndo.headToHeadReport;
+
+  assert.deepEqual(controlAfterUndo.insights, controlBefore.insights);
+  assert.equal(controlAfterUndo.playerHtml, controlBefore.playerHtml);
+  assert.notEqual(afterTaggedAceUndo.playerHtml, initial.playerHtml);
+  assert.equal(finalHeadToHead.matchesRecorded, 2);
+  assert.deepEqual(
+    finalHeadToHead.insights,
+    aggregateLocalInsights([
+      afterTaggedAceUndo.insights,
+      controlAfterUndo.insights,
+    ]),
+  );
+  assert.equal(finalHeadToHead.insights.pointCount, 9);
+  assert.equal(finalHeadToHead.insights.serveStats.tracked.aces, 1);
+  assert.equal(
+    finalHeadToHead.insights.serveStats.tracked.firstServePoints,
+    initialHeadToHead.insights.serveStats.tracked.firstServePoints - 1,
+  );
+  assert.notEqual(
+    finalHeadToHead.performance.firstServeInPercent,
+    initialHeadToHead.performance.firstServeInPercent,
+  );
+  assert.equal(finalHeadToHead.performance.acesPerMatch, 0.5);
+  assert.equal(finalHeadToHead.performance.rallyWinnerCount, 1);
+  assert.equal(finalHeadToHead.performance.trackedUnforcedErrors, 1);
+  assert.equal(finalHeadToHead.performance.opponentUnforcedErrors, 1);
+
+  const initialServeRows = reportRowsAfterHeading(
+    initial.headToHeadHtml,
+    'Serve',
+  );
+  const finalServeRows = reportRowsAfterHeading(
+    afterTaggedAceUndo.headToHeadHtml,
+    'Serve',
+  );
+  for (const label of ['First serve in', 'Aces per match']) {
+    assert.notEqual(
+      finalServeRows.find((row) => row.startsWith(label)),
+      initialServeRows.find((row) => row.startsWith(label)),
+      `${label} should change in the pooled head-to-head report`,
+    );
+  }
+  const initialPointRows = reportRowsAfterHeading(
+    initial.headToHeadHtml,
+    'Return and points',
+  );
+  const finalPointRows = reportRowsAfterHeading(
+    afterTaggedAceUndo.headToHeadHtml,
+    'Return and points',
+  );
+  for (const label of ['Rally-shot winner points', 'Unforced errors']) {
+    assert.notEqual(
+      finalPointRows.find((row) => row.startsWith(label)),
+      initialPointRows.find((row) => row.startsWith(label)),
+      `${label} should change in the pooled head-to-head report`,
+    );
+  }
 });
 
 test('multi-set point corrections refresh reports and preserve later-set data', async () => {
