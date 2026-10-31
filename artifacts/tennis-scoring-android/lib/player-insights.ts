@@ -172,6 +172,23 @@ export interface PlayerTrendMatch {
   result: 'win' | 'loss' | 'no_winner' | null;
   outcomeType: 'ordinary' | 'retirement' | 'walkover' | null;
   metrics: Record<PlayerTrendMetricKey, PlayerTrendMetricValue>;
+  strokeRatings: Partial<Record<StrokeType, PlayerStrokeRatingMatchValue>>;
+}
+
+export interface PlayerStrokeRatingSample {
+  setNumber: number;
+  rating: number;
+}
+
+export interface PlayerStrokeRatingMatchValue {
+  samples: PlayerStrokeRatingSample[];
+}
+
+export interface PlayerStrokeRatingSummary {
+  average: number | null;
+  sampleCount: number;
+  sampledMatchCount: number;
+  matchCount: number;
 }
 
 export interface PlayerMatchOutcomeRecord {
@@ -348,6 +365,22 @@ export function buildPlayerPerformanceHistory(
       match.matchStatus !== 'complete'
         ? null
         : match.matchOutcome?.reason ?? 'ordinary';
+    const strokeRatings: PlayerTrendMatch['strokeRatings'] = {};
+    if (playerSide === 'tracked') {
+      for (const set of insights.sets) {
+        for (const [strokeType, rating] of Object.entries(
+          set.review.strokeRatings,
+        )) {
+          if (!Number.isInteger(rating) || rating! < 1 || rating! > 10) {
+            continue;
+          }
+          const typedStroke = strokeType as StrokeType;
+          const stroke = strokeRatings[typedStroke] ?? { samples: [] };
+          stroke.samples.push({ setNumber: set.setNumber, rating: rating! });
+          strokeRatings[typedStroke] = stroke;
+        }
+      }
+    }
 
     return {
       id: match.id,
@@ -362,11 +395,36 @@ export function buildPlayerPerformanceHistory(
       result,
       outcomeType,
       metrics,
+      strokeRatings,
     };
   }).sort(
     (left, right) =>
       left.date.localeCompare(right.date) || left.id.localeCompare(right.id),
   );
+}
+
+export function summarizePlayerStrokeRating(
+  matches: readonly PlayerTrendMatch[],
+  strokeType: StrokeType,
+): PlayerStrokeRatingSummary {
+  const samples = matches.flatMap(
+    (match) => match.strokeRatings[strokeType]?.samples ?? [],
+  );
+  return {
+    average:
+      samples.length === 0
+        ? null
+        : Math.round(
+            (samples.reduce((sum, sample) => sum + sample.rating, 0) /
+              samples.length) *
+              10,
+          ) / 10,
+    sampleCount: samples.length,
+    sampledMatchCount: matches.filter(
+      (match) => (match.strokeRatings[strokeType]?.samples.length ?? 0) > 0,
+    ).length,
+    matchCount: matches.length,
+  };
 }
 
 export function summarizePlayerTrendMetric(

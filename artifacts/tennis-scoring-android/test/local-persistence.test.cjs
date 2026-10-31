@@ -2545,6 +2545,10 @@ test('legacy match links preserve names and trend metrics count points from ever
     firstServer: 'tracked',
     setNumber: 1,
   });
+  await localMatches.updateLocalSetReview(match.id, 1, {
+    ...match.review,
+    strokeRatings: { first_serve: 6, forehand_drive: 4 },
+  });
   await localMatches.recordLocalPoint(match.id, {
     winner: 'tracked',
     endingCode: 'A',
@@ -2571,10 +2575,19 @@ test('legacy match links preserve names and trend metrics count points from ever
     firstServer: 'tracked',
     setNumber: 1,
   });
+  await localMatches.updateLocalSetReview(laterMatch.id, 1, {
+    ...laterMatch.review,
+    strokeRatings: { first_serve: 10 },
+  });
   await localMatches.recordLocalPoint(laterMatch.id, { winner: 'tracked' });
 
   const recordKey = `@tennis-scoring/matches/record-v1/${match.id}`;
   const storedMatch = JSON.parse(storageValues.get(recordKey));
+  const firstSetReview = storedMatch.review;
+  storedMatch.review = {
+    ...storedMatch.review,
+    strokeRatings: { first_serve: 8 },
+  };
   const recordedPoints = storedMatch.points;
   recordedPoints[2].server = 'opponent';
   recordedPoints[2].gameNumber = 2;
@@ -2589,7 +2602,7 @@ test('legacy match links preserve names and trend metrics count points from ever
       score: storedMatch.score,
       points: recordedPoints.slice(0, 2),
       gameNotes: [],
-      review: storedMatch.review,
+      review: firstSetReview,
     },
   ];
   storedMatch.setNumber = 2;
@@ -2640,6 +2653,37 @@ test('legacy match links preserve names and trend metrics count points from ever
   assert.equal(trends[0].metrics.return.percent, 50);
   assert.equal(trends[0].metrics.firstServe.percent, 100);
   assert.equal(trends[0].metrics.secondServe.percent, 0);
+  assert.deepEqual(trends[0].strokeRatings.first_serve.samples, [
+    { setNumber: 1, rating: 6 },
+    { setNumber: 2, rating: 8 },
+  ]);
+  assert.deepEqual(trends[0].strokeRatings.forehand_drive.samples, [
+    { setNumber: 1, rating: 4 },
+  ]);
+  assert.deepEqual(
+    loadPlayerInsights().summarizePlayerStrokeRating(
+      trends,
+      'first_serve',
+    ),
+    {
+      average: 8,
+      sampleCount: 3,
+      sampledMatchCount: 2,
+      matchCount: 2,
+    },
+  );
+  assert.deepEqual(
+    loadPlayerInsights().summarizePlayerStrokeRating(
+      trends,
+      'second_serve',
+    ),
+    {
+      average: null,
+      sampleCount: 0,
+      sampledMatchCount: 0,
+      matchCount: 2,
+    },
+  );
   assert.deepEqual(
     [trends[0].metrics.overall.won, trends[0].metrics.overall.total],
     [2, 4],
@@ -2742,6 +2786,7 @@ test('legacy match links preserve names and trend metrics count points from ever
   assert.equal(opponentTrend.opponent, 'Sana Iyer');
   assert.equal(opponentTrend.metrics.secondServe.percent, null);
   assert.equal(opponentTrend.metrics.secondServe.total, 0);
+  assert.deepEqual(opponentTrend.strokeRatings, {});
   const noSecondServeSummary = loadPlayerInsights().summarizePlayerTrendMetric(
     [opponentTrend],
     'secondServe',

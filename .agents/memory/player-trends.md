@@ -17,3 +17,11 @@ Compare selected percentage metrics using the combined won-attempt numerator and
 **Why:** The user asked for warnings that explain uneven comparison samples while avoiding unsupported claims about statistical certainty. A ratio alone can exaggerate trivial differences, so the current notice requires at least a 2× ratio and a difference of 10 or more attempts; this is a descriptive cue, not a significance test.
 
 **How to apply:** Recalculate the notice when the selected metric or date range changes. State the actual totals and avoid conclusions about confidence or reliability.
+
+## Stroke-rating history
+
+**Rule:** Treat per-set stroke ratings as subjective self-ratings recorded for the match's tracked player. When a saved player appears as the opponent, do not attribute the tracked player's ratings to them. Average only rated sets; preserve each date, set number, sample count, and the unavailable state for missing ratings.
+
+**Why:** Ratings are observations entered on the tracked player's match sheet, not objectively measured match statistics. Crediting them to the opposing player or treating blank sets as zero would misrepresent both ownership and meaning.
+
+**How to apply:** Build stroke-rating history only from on-device set reviews where the selected player was tracked. Keep summaries descriptive, and retain set-level ratings in local backups and match reports.

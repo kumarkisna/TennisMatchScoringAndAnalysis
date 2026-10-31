@@ -18,6 +18,7 @@ import { useColors } from '@/hooks/useColors';
 import {
   listLocalPlayerMatchInsights,
   PLAYER_PERFORMANCE_HISTORY_KEY,
+  STROKE_TYPE_OPTIONS,
 } from '@/lib/local-matches';
 import { listLocalPlayers } from '@/lib/local-players';
 import {
@@ -28,6 +29,7 @@ import {
   isValidPlayerTrendDate,
   PLAYER_TREND_METRICS,
   summarizePlayerMatchOutcomes,
+  summarizePlayerStrokeRating,
   summarizePlayerTrendMetric,
   type PlayerTrendMatch,
   type PlayerTrendMetricKey,
@@ -564,6 +566,79 @@ function MatchOutcomeSummaryCard({
       <Text style={[styles.summaryMeta, { color: colors.mutedForeground }]}>
         In progress: {summary.inProgress}
       </Text>
+    </View>
+  );
+}
+
+function StrokeRatingHistory({
+  playerName,
+  matches,
+  testIDPrefix,
+}: {
+  playerName: string;
+  matches: PlayerTrendMatch[];
+  testIDPrefix: string;
+}) {
+  const colors = useColors();
+  return (
+    <View testID={`${testIDPrefix}-stroke-rating-trends`} style={styles.strokeRatingSection}>
+      <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+        Stroke self-ratings · {playerName}
+      </Text>
+      <Text style={[styles.countHint, { color: colors.mutedForeground }]}>
+        These are the player’s own 1–10 ratings, not calculated performance scores. Differences are observations, not proof of improvement. Unrated sets are omitted rather than treated as zero.
+      </Text>
+      {STROKE_TYPE_OPTIONS.map((stroke) => {
+        const summary = summarizePlayerStrokeRating(matches, stroke.value);
+        const ratedMatches = matches.filter(
+          (match) => match.strokeRatings[stroke.value]?.samples.length,
+        );
+        return (
+          <View
+            key={stroke.value}
+            testID={`${testIDPrefix}-stroke-rating-${stroke.value}`}
+            style={[
+              styles.strokeRatingCard,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.strokeRatingHeading}>
+              <Text style={[styles.strokeRatingName, { color: colors.foreground }]}>
+                {stroke.label}
+              </Text>
+              <Text style={[styles.strokeRatingAverage, { color: colors.primary }]}>
+                {summary.average === null ? 'Unavailable' : `${summary.average}/10`}
+              </Text>
+            </View>
+            <Text style={[styles.strokeRatingMeta, { color: colors.mutedForeground }]}>
+              {summary.sampleCount === 0
+                ? `No ratings in ${summary.matchCount} selected matches`
+                : `${summary.sampleCount} rated ${summary.sampleCount === 1 ? 'set' : 'sets'} across ${summary.sampledMatchCount} ${summary.sampledMatchCount === 1 ? 'match' : 'matches'} · average of recorded set ratings`}
+            </Text>
+            {ratedMatches.map((match) => {
+              const samples = match.strokeRatings[stroke.value]?.samples ?? [];
+              return (
+                <View
+                  key={match.id}
+                  style={[
+                    styles.strokeRatingMatch,
+                    { borderTopColor: colors.border },
+                  ]}
+                >
+                  <Text style={[styles.strokeRatingMatchMeta, { color: colors.mutedForeground }]}>
+                    {`${match.event?.trim() || 'Match'} · vs ${match.opponent} · ${formatDate(match.date)}`}
+                  </Text>
+                  <Text style={[styles.strokeRatingSamples, { color: colors.foreground }]}>
+                    {samples
+                      .map((sample) => `Set ${sample.setNumber}: ${sample.rating}/10`)
+                      .join(' · ')}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -1236,6 +1311,19 @@ export default function PlayerDevelopmentScreen() {
                     color={colors.accent}
                     testIDPrefix="player-trend-comparison"
                   />
+                  <Text style={[styles.sectionTitle, styles.matchListHeading, { color: colors.foreground }]}>
+                    Stroke rating history
+                  </Text>
+                  <StrokeRatingHistory
+                    playerName={player.name}
+                    matches={matches}
+                    testIDPrefix="player-trend-primary"
+                  />
+                  <StrokeRatingHistory
+                    playerName={comparisonPlayer.name}
+                    matches={comparisonMatches}
+                    testIDPrefix="player-trend-comparison"
+                  />
                 </>
               )
             ) : (
@@ -1305,6 +1393,14 @@ export default function PlayerDevelopmentScreen() {
                   matches={matches}
                   metric={selectedMetric}
                   color={colors.primary}
+                  testIDPrefix="player-trend"
+                />
+                <Text style={[styles.sectionTitle, styles.matchListHeading, { color: colors.foreground }]}>
+                  Stroke rating history
+                </Text>
+                <StrokeRatingHistory
+                  playerName={player.name}
+                  matches={matches}
                   testIDPrefix="player-trend"
                 />
               </>
@@ -1406,6 +1502,15 @@ const styles = StyleSheet.create({
   summaryPercent: { fontFamily: 'Manrope_700Bold', fontSize: 20, fontVariant: ['tabular-nums'] },
   summaryMeta: { fontFamily: 'DMSans_500Medium', fontSize: 9 },
   historySection: { gap: 7, marginBottom: 11 },
+  strokeRatingSection: { gap: 8, marginBottom: 10 },
+  strokeRatingCard: { borderWidth: 1, borderRadius: 10, padding: 11, gap: 5 },
+  strokeRatingHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  strokeRatingName: { flex: 1, fontFamily: 'DMSans_700Bold', fontSize: 12 },
+  strokeRatingAverage: { fontFamily: 'Manrope_700Bold', fontSize: 14, fontVariant: ['tabular-nums'] },
+  strokeRatingMeta: { fontFamily: 'DMSans_400Regular', fontSize: 10, lineHeight: 15 },
+  strokeRatingMatch: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 6, gap: 2 },
+  strokeRatingMatchMeta: { fontFamily: 'DMSans_500Medium', fontSize: 10, lineHeight: 14 },
+  strokeRatingSamples: { fontFamily: 'DMSans_600SemiBold', fontSize: 10, lineHeight: 15 },
   historyHeading: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 5 },
   emptyHistory: { borderWidth: 1, borderRadius: 10, padding: 12 },
   modalOverlay: { flex: 1, justifyContent: 'center', padding: 22, backgroundColor: 'rgba(12, 25, 19, 0.48)' },

@@ -321,6 +321,17 @@ export function buildPlayerReportHtml(
         <td>${escape(displayText(item.note))}</td>
       </tr>`)
     .join('');
+  const strokeRatingRows = insights.sets
+    .flatMap((set) =>
+      Object.entries(set.review.strokeRatings).map(([type, rating]) => `
+        <tr>
+          <td>Set ${set.setNumber}</td>
+          <td>${escape(STROKE_LABELS[type as StrokeType] ?? type)}</td>
+          <td>${escape(trackedPlayerLabel)}</td>
+          <td>${rating}/10</td>
+        </tr>`),
+    )
+    .join('');
   const gameNoteSections = insights.sets
     .map((set) => {
       const notes = [...set.gameNotes]
@@ -1034,6 +1045,12 @@ export function buildPlayerReportHtml(
     <table>
       <thead><tr><th>Player</th><th>Stroke type</th><th>In play</th><th>Errors</th><th>Winners</th><th>Total recorded</th></tr></thead>
       <tbody>${strokeTallyRows || '<tr><td colspan="6">No stroke entries recorded.</td></tr>'}</tbody>
+    </table>
+    <h3>Per-set stroke self-ratings</h3>
+    <p class="context-coverage">These are ${escape(trackedPlayerLabel)}’s own 1–10 ratings, not calculated performance scores. Unrated strokes are left blank and are not counted as zero.</p>
+    <table>
+      <thead><tr><th>Set</th><th>Stroke type</th><th>Player</th><th>Self-rating</th></tr></thead>
+      <tbody>${strokeRatingRows || '<tr><td colspan="4">No stroke self-ratings recorded.</td></tr>'}</tbody>
     </table>
     ${strokeNoteRows ? `
       <h3>Point-level stroke notes</h3>

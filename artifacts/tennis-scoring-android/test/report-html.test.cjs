@@ -5012,6 +5012,10 @@ test('long match reports keep all set, feedback, observation, and shot details p
 
   assertCleanReport(html);
   assert.match(html, /rating 8\/10/);
+  assert.match(html, /Per-set stroke self-ratings/);
+  assert.match(html, /own 1–10 ratings, not calculated performance scores/);
+  assert.match(html, /<h3>Per-set stroke self-ratings<\/h3>/);
+  assert.match(html, /<td>8\/10<\/td>/);
   assert.equal(
     (html.match(/<td>Set \d+<span class="sub">Complete<\/span><\/td>/g) ?? []).length,
     18,
