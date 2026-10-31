@@ -17,6 +17,7 @@ import { useLocalReportNameLabels } from '@/hooks/useLocalReportNameLabels';
 import { useLocalReportNameVisibility } from '@/hooks/useLocalReportNameVisibility';
 import { ReportAnonymityToggle } from '@/components/ReportAnonymityToggle';
 import { ReportSectionPicker } from '@/components/ReportSectionPicker';
+import { HeadToHeadSurfaceMatchOutcomesCard } from '@/components/HeadToHeadSurfaceMatchOutcomes';
 import {
   type BreakPointStats,
   getLocalMatch,
@@ -1142,6 +1143,12 @@ export default function HeadToHeadScreen() {
                 Only records captured with this tracked-player orientation are included. Results with tied set counts are not assigned a winner.
               </Text>
             </View>
+
+            <HeadToHeadSurfaceMatchOutcomesCard
+              outcomes={report.matchOutcomesBySurface}
+              trackedPlayer={report.trackedPlayer}
+              colors={colors}
+            />
 
             <StatTable
               testID="head-to-head-serve-stats"

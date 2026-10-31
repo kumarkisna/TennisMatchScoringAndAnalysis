@@ -1422,6 +1422,36 @@ test('head-to-head match outcomes count only saved winners and status for each s
   );
 });
 
+test('head-to-head screen shows surface records and separates unresolved outcomes', () => {
+  const surfaceOutcomeComponent = fs.readFileSync(
+    path.join(
+      __dirname,
+      '../components/HeadToHeadSurfaceMatchOutcomes.tsx',
+    ),
+    'utf8',
+  );
+  assert.match(
+    headToHeadScreenSource,
+    /<HeadToHeadSurfaceMatchOutcomesCard/,
+  );
+  assert.match(
+    headToHeadScreenSource,
+    /outcomes={report\.matchOutcomesBySurface}/,
+  );
+  assert.match(surfaceOutcomeComponent, /outcomes\.map/);
+  assert.match(surfaceOutcomeComponent, /\{surface\}/);
+  assert.match(surfaceOutcomeComponent, /\{wins\}–\{losses\}/);
+  assert.match(
+    surfaceOutcomeComponent,
+    /\{completedWithoutWinner\} completed without a clear winner/,
+  );
+  assert.match(surfaceOutcomeComponent, /\{inProgress\} in progress/);
+  assert.match(
+    surfaceOutcomeComponent,
+    /completed matches with a clear winner/,
+  );
+});
+
 test('head-to-head break-point rates are unavailable for empty samples', () => {
   const noChances = breakPointMeeting(
     'alex-bailey-no-break-points',
