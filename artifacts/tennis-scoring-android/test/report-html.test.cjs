@@ -187,6 +187,13 @@ test('report layouts provide overview, statistics, and full presets for both rep
     PLAYER_REPORT_SECTION_PRESETS[2].sections,
     allPlayerReportSections(),
   );
+  assert.ok(allPlayerReportSections().includes('break-point-context'));
+  assert.ok(
+    PLAYER_REPORT_SECTION_PRESETS[2].sections.includes('break-point-context'),
+  );
+  assert.ok(
+    !PLAYER_REPORT_SECTION_PRESETS[0].sections.includes('break-point-context'),
+  );
 
   assert.deepEqual(HEAD_TO_HEAD_REPORT_SECTION_PRESETS[0].sections, ['overview']);
   assert.deepEqual(HEAD_TO_HEAD_REPORT_SECTION_PRESETS[1].sections, [
@@ -2933,6 +2940,104 @@ test('break-point history shows pre-point scores through deuce and advantage', (
     Object.hasOwn(savedZeroForty[0], 'breakPointScoreBefore'),
     false,
   );
+});
+
+test('optional break-point moments report derives scores and respects anonymization', () => {
+  const { match } = breakPointSampleMatch();
+  const insights = { ...emptyInsight, ...calculateLocalInsights(match) };
+  const hiddenHtml = buildPlayerReportHtml(
+    match,
+    insights,
+    emptyPerformance,
+    ['break-point-context'],
+    [],
+    { hidePlayerNames: true },
+  );
+  const rows = reportRowsAfterHeading(hiddenHtml, 'Break-point moments');
+
+  assert.equal(rows.length, 6);
+  assert.match(rows[0], /Set 1 Game 1 4 0 40 Saved by Player A/);
+  assert.match(rows[1], /Set 1 Game 1 5 15 40 Saved by Player A/);
+  assert.match(rows[2], /Set 1 Game 1 6 30 40 Saved by Player A/);
+  assert.ok(rows.some((row) => /Set 1 Game 2/.test(row) && /AD 40/.test(row)));
+  assert.ok(
+    rows.some(
+      (row) =>
+        /Set 2 Game 1/.test(row) &&
+        /Converted by Player A/.test(row),
+    ),
+  );
+  assert.doesNotMatch(hiddenHtml, /Tracked|Opponent/);
+  assert.doesNotMatch(hiddenHtml, /<h2>Break-point pressure<\/h2>/);
+  assert.equal(
+    Object.hasOwn(match.completedSets[0].points[3], 'breakPointScoreBefore'),
+    false,
+  );
+
+  const currentSetMatch = {
+    ...match,
+    setNumber: 3,
+    setFormat: 'standard',
+    points: gamePoints(
+      3,
+      1,
+      'opponent',
+      ['tracked', 'tracked', 'tracked', 'tracked'],
+    ),
+  };
+  const currentSetRows = reportRowsAfterHeading(
+    buildPlayerReportHtml(
+      currentSetMatch,
+      insights,
+      emptyPerformance,
+      ['break-point-context'],
+      [],
+      { hidePlayerNames: true },
+    ),
+    'Break-point moments',
+  );
+  assert.ok(
+    currentSetRows.some(
+      (row) =>
+        /Set 3 Game 1 4 40 0 Converted by Player A/.test(row),
+    ),
+    `Unexpected current-set rows: ${JSON.stringify(currentSetRows)}`,
+  );
+
+  const overviewOnlyHtml = buildPlayerReportHtml(
+    match,
+    insights,
+    emptyPerformance,
+    ['overview'],
+  );
+  assert.doesNotMatch(overviewOnlyHtml, /<h2>Break-point moments<\/h2>/);
+
+  const matchTiebreakOnlyHtml = buildPlayerReportHtml(
+    { ...match, completedSets: [], setFormat: 'match_tiebreak' },
+    insights,
+    emptyPerformance,
+    ['break-point-context'],
+    [],
+    { hidePlayerNames: true },
+  );
+  assert.match(
+    matchTiebreakOnlyHtml,
+    /No saved or converted break-point moments were recorded\./,
+  );
+
+  match.completedSets[0].points[3].winner = 'opponent';
+  const updatedRows = reportRowsAfterHeading(
+    buildPlayerReportHtml(
+      match,
+      insights,
+      emptyPerformance,
+      ['break-point-context'],
+      [],
+      { hidePlayerNames: true },
+    ),
+    'Break-point moments',
+  );
+  assert.match(updatedRows[0], /Set 1 Game 1 4 0 40 Converted by Player B/);
 });
 
 test('break-point report rates update after an outcome is undone and replaced', () => {

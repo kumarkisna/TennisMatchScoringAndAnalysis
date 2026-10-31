@@ -38,3 +38,11 @@ Single-match and head-to-head reports can hide player names behind editable neut
 **Why:** The user wants privacy choices that are consistent between report types without changing the original player or match records.
 
 **How to apply:** Keep labels in local settings, never in match/player records. Include anonymization and custom labels in report review validity so a PDF reviewed with different labels cannot be shared as current.
+
+## Break-point moment context
+
+**Rule:** Single-match reports may include an optional timeline of saved and converted break-point moments by set and game, with both players' pre-point scores and the outcome.
+
+**Why:** Coaches should be able to review the score context for each chance without reopening the point history.
+
+**How to apply:** Derive outcomes and scores from each saved set's point sequence at report generation. Do not persist duplicate score data; use anonymized report labels and respect the selected-section list.

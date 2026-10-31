@@ -5,6 +5,7 @@ export const PLAYER_REPORT_SECTIONS = [
   { id: 'sets', label: 'Set scores' },
   { id: 'game-notes', label: 'Game notes' },
   { id: 'break-points', label: 'Break-point pressure' },
+  { id: 'break-point-context', label: 'Break-point moments' },
   { id: 'coaching', label: 'Coaching notes' },
   { id: 'point-ending', label: 'Point-ending analysis' },
   { id: 'strokes', label: 'Recorded strokes' },

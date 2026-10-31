@@ -1,6 +1,7 @@
 import {
+  getLocalPointHistory,
   STROKE_TYPE_OPTIONS,
-  type LocalMatchOutcome,
+  type LocalMatch,
   type PointCode,
   type StrokeType,
 } from '@/lib/local-matches';
@@ -22,17 +23,23 @@ import {
   type PlayerReportSection,
 } from '@/lib/report-sections';
 
-interface ReportMatch {
-  matchDate: string;
-  event?: string | null;
-  round?: string | null;
-  chairCoach?: string | null;
-  trackedPlayer: string;
-  opponent: string;
-  surface: string;
-  matchStatus: 'in_progress' | 'complete';
-  matchOutcome?: LocalMatchOutcome | null;
-}
+type ReportMatch = Pick<
+  LocalMatch,
+  | 'matchDate'
+  | 'event'
+  | 'round'
+  | 'chairCoach'
+  | 'trackedPlayer'
+  | 'opponent'
+  | 'surface'
+  | 'matchStatus'
+> &
+  Partial<
+    Pick<
+      LocalMatch,
+      'matchOutcome' | 'completedSets' | 'setNumber' | 'setFormat' | 'points'
+    >
+  >;
 
 export const POINT_CODE_LABELS: Record<PointCode, string> = {
   A: 'Ace',
@@ -152,6 +159,52 @@ function matchWinnerLabel(
   return setWins.tracked > setWins.opponent
     ? match.trackedPlayer
     : match.opponent;
+}
+
+function breakPointMomentRows(
+  match: ReportMatch,
+  trackedPlayerLabel: string,
+  opponentLabel: string,
+): string {
+  const sets = [
+    ...(match.completedSets ?? []).map((set) => ({
+      setNumber: set.setNumber,
+      format: set.format,
+      points: set.points,
+    })),
+    ...(match.setNumber !== undefined && match.setFormat && match.points
+      ? [
+          {
+            setNumber: match.setNumber,
+            format: match.setFormat,
+            points: match.points,
+          },
+        ]
+      : []),
+  ];
+
+  return sets
+    .flatMap(({ setNumber, format, points }) =>
+      getLocalPointHistory(points, format, 'break_points')
+        .reverse()
+        .map(({ point, breakPointOutcome, breakPointScoreBefore }) => {
+          if (!breakPointOutcome || !breakPointScoreBefore) return '';
+          const outcome = breakPointOutcome === 'saved' ? 'Saved by' : 'Converted by';
+          const pointWinner =
+            point.winner === 'tracked' ? trackedPlayerLabel : opponentLabel;
+          return `
+            <tr>
+              <td>Set ${setNumber}</td>
+              <td>Game ${point.gameNumber}</td>
+              <td>${point.sequenceNumber}</td>
+              <td>${escapeHtml(breakPointScoreBefore.trackedScore)}</td>
+              <td>${escapeHtml(breakPointScoreBefore.opponentScore)}</td>
+              <td>${escapeHtml(`${outcome} ${pointWinner}`)}</td>
+            </tr>`;
+        }),
+    )
+    .filter(Boolean)
+    .join('');
 }
 
 export function buildPlayerReportHtml(
@@ -593,6 +646,11 @@ export function buildPlayerReportHtml(
       <td>${rate(matchBreakPoints.opponent.saved, matchBreakPoints.opponent.faced)}</td>
       <td>${rate(matchBreakPoints.opponent.faced - matchBreakPoints.opponent.saved, matchBreakPoints.opponent.faced)}</td>
     </tr>`;
+  const breakPointContextRows = breakPointMomentRows(
+    match,
+    trackedPlayerLabel,
+    opponentLabel,
+  );
   const taggedPercent = exactPercent(summary.taggedPointCount, insights.pointCount);
   const rallyWinnerRate =
     summary.rallyWinnerTagCount > 0
@@ -703,6 +761,12 @@ export function buildPlayerReportHtml(
       .code-key td:first-child { width: 18%; }
       .metric-table { font-size: 8px; table-layout: fixed; }
       .metric-table th, .metric-table td { overflow-wrap: anywhere; padding: 6px 4px; }
+      .break-point-context-table th:nth-child(1), .break-point-context-table td:nth-child(1) { width: 8%; }
+      .break-point-context-table th:nth-child(2), .break-point-context-table td:nth-child(2) { width: 10%; }
+      .break-point-context-table th:nth-child(3), .break-point-context-table td:nth-child(3) { width: 8%; }
+      .break-point-context-table th:nth-child(4), .break-point-context-table td:nth-child(4),
+      .break-point-context-table th:nth-child(5), .break-point-context-table td:nth-child(5) { width: 19%; }
+      .break-point-context-table th:nth-child(6), .break-point-context-table td:nth-child(6) { width: 36%; }
       .set-performance-table th:first-child, .set-performance-table td:first-child { width: 8%; }
       .set-performance-table th:nth-child(2), .set-performance-table td:nth-child(2),
       .set-performance-table th:nth-child(3), .set-performance-table td:nth-child(3) { width: 15%; }
@@ -884,6 +948,24 @@ export function buildPlayerReportHtml(
       <tbody>${breakPointDefenseRows}${breakPointDefenseMatchRow}</tbody>
     </table>
     <p class="note" style="margin-top: 7px">Each value shows count/available chances and percentage. Missed = created opportunities not converted; lost = faced break points not saved. Repeated advantages in one game count separately. Tie-break points and match tie-break sets are excluded.</p>
+    ` : ''}
+
+    ${includes('break-point-context') ? `
+    <h2>Break-point moments</h2>
+    <p class="context-coverage">Scores show the game score immediately before each chance. Saved means the server won the point; converted means the returner won it.</p>
+    <table class="metric-table break-point-context-table">
+      <thead>
+        <tr>
+          <th>Set</th>
+          <th>Game</th>
+          <th>Point</th>
+          <th>${escape(trackedPlayerLabel)} score before</th>
+          <th>${escape(opponentLabel)} score before</th>
+          <th>Outcome</th>
+        </tr>
+      </thead>
+      <tbody>${breakPointContextRows || '<tr><td colspan="6">No saved or converted break-point moments were recorded.</td></tr>'}</tbody>
+    </table>
     ` : ''}
 
     ${includes('coaching') ? `
