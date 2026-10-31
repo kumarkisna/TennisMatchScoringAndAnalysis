@@ -249,6 +249,49 @@ test.after(() => {
   }
 });
 
+test('ten-point stroke ratings survive backup restore and legacy conversion', async () => {
+  storageValues.clear();
+  savedDeviceBackup = null;
+  selectedBackupContents = '';
+  networkRequestCount = 0;
+  loadLocalModules();
+  const { match } = await createSampleRecords();
+  const matchRecord = await activeModules.localMatches.getLocalMatch(match.id);
+  assert.ok(matchRecord);
+  await activeModules.localMatches.updateLocalSetReview(match.id, 2, {
+    ...matchRecord.review,
+    strokeRatings: { first_serve: 8 },
+  });
+
+  await loadBackupModule().saveLocalBackupToDevice();
+  const exportedContents = savedDeviceBackup.contents;
+  const exported = JSON.parse(exportedContents);
+  assert.equal(exported.matches[0].review.strokeRatingScale, 10);
+  assert.equal(exported.matches[0].review.strokeRatings.first_serve, 8);
+
+  storageValues.clear();
+  loadLocalModules();
+  selectedBackupContents = exportedContents;
+  await loadBackupModule().loadLocalBackupFromDevice();
+  let restoredMatch = await activeModules.localMatches.getLocalMatch(match.id);
+  assert.ok(restoredMatch);
+  assert.equal(restoredMatch.review.strokeRatings.first_serve, 8);
+  assert.equal(restoredMatch.review.strokeRatingScale, 10);
+
+  const legacyBackup = JSON.parse(exportedContents);
+  delete legacyBackup.matches[0].review.strokeRatingScale;
+  legacyBackup.matches[0].review.strokeRatings.first_serve = 4;
+  storageValues.clear();
+  loadLocalModules();
+  selectedBackupContents = JSON.stringify(legacyBackup);
+  await loadBackupModule().loadLocalBackupFromDevice();
+  restoredMatch = await activeModules.localMatches.getLocalMatch(match.id);
+  assert.ok(restoredMatch);
+  assert.equal(restoredMatch.review.strokeRatings.first_serve, 8);
+  assert.equal(restoredMatch.review.strokeRatingScale, 10);
+  assert.equal(networkRequestCount, 0);
+});
+
 test('backup save, share, and restore preserve all players and sets without network access', async () => {
   storageValues.clear();
   savedDeviceBackup = null;

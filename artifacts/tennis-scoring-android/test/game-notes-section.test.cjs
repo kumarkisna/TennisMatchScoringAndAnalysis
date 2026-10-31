@@ -59,6 +59,17 @@ test('expanding reveals editable game-note rows and collapsing hides them', () =
   );
 });
 
+test('set stroke ratings use a ten-point scale with accessible labels', () => {
+  assert.ok(matchScreen.includes('Optional 1–10 ratings and observations'));
+  assert.ok(matchScreen.includes('length: STROKE_RATING_MAX'));
+  assert.ok(
+    matchScreen.includes(
+      'accessibilityLabel={`${option.label} rating ${value} out of ${STROKE_RATING_MAX}`}',
+    ),
+  );
+  assert.ok(matchScreen.includes("flexWrap: 'wrap'"));
+});
+
 test('point, game, and set note editors offer optional editable prompts', () => {
   assert.match(
     matchScreen,

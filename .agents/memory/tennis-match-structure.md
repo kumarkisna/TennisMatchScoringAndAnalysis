@@ -62,3 +62,9 @@ description: Product requirements for multi-set tennis records, tiebreak-only se
 **Why:** The user said separate practice-session recording would add too much and asked to leave it out.
 
 **How to apply:** Keep practice-only sessions out of the data model and navigation unless the user later requests them.
+
+**Rule:** Set-level stroke self-ratings use a 1–10 scale; legacy 1–5 values convert by multiplying by two.
+
+**Why:** The user requested ratings out of 10 and chose doubling existing values to preserve their relative meaning.
+
+**How to apply:** Keep the saved scale marker, editor validation, analytics notes, reports, and backup import/export aligned.

@@ -53,6 +53,7 @@ import {
   recordLocalMatchOutcome,
   RALLY_LENGTH_OPTIONS,
   SHOT_DIRECTION_OPTIONS,
+  STROKE_RATING_MAX,
   STROKE_TYPE_OPTIONS,
   updateLocalMatchDetails,
   undoLocalPoint,
@@ -2703,7 +2704,7 @@ export default function MatchScreen() {
                 Set {viewedSet.setNumber} · stroke ratings and coaching
               </Text>
               <Text style={[styles.contextToggleHint, { color: colors.mutedForeground }]}>
-                Optional 1–5 ratings and observations
+                Optional 1–10 ratings and observations
               </Text>
             </View>
             <Ionicons
@@ -2749,14 +2750,17 @@ export default function MatchScreen() {
                       <Text style={[styles.ratingLabel, { color: colors.mutedForeground }]}>
                         Rating
                       </Text>
-                      {[1, 2, 3, 4, 5].map((value) => {
+                      {Array.from(
+                        { length: STROKE_RATING_MAX },
+                        (_, index) => index + 1,
+                      ).map((value) => {
                         const selected = rating === value;
                         return (
                           <Pressable
                             key={value}
                             testID={`rating-${option.value}-${value}`}
                             accessibilityRole="button"
-                            accessibilityLabel={`${option.label} rating ${value}`}
+                            accessibilityLabel={`${option.label} rating ${value} out of ${STROKE_RATING_MAX}`}
                             accessibilityState={{ selected }}
                             disabled={updateSetReview.isPending}
                             onPress={() =>
@@ -4165,8 +4169,8 @@ const styles = StyleSheet.create({
   strokeReviewRow: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 8, gap: 6 },
   strokeReviewTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   strokeNotePreview: { maxWidth: 175, fontFamily: 'DMSans_400Regular', fontSize: 9 },
-  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  ratingLabel: { flex: 1, fontFamily: 'DMSans_400Regular', fontSize: 8 },
+  ratingRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },
+  ratingLabel: { width: '100%', fontFamily: 'DMSans_400Regular', fontSize: 8 },
   ratingChip: { width: 27, height: 27, borderWidth: 1, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
   ratingChipText: { fontFamily: 'DMSans_700Bold', fontSize: 10 },
   noteSaveButton: { minWidth: 62, height: 37, borderRadius: 7, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 9 },

@@ -4834,7 +4834,8 @@ test('long match reports keep all set, feedback, observation, and shot details p
         note: `Set ${setNumber} observation ${noteIndex + 1}: the player adjusted court position and targeted the opponent's backhand during a long rally.`,
       })),
       review: {
-        strokeRatings: { first_serve: 4 },
+        strokeRatingScale: 10,
+        strokeRatings: { first_serve: 8 },
         strokeNotes: { first_serve: `Set ${setNumber} serve placement note.` },
         footworkNote: `Set ${setNumber}: recovery steps and court coverage were recorded in detail.`,
         tacticalNote: `Set ${setNumber}: varied pace and attacked short balls.`,
@@ -4944,6 +4945,7 @@ test('long match reports keep all set, feedback, observation, and shot details p
   );
 
   assertCleanReport(html);
+  assert.match(html, /rating 8\/10/);
   assert.equal(
     (html.match(/<td>Set \d+<span class="sub">Complete<\/span><\/td>/g) ?? []).length,
     18,
@@ -5125,7 +5127,8 @@ test('match notes become contextual, evidence-linked post-match feedback', () =>
   set.review.footworkNote = 'Slow recovery after a wide ball.';
   set.review.tacticalNote = 'Cross-court depth opened space down the line.';
   set.review.mentalNote = 'Stayed composed under pressure.';
-  set.review.strokeRatings = { forehand_drive: 3 };
+  set.review.strokeRatingScale = 10;
+  set.review.strokeRatings = { forehand_drive: 6 };
   set.review.strokeNotes = {
     forehand_drive: 'Late contact on the forehand drive.',
   };
@@ -5163,6 +5166,7 @@ test('match notes become contextual, evidence-linked post-match feedback', () =>
 
   const themes = summarizeMatchNotes(insights);
   const byId = Object.fromEntries(themes.map((theme) => [theme.id, theme]));
+  assert.match(JSON.stringify(byId.stroke), /Self-rating 6\/10/);
   assert.equal(byId['serve-return'].observationCount, 1);
   assert.match(byId['serve-return'].observations[0].context, /Set 1 · Game 2/);
   assert.ok(
@@ -5187,6 +5191,7 @@ test('match notes become contextual, evidence-linked post-match feedback', () =>
 
   const summary = summarizePlayerPerformance(insights);
   const reportHtml = buildPlayerReportHtml(match, insights, summary);
+  assert.match(reportHtml, /rating 6\/10/);
   assert.match(reportHtml, /Recorded notes grouped for review/);
   assert.match(reportHtml, /Related match data/);
   assert.match(reportHtml, /Review question/);

@@ -42,11 +42,14 @@ export interface LocalGameNote {
 
 export interface LocalSetReview {
   strokeRatings: Partial<Record<StrokeType, number>>;
+  strokeRatingScale?: 5 | 10;
   strokeNotes: Partial<Record<StrokeType, string>>;
   footworkNote: string;
   tacticalNote: string;
   mentalNote: string;
 }
+
+export const STROKE_RATING_MAX = 10 as const;
 
 export const EMPTY_LOCAL_SET_REVIEW: LocalSetReview = {
   strokeRatings: {},
@@ -658,17 +661,27 @@ function normalizeLocalMatch(value: Record<string, unknown>): LocalMatch {
     const candidate = review as Partial<LocalSetReview>;
     const strokeRatings: LocalSetReview['strokeRatings'] = {};
     const strokeNotes: LocalSetReview['strokeNotes'] = {};
+    const sourceRatingScale = candidate.strokeRatingScale ?? 5;
     for (const option of STROKE_TYPE_OPTIONS) {
       const rating = candidate.strokeRatings?.[option.value];
       const note = candidate.strokeNotes?.[option.value];
-      if (Number.isInteger(rating) && rating! >= 1 && rating! <= 5) {
-        strokeRatings[option.value] = rating;
+      if (
+        (sourceRatingScale === 5 || sourceRatingScale === STROKE_RATING_MAX) &&
+        Number.isInteger(rating) &&
+        rating! >= 1 &&
+        rating! <= sourceRatingScale
+      ) {
+        strokeRatings[option.value] =
+          sourceRatingScale === 5 ? rating! * 2 : rating;
       }
       if (typeof note === 'string' && note.trim()) {
         strokeNotes[option.value] = note.slice(0, 500);
       }
     }
     return {
+      ...(Object.keys(strokeRatings).length > 0
+        ? { strokeRatingScale: STROKE_RATING_MAX }
+        : {}),
       strokeRatings,
       strokeNotes,
       footworkNote:
@@ -1614,9 +1627,11 @@ export async function updateLocalSetReview(
       !strokeTypes.includes(strokeType as StrokeType) ||
       !Number.isInteger(rating) ||
       rating! < 1 ||
-      rating! > 5
+      rating! > STROKE_RATING_MAX
     ) {
-      throw new Error('Stroke ratings must be whole numbers from 1 to 5.');
+      throw new Error(
+        `Stroke ratings must be whole numbers from 1 to ${STROKE_RATING_MAX}.`,
+      );
     }
   }
   for (const [strokeType, note] of Object.entries(review.strokeNotes)) {
@@ -1635,7 +1650,7 @@ export async function updateLocalSetReview(
     status: 'in_progress',
     points: [],
     completedSets: [],
-    review,
+    review: { ...review, strokeRatingScale: STROKE_RATING_MAX },
   }).review;
   if (!Number.isInteger(setNumber) || setNumber < 1) {
     throw new Error('Choose a valid set number.');

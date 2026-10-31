@@ -1191,7 +1191,7 @@ export function summarizeMatchNotes(
         0,
         0,
         `Set ${set.setNumber} · Stroke rating · ${strokeLabel}`,
-        `Self-rating ${rating}/5${note ? ` · ${note}` : ''}`,
+        `Self-rating ${rating}/10${note ? ` · ${note}` : ''}`,
         { themeId: 'stroke', strokeType: typedStroke, player: 'tracked' },
       );
     }

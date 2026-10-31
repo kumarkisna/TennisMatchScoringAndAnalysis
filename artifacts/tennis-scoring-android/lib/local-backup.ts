@@ -12,6 +12,7 @@ import {
   getLocalMatch,
   listLocalMatches,
   mergeLocalMatchesFromBackup,
+  STROKE_RATING_MAX,
   STROKE_TYPE_OPTIONS,
   type LocalMatch,
   type LocalMatchBackupRecord,
@@ -296,8 +297,14 @@ function isBackupGameNotes(value: unknown): boolean {
 
 function isBackupSetReview(value: unknown): boolean {
   if (!isRecord(value)) return false;
+  const ratingScale = value.strokeRatingScale;
+  const ratingMax =
+    ratingScale === STROKE_RATING_MAX ? STROKE_RATING_MAX : 5;
+  const validRatingScale =
+    ratingScale === undefined || ratingScale === 5 || ratingScale === STROKE_RATING_MAX;
   const validRatings =
-    value.strokeRatings === undefined ||
+    validRatingScale &&
+    (value.strokeRatings === undefined ||
     (isRecord(value.strokeRatings) &&
       Object.entries(value.strokeRatings).every(
         ([type, rating]) =>
@@ -305,8 +312,8 @@ function isBackupSetReview(value: unknown): boolean {
           typeof rating === 'number' &&
           Number.isInteger(rating) &&
           rating >= 1 &&
-          rating <= 5,
-      ));
+          rating <= ratingMax,
+      )));
   const validNotes =
     value.strokeNotes === undefined ||
     (isRecord(value.strokeNotes) &&

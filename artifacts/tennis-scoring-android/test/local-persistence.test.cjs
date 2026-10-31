@@ -268,6 +268,51 @@ test('saved match points and editable player profiles survive offline app restar
   assert.equal(networkRequestCount, 0);
 });
 
+test('legacy stroke ratings convert once to the ten-point scale', async () => {
+  storageValues.clear();
+  const { localMatches } = loadStorageModulesAfterRestart();
+  const match = await localMatches.createLocalMatch({
+    matchDate: '2026-10-30',
+    event: null,
+    round: null,
+    trackedPlayer: 'Sana Iyer',
+    opponent: 'Maya Rao',
+    chairCoach: null,
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+  const matchKey = `@tennis-scoring/matches/record-v1/${match.id}`;
+  const legacyRecord = JSON.parse(storageValues.get(matchKey));
+  legacyRecord.review.strokeRatings.forehand_drive = 4;
+  delete legacyRecord.review.strokeRatingScale;
+  storageValues.set(matchKey, JSON.stringify(legacyRecord));
+
+  const upgraded = await localMatches.getLocalMatch(match.id);
+  assert.ok(upgraded);
+  assert.equal(upgraded.review.strokeRatings.forehand_drive, 8);
+  assert.equal(upgraded.review.strokeRatingScale, 10);
+  const readAgain = await localMatches.getLocalMatch(match.id);
+  assert.ok(readAgain);
+  assert.equal(readAgain.review.strokeRatings.forehand_drive, 8);
+
+  await localMatches.updateLocalSetReview(match.id, 1, {
+    ...upgraded.review,
+    strokeRatings: { forehand_drive: 10 },
+  });
+  const savedNewRating = await localMatches.getLocalMatch(match.id);
+  assert.ok(savedNewRating);
+  assert.equal(savedNewRating.review.strokeRatings.forehand_drive, 10);
+  assert.equal(savedNewRating.review.strokeRatingScale, 10);
+  await assert.rejects(
+    localMatches.updateLocalSetReview(match.id, 1, {
+      ...savedNewRating.review,
+      strokeRatings: { forehand_drive: 11 },
+    }),
+    /whole numbers from 1 to 10/,
+  );
+});
+
 test('older saved players without profile labels stay readable', async () => {
   storageValues.clear();
   storageValues.set(

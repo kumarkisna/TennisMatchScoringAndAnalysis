@@ -345,7 +345,7 @@ export function buildPlayerReportHtml(
           : []),
         ...Object.entries(set.review.strokeRatings).map(([type, rating]) => {
           const note = set.review.strokeNotes[type as keyof typeof set.review.strokeNotes];
-          return `${STROKE_LABELS[type as keyof typeof STROKE_LABELS]} · rating ${rating}/5${note?.trim() ? ` · ${note.trim()}` : ''}`;
+          return `${STROKE_LABELS[type as keyof typeof STROKE_LABELS]} · rating ${rating}/10${note?.trim() ? ` · ${note.trim()}` : ''}`;
         }),
         ...Object.entries(set.review.strokeNotes)
           .filter(([type, note]) => !set.review.strokeRatings[type as keyof typeof set.review.strokeRatings] && note.trim())
