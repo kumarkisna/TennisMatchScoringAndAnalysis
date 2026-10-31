@@ -572,6 +572,15 @@ function reportRowsAfterHeading(html, heading) {
     .map((match) => match[1].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim());
 }
 
+function reportRowsInTable(html, className) {
+  const start = html.indexOf(`<table class="${className}">`);
+  assert.notEqual(start, -1, `Missing report table: ${className}`);
+  const bodyStart = html.indexOf('<tbody>', start) + '<tbody>'.length;
+  const bodyEnd = html.indexOf('</tbody>', bodyStart);
+  return [...html.slice(bodyStart, bodyEnd).matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/g)]
+    .map((match) => match[1].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim());
+}
+
 function emptySurfaceBreakPointBaselines() {
   return ['Hard', 'Clay', 'Grass', 'Carpet', 'Other'].map((surface) => ({
     surface,
@@ -1194,11 +1203,55 @@ test('head-to-head report lists anonymized break-point moments by meeting', () =
 
   const olderMeeting = meetingWithPointLog('alex-bailey-older', '2026-10-01');
   const newerMeeting = meetingWithPointLog('alex-bailey-newer', '2026-10-05');
+  const meetingWithoutBreakPointMoments = breakPointMeeting(
+    'alex-bailey-no-moments',
+    'Alex',
+    'Bailey',
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    '2026-09-30',
+  );
+  const { match: noMomentSampleMatch } = breakPointSampleMatch();
+  meetingWithoutBreakPointMoments.match = {
+    ...noMomentSampleMatch,
+    id: 'alex-bailey-no-moments',
+    matchDate: '2026-09-30',
+    trackedPlayer: 'Alex',
+    opponent: 'Bailey',
+    completedSets: [
+      setFixture(
+        1,
+        'standard',
+        gamePoints(1, 1, 'tracked', ['tracked', 'tracked', 'tracked', 'tracked']),
+      ),
+    ],
+    setNumber: 2,
+    setFormat: 'standard',
+    points: [],
+  };
+  const meetingWithoutPointLog = breakPointMeeting(
+    'alex-bailey-no-point-log',
+    'Alex',
+    'Bailey',
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    '2026-09-29',
+  );
   const report = buildHeadToHeadReport(
     'Alex',
     'Bailey',
-    [olderMeeting, newerMeeting],
-    [olderMeeting, newerMeeting],
+    [
+      olderMeeting,
+      newerMeeting,
+      meetingWithoutBreakPointMoments,
+      meetingWithoutPointLog,
+    ],
+    [
+      olderMeeting,
+      newerMeeting,
+      meetingWithoutBreakPointMoments,
+      meetingWithoutPointLog,
+    ],
   );
   const html = buildHeadToHeadReportHtml(
     report,
@@ -1208,7 +1261,7 @@ test('head-to-head report lists anonymized break-point moments by meeting', () =
       labels: { trackedPlayer: 'Main athlete', opponent: 'Visitor' },
     },
   );
-  const rows = reportRowsAfterHeading(html, 'Break-point moments by meeting');
+  const rows = reportRowsInTable(html, 'break-point-context-table');
 
   assert.equal(rows.length, 12);
   assert.match(
@@ -1222,6 +1275,25 @@ test('head-to-head report lists anonymized break-point moments by meeting', () =
   assert.match(html, /Main athlete score before/);
   assert.match(html, /Visitor score before/);
   assert.doesNotMatch(html, /Alex|Bailey/);
+  const coverageRows = reportRowsInTable(html, 'break-point-coverage-table');
+  const savedPointCount = [
+    ...newerMeeting.match.completedSets.flatMap((set) => set.points),
+    ...newerMeeting.match.points,
+  ].length;
+  assert.equal(coverageRows.length, 4);
+  assert.match(
+    coverageRows[0],
+    new RegExp(`Meeting 1 · October 5, 2026 ${savedPointCount} points saved 6 found`),
+  );
+  assert.match(
+    coverageRows[2],
+    /Meeting 3 · September 30, 2026 4 points saved None found in saved points/,
+  );
+  assert.match(
+    coverageRows[3],
+    /Meeting 4 · September 29, 2026 No point log saved Unavailable — no point log/,
+  );
+  assert.doesNotMatch(coverageRows[2], /24 points saved/);
   assert.doesNotMatch(
     buildHeadToHeadReportHtml(report, ['overview']),
     /<h2>Break-point moments by meeting<\/h2>/,
@@ -1235,7 +1307,7 @@ test('head-to-head report lists anonymized break-point moments by meeting', () =
   );
 
   newerMeeting.match.completedSets[0].points[3].winner = 'opponent';
-  const correctedRows = reportRowsAfterHeading(
+  const correctedRows = reportRowsInTable(
     buildHeadToHeadReportHtml(
       report,
       ['break-point-context'],
@@ -1244,21 +1316,13 @@ test('head-to-head report lists anonymized break-point moments by meeting', () =
         labels: { trackedPlayer: 'Main athlete', opponent: 'Visitor' },
       },
     ),
-    'Break-point moments by meeting',
+    'break-point-context-table',
   );
   assert.match(
     correctedRows[0],
     /Meeting 1 · October 5, 2026 Set 1 Game 1 4 0 40 Converted by Visitor/,
   );
 
-  const meetingWithoutPointLog = breakPointMeeting(
-    'alex-bailey-no-point-log',
-    'Alex',
-    'Bailey',
-    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
-    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
-    '2026-10-06',
-  );
   const noPointDataHtml = buildHeadToHeadReportHtml(
     buildHeadToHeadReport(
       'Alex',
@@ -1270,7 +1334,7 @@ test('head-to-head report lists anonymized break-point moments by meeting', () =
   );
   assert.match(
     noPointDataHtml,
-    /No saved point-level break-point moments were found for these meetings\./,
+    /No moments are available to list; see point-log coverage above\./,
   );
 });
 
