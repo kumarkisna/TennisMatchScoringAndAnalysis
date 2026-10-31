@@ -636,7 +636,7 @@ async function createTwoSetSavedPointReportFixture() {
 
   return {
     matchId: match.id,
-    rallyPointId: savedMatch.completedSets[0].points[1].id,
+    rallyPointId: savedMatch.completedSets[0].points[20].id,
   };
 }
 
@@ -1565,13 +1565,15 @@ test('multi-set point corrections refresh reports and preserve later-set data', 
 
   assert.equal(initial.match.completedSets.length, 1);
   assert.equal(initial.match.setNumber, 2);
-  assert.equal(initial.match.firstServer, 'opponent');
+  assert.equal(initial.match.firstServer, 'tracked');
+  assert.equal(initial.match.completedSets[0].score.trackedGames, 6);
+  assert.equal(initial.match.completedSets[0].score.opponentGames, 4);
   assert.deepEqual(
     initial.match.points.map((point) => point.server),
     laterSetServers,
   );
   assertPointAnalysisInBothReports(initial, {
-    rallyTile: '1/58 (1.7%)',
+    rallyTile: '0/58 (0.0%)',
     rallyTracked: '0/58 · 0.0%',
     rallyOpponent: '1/58 · 1.7%',
     errorTile: '2',
@@ -1591,19 +1593,24 @@ test('multi-set point corrections refresh reports and preserve later-set data', 
   assert.equal(initial.insights.serveStats.tracked.firstServeFaults, 1);
   assert.equal(initial.insights.serveStats.opponent.firstServeFaults, 0);
 
-  await editLocalPointWinner(matchId, 1, rallyPointId, 'opponent');
+  await editLocalPointWinner(matchId, 1, rallyPointId, 'tracked');
   const corrected = await buildSavedPointReportSnapshot(matchId);
   assert.equal(
-    corrected.match.completedSets[0].points[1].winner,
-    'opponent',
+    corrected.match.completedSets[0].points[20].winner,
+    'tracked',
   );
   assert.equal(corrected.match.completedSets[0].firstServer, 'tracked');
+  assert.equal(corrected.match.completedSets[0].score.trackedGames, 6);
+  assert.equal(corrected.match.completedSets[0].score.opponentGames, 3);
   assert.equal(corrected.match.firstServer, 'opponent');
   assert.notDeepEqual(
     corrected.match.points.map((point) => point.server),
     initial.match.points.map((point) => point.server),
   );
-  assert.deepEqual(corrected.match.points, initial.match.points);
+  assert.deepEqual(
+    corrected.match.points.map(({ server, ...point }) => point),
+    initial.match.points.map(({ server, ...point }) => point),
+  );
   assert.deepEqual(
     corrected.match.points.map((point) => point.server),
     ['opponent', 'opponent', 'opponent', 'opponent', 'tracked', 'tracked'],
@@ -1640,7 +1647,7 @@ test('multi-set point corrections refresh reports and preserve later-set data', 
   );
   assert.deepEqual(
     afterUndo.match.points.map((point) => point.server),
-    laterSetServers.slice(0, -1),
+    ['opponent', 'opponent', 'opponent', 'opponent', 'tracked'],
   );
   assertPointAnalysisInBothReports(afterUndo, {
     rallyTile: '1/57 (1.8%)',
