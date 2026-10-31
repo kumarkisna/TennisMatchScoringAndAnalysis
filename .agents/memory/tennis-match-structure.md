@@ -50,3 +50,9 @@ description: Product requirements for multi-set tennis records, tiebreak-only se
 **Why:** The user wants backup restore to add records without silently switching the player they are currently tracking.
 
 **How to apply:** Capture the active player before merging, map imported player and match IDs as needed, and test restoring a backup with a different active player while confirming new records import and the existing selection remains.
+
+**Rule:** Match point history and its active filter always apply to the selected set. Show all points newest first; break-point mode includes only saved or converted chances, and match-tiebreak sets have no break-point moments.
+
+**Why:** The user expects to review each set independently, retain the chosen history filter while switching sets, and see an explicit empty result for match tiebreaks.
+
+**How to apply:** Build history from the selected set's points and format, preserve the filter during set selection, and restore that set's own list when returning to it.

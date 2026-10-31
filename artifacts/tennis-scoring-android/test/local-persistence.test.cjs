@@ -1283,6 +1283,101 @@ test('point history filter keeps all points and lists saved or converted chances
   );
 });
 
+test('point history stays scoped to the selected set while switching filters', async () => {
+  storageValues.clear();
+  const { localMatches } = loadStorageModulesAfterRestart();
+  const match = await localMatches.createLocalMatch({
+    matchDate: '2026-10-31',
+    trackedPlayer: 'Sana Iyer',
+    opponent: 'Maya Rao',
+    surface: 'Hard',
+    firstServer: 'opponent',
+    setNumber: 1,
+  });
+  const firstSetWinners = [
+    'tracked',
+    'tracked',
+    'tracked',
+    'opponent',
+    'tracked',
+    ...Array.from({ length: 20 }, () => 'tracked'),
+  ];
+  for (const winner of firstSetWinners) {
+    await localMatches.recordLocalPoint(match.id, { winner });
+  }
+
+  const completedFirstSet = await localMatches.getLocalMatch(match.id);
+  assert.ok(completedFirstSet);
+  assert.equal(completedFirstSet.score.isComplete, true);
+  await localMatches.addLocalSet(match.id, 'match_tiebreak', 7);
+  await localMatches.recordLocalPoint(match.id, { winner: 'tracked' });
+  await localMatches.recordLocalPoint(match.id, { winner: 'opponent' });
+
+  const savedMatch = await localMatches.getLocalMatch(match.id);
+  assert.ok(savedMatch);
+  const sets = localMatches.getLocalSetHistory(savedMatch);
+  const firstSet = sets.find((set) => set.setNumber === 1);
+  const matchTiebreakSet = sets.find((set) => set.setNumber === 2);
+  assert.ok(firstSet);
+  assert.ok(matchTiebreakSet);
+
+  const firstSetAllPoints = localMatches.getLocalPointHistory(
+    firstSet.points,
+    firstSet.format,
+    'all',
+  );
+  assert.deepEqual(
+    firstSetAllPoints.map(({ point }) => point.sequenceNumber),
+    Array.from({ length: 25 }, (_, index) => 25 - index),
+  );
+  const firstSetBreakPoints = localMatches.getLocalPointHistory(
+    firstSet.points,
+    firstSet.format,
+    'break_points',
+  );
+  const firstSetBreakPointResults = firstSetBreakPoints.map(
+    ({ point, breakPointOutcome }) => [point.sequenceNumber, breakPointOutcome],
+  );
+  assert.deepEqual(firstSetBreakPointResults, [
+    [21, 'converted'],
+    [13, 'converted'],
+    [5, 'converted'],
+    [4, 'saved'],
+  ]);
+
+  const tieBreakAllPoints = localMatches.getLocalPointHistory(
+    matchTiebreakSet.points,
+    matchTiebreakSet.format,
+    'all',
+  );
+  assert.deepEqual(
+    tieBreakAllPoints.map(({ point }) => point.sequenceNumber),
+    [2, 1],
+  );
+  assert.deepEqual(
+    localMatches.getLocalPointHistory(
+      matchTiebreakSet.points,
+      matchTiebreakSet.format,
+      'break_points',
+    ),
+    [],
+  );
+
+  const firstSetBreakPointsAfterSwitchingBack =
+    localMatches.getLocalPointHistory(
+      firstSet.points,
+      firstSet.format,
+      'break_points',
+    );
+  assert.deepEqual(
+    firstSetBreakPointsAfterSwitchingBack.map(({ point, breakPointOutcome }) => [
+      point.sequenceNumber,
+      breakPointOutcome,
+    ]),
+    firstSetBreakPointResults,
+  );
+});
+
 test('match details expose accessible controls for all points and break-point moments', () => {
   const matchScreen = fs.readFileSync(
     path.join(__dirname, '../app/matches/[id].tsx'),
@@ -1296,6 +1391,18 @@ test('match details expose accessible controls for all points and break-point mo
   assert.match(
     matchScreen,
     /getLocalPointHistory\([\s\S]*?viewedSet\.format,\s*pointHistoryFilter/,
+  );
+  assert.match(
+    matchScreen,
+    /setHistory\.find\(\(set\) => set\.setNumber === selectedReviewSetNumber\) \?\? currentSet/,
+  );
+  assert.match(
+    matchScreen,
+    /setSelectedReviewSetNumber\(set\.isCurrent \? null : set\.setNumber\)/,
+  );
+  assert.match(
+    matchScreen,
+    /\}, \[matchId, matchQuery\.data\?\.setNumber\]\);/,
   );
   assert.match(
     matchScreen,
