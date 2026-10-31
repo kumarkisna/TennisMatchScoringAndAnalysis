@@ -767,6 +767,9 @@ export function buildPlayerReportHtml(
       .break-point-context-table th:nth-child(4), .break-point-context-table td:nth-child(4),
       .break-point-context-table th:nth-child(5), .break-point-context-table td:nth-child(5) { width: 19%; }
       .break-point-context-table th:nth-child(6), .break-point-context-table td:nth-child(6) { width: 36%; }
+      .break-point-context-table { break-inside: auto; page-break-inside: auto; }
+      .break-point-context-table thead { display: table-header-group; }
+      .break-point-context-table tr { break-inside: avoid; page-break-inside: avoid; }
       .set-performance-table th:first-child, .set-performance-table td:first-child { width: 8%; }
       .set-performance-table th:nth-child(2), .set-performance-table td:nth-child(2),
       .set-performance-table th:nth-child(3), .set-performance-table td:nth-child(3) { width: 15%; }

@@ -3887,6 +3887,35 @@ test('long match reports keep all set, feedback, observation, and shot details p
       },
     };
   });
+  const repeatedBreakPointGame =
+    breakPointSampleMatch().repeatedAdvantageChances;
+  const longPointSets = longSets.map((set) => {
+    const points =
+      set.format === 'standard'
+        ? Array.from({ length: 6 }, (_, gameIndex) =>
+            repeatedBreakPointGame.map((point, pointIndex) => {
+              const flipSides = gameIndex % 2 === 1;
+              const flipSide = (side) =>
+                flipSides
+                  ? side === 'tracked'
+                    ? 'opponent'
+                    : 'tracked'
+                  : side;
+              return {
+                ...point,
+                id: `long-set-${set.setNumber}-game-${gameIndex + 1}-point-${pointIndex + 1}`,
+                sequenceNumber:
+                  gameIndex * repeatedBreakPointGame.length + pointIndex + 1,
+                setNumber: set.setNumber,
+                gameNumber: gameIndex + 1,
+                server: flipSide(point.server),
+                winner: flipSide(point.winner),
+              };
+            }),
+          ).flat()
+        : [];
+    return { ...set, points };
+  });
   const html = buildPlayerReportHtml(
     {
       matchDate: '2026-10-30',
@@ -3896,6 +3925,10 @@ test('long match reports keep all set, feedback, observation, and shot details p
       opponent: 'Player B',
       surface: 'Hard',
       matchStatus: 'complete',
+      completedSets: longPointSets,
+      setNumber: 19,
+      setFormat: 'standard',
+      points: [],
     },
     {
       ...emptyInsight,
@@ -3969,8 +4002,27 @@ test('long match reports keep all set, feedback, observation, and shot details p
   assert.match(html, /Forehand winner/);
   assert.match(html, /Feedback 24:/);
   assert.match(html, /Point 144:/);
+  const breakPointRows = reportRowsAfterHeading(html, 'Break-point moments');
+  assert.equal(breakPointRows.length, 144);
+  assert.match(
+    breakPointRows[0],
+    /Set 1 Game 1 \d+ AD 40 (Saved by|Converted by) Player [AB]/,
+  );
+  assert.ok(breakPointRows.some((row) => /Set 17 Game 6/.test(row)));
   assert.match(html, /thead\s*\{\s*display:\s*table-header-group;/);
   assert.match(html, /tr\s*\{[^}]*page-break-inside:\s*avoid/);
+  assert.match(
+    html,
+    /\.break-point-context-table\s*\{[^}]*page-break-inside:\s*auto/,
+  );
+  assert.match(
+    html,
+    /\.break-point-context-table thead\s*\{[^}]*display:\s*table-header-group/,
+  );
+  assert.match(
+    html,
+    /\.break-point-context-table tr\s*\{[^}]*page-break-inside:\s*avoid/,
+  );
   assert.match(html, /h2\s*\{[^}]*page-break-after:\s*avoid/);
   assert.match(html, /h3\s*\{[^}]*page-break-after:\s*avoid/);
   assert.match(html, /th, td\s*\{[^}]*overflow-wrap:\s*anywhere/);
