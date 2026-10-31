@@ -3,9 +3,17 @@ import { useEffect, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useAppTheme } from '@/hooks/ThemeContext';
 import { useColors } from '@/hooks/useColors';
-import type { CustomThemeColors } from '@/lib/theme-presets';
+import { applyColorDepth, type CustomThemeColors } from '@/lib/theme-presets';
+import { ThemeSlider } from '@/components/ThemeSlider';
 
-type ColorKey = keyof CustomThemeColors;
+type ColorKey = 'primary' | 'accent' | 'background';
+type DepthKey = 'primaryDepth' | 'accentDepth' | 'backgroundDepth';
+
+const depthKeyForColor: Record<ColorKey, DepthKey> = {
+  primary: 'primaryDepth',
+  accent: 'accentDepth',
+  background: 'backgroundDepth',
+};
 
 const colorRoles: { key: ColorKey; label: string; options: string[] }[] = [
   {
@@ -40,21 +48,30 @@ function isValidHexColor(value: string) {
 
 export function CustomThemeEditor() {
   const colors = useColors();
-  const { themeId, themeLoaded, saveCustomTheme } = useAppTheme();
+  const { themeId, themeLoaded, customThemeColors, saveCustomTheme } =
+    useAppTheme();
   const [draft, setDraft] = useState<CustomThemeColors>({
     primary: colors.primary,
     accent: colors.accent,
     background: colors.background,
+    primaryDepth: 50,
+    accentDepth: 50,
+    backgroundDepth: 50,
   });
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    setDraft({
-      primary: colors.primary,
-      accent: colors.accent,
-      background: colors.background,
-    });
-  }, [themeId]);
+    setDraft(
+      customThemeColors ?? {
+        primary: colors.primary,
+        accent: colors.accent,
+        background: colors.background,
+        primaryDepth: 50,
+        accentDepth: 50,
+        backgroundDepth: 50,
+      },
+    );
+  }, [customThemeColors, themeId]);
 
   const valid = colorRoles.every(({ key }) => isValidHexColor(draft[key]));
 
@@ -123,6 +140,7 @@ export function CustomThemeEditor() {
           <View style={styles.swatches}>
             {options.map((option) => {
               const selected = draft[key].trim().toLowerCase() === option;
+              const depth = draft[depthKeyForColor[key]] ?? 50;
               return (
                 <Pressable
                   key={option}
@@ -134,7 +152,7 @@ export function CustomThemeEditor() {
                   style={[
                     styles.swatch,
                     {
-                      backgroundColor: option,
+                      backgroundColor: applyColorDepth(option, depth),
                       borderColor: selected ? colors.foreground : colors.border,
                       borderWidth: selected ? 2 : 1,
                     },
@@ -142,6 +160,52 @@ export function CustomThemeEditor() {
                 />
               );
             })}
+          </View>
+          <View style={styles.depthHeading}>
+            <Text style={[styles.depthLabel, { color: colors.mutedForeground }]}>
+              Color depth
+            </Text>
+            <View
+              style={[
+                styles.depthPreview,
+                {
+                  backgroundColor: isValidHexColor(draft[key])
+                    ? applyColorDepth(
+                        draft[key],
+                        draft[depthKeyForColor[key]] ?? 50,
+                      )
+                    : colors.muted,
+                  borderColor: colors.border,
+                },
+              ]}
+            />
+          </View>
+          <ThemeSlider
+            testID={`custom-theme-depth-${key}`}
+            label={`${label} color depth`}
+            value={draft[depthKeyForColor[key]] ?? 50}
+            color={colors.primary}
+            railColor={colors.border}
+            thumbSurfaceColor={colors.card}
+            shadowColor={colors.foreground}
+            disabled={!themeLoaded || isSaving}
+            onValueChange={(value) =>
+              setDraft((current) => ({
+                ...current,
+                [depthKeyForColor[key]]: value,
+              }))
+            }
+          />
+          <View style={styles.depthLabels}>
+            <Text style={[styles.depthCaption, { color: colors.mutedForeground }]}>
+              Softer
+            </Text>
+            <Text style={[styles.depthCaption, { color: colors.mutedForeground }]}>
+              Original
+            </Text>
+            <Text style={[styles.depthCaption, { color: colors.mutedForeground }]}>
+              Deeper
+            </Text>
           </View>
         </View>
       ))}
@@ -203,6 +267,19 @@ const styles = StyleSheet.create({
   },
   swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
   swatch: { width: 23, height: 23, borderRadius: 12 },
+  depthHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  depthLabel: { fontFamily: 'DMSans_600SemiBold', fontSize: 10 },
+  depthPreview: { width: 20, height: 20, borderRadius: 10, borderWidth: 1 },
+  depthLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: -4,
+  },
+  depthCaption: { fontFamily: 'DMSans_400Regular', fontSize: 9 },
   validation: { fontFamily: 'DMSans_500Medium', fontSize: 10 },
   applyButton: {
     minHeight: 42,

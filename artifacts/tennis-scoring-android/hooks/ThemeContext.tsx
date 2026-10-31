@@ -11,11 +11,15 @@ import { useColorScheme } from 'react-native';
 import {
   DEFAULT_THEME_ID,
   CUSTOM_THEME_ID,
+  DEFAULT_THEME_INTENSITY,
+  applyThemeIntensity,
   createCustomThemeTokens,
   getSavedCustomThemeColors,
+  getSavedThemeIntensity,
   getSavedThemeId,
   getThemePreset,
   isThemeId,
+  saveThemeIntensity as saveThemeIntensityToStorage,
   saveCustomThemeColors,
   saveThemeId,
   type CustomThemeColors,
@@ -25,9 +29,12 @@ import {
 interface AppThemeContextValue {
   themeId: string;
   themeLoaded: boolean;
+  themeIntensity: number;
   customThemeColors: CustomThemeColors | null;
   colors: ThemeTokens & { radius: number };
   selectTheme: (themeId: string) => Promise<void>;
+  setThemeIntensity: (intensity: number) => void;
+  persistThemeIntensity: (intensity: number) => Promise<void>;
   saveCustomTheme: (colors: CustomThemeColors) => Promise<void>;
 }
 
@@ -37,18 +44,24 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
   const colorScheme = useColorScheme();
   const [themeId, setThemeId] = useState(DEFAULT_THEME_ID);
   const [themeLoaded, setThemeLoaded] = useState(false);
+  const [themeIntensity, setThemeIntensityState] = useState(
+    DEFAULT_THEME_INTENSITY,
+  );
   const [customThemeColors, setCustomThemeColors] =
     useState<CustomThemeColors | null>(null);
 
   useEffect(() => {
     let isMounted = true;
-    void Promise.all([getSavedThemeId(), getSavedCustomThemeColors()])
-      .then(([storedThemeId, storedCustomColors]) => {
-        if (isMounted && isThemeId(storedThemeId)) {
-          setThemeId(storedThemeId);
-          setCustomThemeColors(
-            storedThemeId === CUSTOM_THEME_ID ? storedCustomColors : null,
-          );
+    void Promise.all([
+      getSavedThemeId(),
+      getSavedCustomThemeColors(),
+      getSavedThemeIntensity(),
+    ])
+      .then(([storedThemeId, storedCustomColors, storedIntensity]) => {
+        if (isMounted) {
+          if (isThemeId(storedThemeId)) setThemeId(storedThemeId);
+          setCustomThemeColors(storedCustomColors);
+          setThemeIntensityState(storedIntensity);
         }
       })
       .catch(() => {
@@ -62,10 +75,21 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const setThemeIntensity = useCallback((nextIntensity: number) => {
+    setThemeIntensityState(
+      Math.round(Math.max(0, Math.min(100, nextIntensity))),
+    );
+  }, []);
+
+  const persistThemeIntensity = useCallback(async (nextIntensity: number) => {
+    const normalized = Math.round(Math.max(0, Math.min(100, nextIntensity)));
+    await saveThemeIntensityToStorage(normalized);
+    setThemeIntensityState(normalized);
+  }, []);
+
   const selectTheme = useCallback(async (nextThemeId: string) => {
     await saveThemeId(nextThemeId);
     setThemeId(nextThemeId);
-    if (nextThemeId !== CUSTOM_THEME_ID) setCustomThemeColors(null);
   }, []);
 
   const saveCustomTheme = useCallback(async (nextColors: CustomThemeColors) => {
@@ -77,19 +101,24 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(() => {
     const preset = getThemePreset(themeId);
+    const baseTokens =
+      themeId === CUSTOM_THEME_ID && customThemeColors
+        ? createCustomThemeTokens(customThemeColors, colorScheme === 'dark')
+        : colorScheme === 'dark'
+          ? preset.dark
+          : preset.light;
     return {
       themeId,
       themeLoaded,
+      themeIntensity,
       customThemeColors,
       colors: {
-        ...(themeId === CUSTOM_THEME_ID && customThemeColors
-          ? createCustomThemeTokens(customThemeColors, colorScheme === 'dark')
-          : colorScheme === 'dark'
-            ? preset.dark
-            : preset.light),
+        ...applyThemeIntensity(baseTokens, themeIntensity),
         radius: 14,
       },
       selectTheme,
+      setThemeIntensity,
+      persistThemeIntensity,
       saveCustomTheme,
     };
   }, [
@@ -97,6 +126,9 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
     customThemeColors,
     saveCustomTheme,
     selectTheme,
+    persistThemeIntensity,
+    setThemeIntensity,
+    themeIntensity,
     themeId,
     themeLoaded,
   ]);

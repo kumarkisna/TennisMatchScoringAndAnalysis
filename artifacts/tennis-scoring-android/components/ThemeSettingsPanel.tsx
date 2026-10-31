@@ -5,10 +5,18 @@ import { useAppTheme } from '@/hooks/ThemeContext';
 import { useColors } from '@/hooks/useColors';
 import { THEME_GROUPS } from '@/lib/theme-presets';
 import { CustomThemeEditor } from '@/components/CustomThemeEditor';
+import { ThemeSlider } from '@/components/ThemeSlider';
 
 export function ThemeSettingsPanel() {
   const colors = useColors();
-  const { themeId, themeLoaded, selectTheme } = useAppTheme();
+  const {
+    themeId,
+    themeLoaded,
+    themeIntensity,
+    setThemeIntensity,
+    persistThemeIntensity,
+    selectTheme,
+  } = useAppTheme();
   const [savingThemeId, setSavingThemeId] = useState<string | null>(null);
 
   async function chooseTheme(nextThemeId: string) {
@@ -25,6 +33,17 @@ export function ThemeSettingsPanel() {
     }
   }
 
+  async function saveIntensity(value: number) {
+    try {
+      await persistThemeIntensity(value);
+    } catch (error) {
+      Alert.alert(
+        'Could not save theme tone',
+        error instanceof Error ? error.message : 'Please try again.',
+      );
+    }
+  }
+
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <View style={styles.heading}>
@@ -33,6 +52,55 @@ export function ThemeSettingsPanel() {
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
           Choose from 200 themes or build a palette from your own colors. Changes stay on this device.
         </Text>
+      </View>
+
+      <View
+        testID="theme-tone-control"
+        style={[
+          styles.toneCard,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+      >
+        <View style={styles.toneHeading}>
+          <View style={styles.toneCopy}>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+              Theme tone
+            </Text>
+            <Text style={[styles.sectionCaption, { color: colors.mutedForeground }]}>
+              Adjust the selected palette from softer to more vivid.
+            </Text>
+          </View>
+          <Text style={[styles.toneValue, { color: colors.primary }]}>
+            {themeIntensity < 45
+              ? 'Soft'
+              : themeIntensity > 55
+                ? 'Vivid'
+                : 'Original'}
+          </Text>
+        </View>
+        <ThemeSlider
+          testID="theme-intensity-slider"
+          label="Theme intensity"
+          value={themeIntensity}
+          color={colors.primary}
+          railColor={colors.border}
+          thumbSurfaceColor={colors.card}
+          shadowColor={colors.foreground}
+          disabled={!themeLoaded || savingThemeId !== null}
+          onValueChange={setThemeIntensity}
+          onSlidingComplete={(value) => void saveIntensity(value)}
+        />
+        <View style={styles.toneLabels}>
+          <Text style={[styles.sectionCaption, { color: colors.mutedForeground }]}>
+            Softer
+          </Text>
+          <Text style={[styles.sectionCaption, { color: colors.mutedForeground }]}>
+            Original
+          </Text>
+          <Text style={[styles.sectionCaption, { color: colors.mutedForeground }]}>
+            More vivid
+          </Text>
+        </View>
       </View>
 
       <View style={styles.sectionHeading}>
@@ -99,20 +167,28 @@ export function ThemeSettingsPanel() {
                   <View
                     style={[
                       styles.themeSwatch,
-                      { backgroundColor: preset.light.primary },
+                      {
+                        backgroundColor: selected
+                          ? colors.primary
+                          : preset.light.primary,
+                      },
                     ]}
                   >
                     <View
                       style={[
                         styles.themeAccent,
-                        { backgroundColor: preset.light.accent },
+                        {
+                          backgroundColor: selected
+                            ? colors.accent
+                            : preset.light.accent,
+                        },
                       ]}
                     />
                     {selected ? (
                       <Ionicons
                         name="checkmark"
                         size={11}
-                        color={preset.light.primaryForeground}
+                        color={colors.primaryForeground}
                       />
                     ) : null}
                   </View>
@@ -150,6 +226,27 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { fontFamily: 'DMSans_700Bold', fontSize: 14 },
   sectionCaption: { marginTop: 3, fontFamily: 'DMSans_400Regular', fontSize: 10 },
+  toneCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingTop: 11,
+    paddingBottom: 7,
+    marginBottom: 17,
+  },
+  toneHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  toneCopy: { flex: 1 },
+  toneValue: { fontFamily: 'DMSans_700Bold', fontSize: 10 },
+  toneLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: -2,
+  },
   totalCount: {
     minWidth: 36,
     height: 30,

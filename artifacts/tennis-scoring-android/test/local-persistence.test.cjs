@@ -2964,17 +2964,49 @@ test('two hundred classic and vibrant themes plus custom colors persist locally'
   await themes.saveThemeId('ocean-bold');
   assert.equal(await themes.getSavedThemeId(), 'ocean-bold');
   await assert.rejects(themes.saveThemeId('not-a-theme'), /available themes/);
+  assert.equal(await themes.getSavedThemeIntensity(), 50);
+  const defaultPreset = themes.getThemePreset('ocean-bold').light;
+  assert.deepEqual(
+    themes.applyThemeIntensity(defaultPreset, 50),
+    defaultPreset,
+  );
+  assert.notEqual(
+    themes.applyThemeIntensity(defaultPreset, 0).primary,
+    defaultPreset.primary,
+  );
+  assert.notEqual(
+    themes.applyThemeIntensity(defaultPreset, 100).accent,
+    defaultPreset.accent,
+  );
+  await themes.saveThemeIntensity(76);
+  assert.equal(await themes.getSavedThemeIntensity(), 76);
+  await assert.rejects(themes.saveThemeIntensity(101), /between 0 and 100/);
 
   const custom = {
     primary: '#AbC',
     accent: '#e6007e',
     background: '#f9f5ef',
   };
+  storageValues.set(
+    themes.CUSTOM_THEME_STORAGE_KEY,
+    JSON.stringify(custom),
+  );
+  assert.deepEqual(await themes.getSavedCustomThemeColors(), {
+    primary: '#aabbcc',
+    accent: '#e6007e',
+    background: '#f9f5ef',
+    primaryDepth: 50,
+    accentDepth: 50,
+    backgroundDepth: 50,
+  });
   await themes.saveCustomThemeColors(custom);
   assert.deepEqual(await themes.getSavedCustomThemeColors(), {
     primary: '#aabbcc',
     accent: '#e6007e',
     background: '#f9f5ef',
+    primaryDepth: 50,
+    accentDepth: 50,
+    backgroundDepth: 50,
   });
   await themes.saveThemeId(themes.CUSTOM_THEME_ID);
   assert.equal(await themes.getSavedThemeId(), themes.CUSTOM_THEME_ID);
@@ -2985,6 +3017,43 @@ test('two hundred classic and vibrant themes plus custom colors persist locally'
   assert.ok(customTokens.primaryForeground);
   assert.ok(customTokens.accentForeground);
   assert.ok(customTokens.foreground);
+  const deepCustomTokens = themes.createCustomThemeTokens(
+    {
+      ...custom,
+      primaryDepth: 100,
+      accentDepth: 20,
+      backgroundDepth: 80,
+    },
+    false,
+  );
+  assert.notEqual(deepCustomTokens.primary, customTokens.primary);
+  assert.notEqual(deepCustomTokens.accent, customTokens.accent);
+  assert.notEqual(deepCustomTokens.background, customTokens.background);
+  await themes.saveCustomThemeColors({
+    ...custom,
+    primaryDepth: 82,
+    accentDepth: 28,
+    backgroundDepth: 73,
+  });
+  assert.deepEqual(await themes.getSavedCustomThemeColors(), {
+    primary: '#aabbcc',
+    accent: '#e6007e',
+    background: '#f9f5ef',
+    primaryDepth: 82,
+    accentDepth: 28,
+    backgroundDepth: 73,
+  });
+  const darkCustomTokens = themes.createCustomThemeTokens(
+    {
+      ...custom,
+      primaryDepth: 82,
+      accentDepth: 28,
+      backgroundDepth: 73,
+    },
+    true,
+  );
+  assert.notEqual(darkCustomTokens.primary, customTokens.primary);
+  assert.notEqual(darkCustomTokens.background, '#000000');
   await assert.rejects(
     themes.saveCustomThemeColors({
       primary: 'red',
@@ -2993,4 +3062,20 @@ test('two hundred classic and vibrant themes plus custom colors persist locally'
     }),
     /valid 3- or 6-digit hex color/,
   );
+
+  const settingsSource = fs.readFileSync(
+    path.join(__dirname, '../components/ThemeSettingsPanel.tsx'),
+    'utf8',
+  );
+  const customEditorSource = fs.readFileSync(
+    path.join(__dirname, '../components/CustomThemeEditor.tsx'),
+    'utf8',
+  );
+  const sliderSource = fs.readFileSync(
+    path.join(__dirname, '../components/ThemeSlider.tsx'),
+    'utf8',
+  );
+  assert.match(settingsSource, /testID="theme-intensity-slider"/);
+  assert.match(customEditorSource, /custom-theme-depth-\$\{key\}/);
+  assert.match(sliderSource, /accessibilityRole="adjustable"/);
 });

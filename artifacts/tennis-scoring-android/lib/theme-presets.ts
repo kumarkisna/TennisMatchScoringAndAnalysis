@@ -35,6 +35,9 @@ export interface CustomThemeColors {
   primary: string;
   accent: string;
   background: string;
+  primaryDepth?: number;
+  accentDepth?: number;
+  backgroundDepth?: number;
 }
 
 interface ThemeFamily {
@@ -113,6 +116,9 @@ const vibrantVariants: ThemeVariant[] = [
 
 export const DEFAULT_THEME_ID = 'court-green-classic';
 export const CUSTOM_THEME_ID = 'custom-palette';
+export const DEFAULT_THEME_INTENSITY = 50;
+export const THEME_INTENSITY_STORAGE_KEY =
+  '@tennis-scoring/theme-intensity-v1';
 
 function hslToHex(hue: number, saturation: number, lightness: number): string {
   const h = ((hue % 360) + 360) % 360;
@@ -285,6 +291,50 @@ export function getThemePreset(themeId: string): ThemePreset {
     THEME_PRESETS.find((theme) => theme.id === DEFAULT_THEME_ID)!;
 }
 
+export async function getSavedThemeIntensity(): Promise<number> {
+  const value = await AsyncStorage.getItem(THEME_INTENSITY_STORAGE_KEY);
+  if (value === null) return DEFAULT_THEME_INTENSITY;
+  const parsed = Number(value);
+  return Number.isFinite(parsed)
+    ? Math.round(Math.max(0, Math.min(100, parsed)))
+    : DEFAULT_THEME_INTENSITY;
+}
+
+export async function saveThemeIntensity(value: number): Promise<void> {
+  if (!Number.isFinite(value) || value < 0 || value > 100) {
+    throw new Error('Theme intensity must be between 0 and 100.');
+  }
+  await AsyncStorage.setItem(
+    THEME_INTENSITY_STORAGE_KEY,
+    String(Math.round(value)),
+  );
+}
+
+export function applyThemeIntensity(
+  tokens: ThemeTokens,
+  intensity: number,
+): ThemeTokens {
+  const normalizedIntensity = Math.round(Math.max(0, Math.min(100, intensity)));
+  if (normalizedIntensity === DEFAULT_THEME_INTENSITY) return tokens;
+
+  const primaryFactor = 0.35 + (normalizedIntensity / 100) * 1.3;
+  const secondaryFactor = 0.65 + (normalizedIntensity / 100) * 0.7;
+  const primary = scaleSaturation(tokens.primary, primaryFactor);
+  const accent = scaleSaturation(tokens.accent, primaryFactor);
+  return {
+    ...tokens,
+    tint: primary,
+    primary,
+    primaryForeground: readableForeground(primary),
+    accent,
+    accentForeground: readableForeground(accent),
+    secondary: scaleSaturation(tokens.secondary, secondaryFactor),
+    muted: scaleSaturation(tokens.muted, secondaryFactor),
+    border: scaleSaturation(tokens.border, secondaryFactor),
+    input: scaleSaturation(tokens.input, secondaryFactor),
+  };
+}
+
 export async function getSavedThemeId(): Promise<string> {
   const savedThemeId = await AsyncStorage.getItem(SELECTED_THEME_STORAGE_KEY);
   if (savedThemeId === CUSTOM_THEME_ID && !(await getSavedCustomThemeColors())) {
@@ -308,7 +358,15 @@ export async function getSavedCustomThemeColors(): Promise<CustomThemeColors | n
   if (!serialized) return null;
   try {
     const colors = JSON.parse(serialized) as unknown;
-    return isCustomThemeColors(colors) ? colors : null;
+    if (!isCustomThemeColors(colors)) return null;
+    return {
+      primary: normalizeHexColor(colors.primary),
+      accent: normalizeHexColor(colors.accent),
+      background: normalizeHexColor(colors.background),
+      primaryDepth: normalizeDepth(colors.primaryDepth),
+      accentDepth: normalizeDepth(colors.accentDepth),
+      backgroundDepth: normalizeDepth(colors.backgroundDepth),
+    };
   } catch {
     return null;
   }
@@ -324,6 +382,9 @@ export async function saveCustomThemeColors(
     primary: normalizeHexColor(colors.primary),
     accent: normalizeHexColor(colors.accent),
     background: normalizeHexColor(colors.background),
+    primaryDepth: normalizeDepth(colors.primaryDepth),
+    accentDepth: normalizeDepth(colors.accentDepth),
+    backgroundDepth: normalizeDepth(colors.backgroundDepth),
   };
   await AsyncStorage.setItem(CUSTOM_THEME_STORAGE_KEY, JSON.stringify(normalized));
 }
@@ -332,12 +393,24 @@ export function createCustomThemeTokens(
   palette: CustomThemeColors,
   dark: boolean,
 ): ThemeTokens {
-  const backgroundHue = hueFromHex(palette.background);
+  const backgroundDepth = normalizeDepth(palette.backgroundDepth);
+  const backgroundColor = applyColorDepth(palette.background, backgroundDepth);
+  const backgroundHue = hslFromHex(backgroundColor).hue;
   const background = dark
-    ? hslToHex(backgroundHue, 29, 10)
-    : normalizeHexColor(palette.background);
-  const primary = normalizeHexColor(palette.primary);
-  const accent = normalizeHexColor(palette.accent);
+    ? hslToHex(
+        backgroundHue,
+        Math.max(12, Math.min(44, 29 + (backgroundDepth - 50) * 0.2)),
+        Math.max(8, Math.min(13, 10 + (backgroundDepth - 50) * 0.06)),
+      )
+    : backgroundColor;
+  const primary = applyColorDepth(
+    palette.primary,
+    normalizeDepth(palette.primaryDepth),
+  );
+  const accent = applyColorDepth(
+    palette.accent,
+    normalizeDepth(palette.accentDepth),
+  );
   const foreground = dark ? '#f7f5f2' : readableForeground(background);
   const secondary = dark ? '#252d38' : '#ffffff';
   const muted = dark ? hslToHex(backgroundHue, 20, 22) : hslToHex(210, 12, 95);
@@ -367,11 +440,24 @@ export function createCustomThemeTokens(
 function isCustomThemeColors(value: unknown): value is CustomThemeColors {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Record<string, unknown>;
-  return ['primary', 'accent', 'background'].every(
+  const validColors = ['primary', 'accent', 'background'].every(
     (key) =>
       typeof candidate[key] === 'string' &&
       /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(candidate[key] as string),
   );
+  const validDepths = [
+    'primaryDepth',
+    'accentDepth',
+    'backgroundDepth',
+  ].every(
+    (key) =>
+      candidate[key] === undefined ||
+      (typeof candidate[key] === 'number' &&
+        Number.isFinite(candidate[key]) &&
+        candidate[key] >= 0 &&
+        candidate[key] <= 100),
+  );
+  return validColors && validDepths;
 }
 
 function normalizeHexColor(value: string): string {
@@ -382,7 +468,32 @@ function normalizeHexColor(value: string): string {
   return hex;
 }
 
-function hueFromHex(value: string): number {
+export function applyColorDepth(value: string, depth: number): string {
+  const normalizedDepth = normalizeDepth(depth);
+  if (normalizedDepth === 50) return normalizeHexColor(value);
+  const { hue, saturation, lightness } = hslFromHex(value);
+  const direction = (normalizedDepth - 50) / 50;
+  return hslToHex(
+    hue,
+    Math.max(0, Math.min(100, saturation * (1 + direction * 0.55))),
+    Math.max(0, Math.min(100, lightness - direction * 12)),
+  );
+}
+
+function scaleSaturation(value: string, factor: number): string {
+  const { hue, saturation, lightness } = hslFromHex(value);
+  return hslToHex(
+    hue,
+    Math.max(0, Math.min(100, saturation * factor)),
+    lightness,
+  );
+}
+
+function hslFromHex(value: string): {
+  hue: number;
+  saturation: number;
+  lightness: number;
+} {
   const hex = normalizeHexColor(value).slice(1);
   const [red, green, blue] = hex.match(/.{2}/g)!.map(
     (channel) => parseInt(channel, 16) / 255,
@@ -390,8 +501,26 @@ function hueFromHex(value: string): number {
   const max = Math.max(red!, green!, blue!);
   const min = Math.min(red!, green!, blue!);
   const delta = max - min;
-  if (delta === 0) return 0;
-  if (max === red) return ((60 * ((green! - blue!) / delta) + 360) % 360);
-  if (max === green) return 60 * ((blue! - red!) / delta + 2);
-  return 60 * ((red! - green!) / delta + 4);
+  const lightness = (max + min) / 2;
+  const saturation =
+    delta === 0 ? 0 : delta / (1 - Math.abs(2 * lightness - 1));
+  const hue =
+    delta === 0
+      ? 0
+      : max === red
+        ? (60 * ((green! - blue!) / delta) + 360) % 360
+        : max === green
+          ? 60 * ((blue! - red!) / delta + 2)
+          : 60 * ((red! - green!) / delta + 4);
+  return {
+    hue,
+    saturation: saturation * 100,
+    lightness: lightness * 100,
+  };
+}
+
+function normalizeDepth(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.round(Math.max(0, Math.min(100, value)))
+    : 50;
 }
