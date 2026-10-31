@@ -16,6 +16,7 @@ export function ReportAnonymityToggle({
   labelsDirty,
   labelsSaving,
   labelsError,
+  visibilityError,
   onLabelsChange,
   onSaveLabels,
 }: {
@@ -28,6 +29,7 @@ export function ReportAnonymityToggle({
   labelsDirty: boolean;
   labelsSaving: boolean;
   labelsError: string;
+  visibilityError: string;
   onLabelsChange: (labels: LocalReportNameLabels) => void;
   onSaveLabels: () => void;
 }) {
@@ -129,12 +131,12 @@ export function ReportAnonymityToggle({
           <Text style={[styles.hint, { color: colors.mutedForeground }]}>
             Stored only on this device and used in both report types. Do not enter real names.
           </Text>
-          {validationError || labelsError ? (
+          {validationError || labelsError || visibilityError ? (
             <Text
               accessibilityRole="alert"
               style={[styles.error, { color: colors.destructive }]}
             >
-              {validationError ?? labelsError}
+              {validationError ?? labelsError ?? visibilityError}
             </Text>
           ) : null}
           <Pressable
@@ -161,6 +163,13 @@ export function ReportAnonymityToggle({
             </Text>
           </Pressable>
         </View>
+      ) : visibilityError ? (
+        <Text
+          accessibilityRole="alert"
+          style={[styles.error, { color: colors.destructive }]}
+        >
+          {visibilityError}
+        </Text>
       ) : null}
     </View>
   );

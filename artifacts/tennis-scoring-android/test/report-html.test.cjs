@@ -127,6 +127,10 @@ const playerMatchScreenSource = fs.readFileSync(
   path.join(__dirname, '../app/matches/[id].tsx'),
   'utf8',
 );
+const reportNameVisibilityHookSource = fs.readFileSync(
+  path.join(__dirname, '../hooks/useLocalReportNameVisibility.ts'),
+  'utf8',
+);
 const reportSectionPickerSource = fs.readFileSync(
   path.join(__dirname, '../components/ReportSectionPicker.tsx'),
   'utf8',
@@ -208,6 +212,33 @@ test('single-match and head-to-head report pickers expose saved local layouts', 
   assert.match(localReportLayoutManagerSource, /deleteLocalReportLayout\(/);
   assert.match(localReportLayoutManagerSource, /onApply\(validSections\)/);
   assert.match(localReportLayoutManagerSource, /LOCAL_REPORT_LAYOUTS_KEY/);
+});
+
+test('both report screens use the same saved local hide-names preference', () => {
+  for (const screenSource of [playerMatchScreenSource, headToHeadScreenSource]) {
+    assert.match(screenSource, /useLocalReportNameVisibility/);
+    assert.match(screenSource, /reportNameVisibility\.toggle/);
+    assert.match(screenSource, /reportNameVisibility\.isReady/);
+    assert.match(screenSource, /reportNameVisibility\.isSaving/);
+    assert.match(
+      screenSource,
+      /getReportNameVisibilityVersion\(\s*hidePlayerNames/,
+    );
+    assert.match(screenSource, /!reportLabelsReady/);
+  }
+
+  assert.match(
+    reportNameVisibilityHookSource,
+    /LOCAL_REPORT_NAME_VISIBILITY_KEY/,
+  );
+  assert.match(
+    reportNameVisibilityHookSource,
+    /saveLocalReportHideNamesPreference/,
+  );
+  assert.match(
+    reportNameVisibilityHookSource,
+    /queryClient\.setQueryData\(\s*LOCAL_REPORT_NAME_VISIBILITY_KEY,\s*hidePlayerNames/s,
+  );
 });
 
 const emptySide = {

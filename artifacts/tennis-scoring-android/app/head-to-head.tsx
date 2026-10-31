@@ -14,6 +14,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useLocalReportNameLabels } from '@/hooks/useLocalReportNameLabels';
+import { useLocalReportNameVisibility } from '@/hooks/useLocalReportNameVisibility';
 import { ReportAnonymityToggle } from '@/components/ReportAnonymityToggle';
 import { ReportSectionPicker } from '@/components/ReportSectionPicker';
 import {
@@ -335,6 +336,8 @@ function StatTable({
 export default function HeadToHeadScreen() {
   const colors = useColors();
   const reportNameLabels = useLocalReportNameLabels();
+  const reportNameVisibility = useLocalReportNameVisibility();
+  const hidePlayerNames = reportNameVisibility.hidePlayerNames;
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [trackedOverride, setTrackedOverride] = useState('');
@@ -348,7 +351,6 @@ export default function HeadToHeadScreen() {
   const [reportError, setReportError] = useState('');
   const [selectedReportSections, setSelectedReportSections] =
     useState<HeadToHeadReportSection[]>(allHeadToHeadReportSections);
-  const [hidePlayerNames, setHidePlayerNames] = useState(false);
 
   const matchesQuery = useQuery({
     queryKey: LOCAL_MATCH_LIST_KEY,
@@ -475,8 +477,10 @@ export default function HeadToHeadScreen() {
     : null;
   const isReportBusy = reportAction !== null;
   const reportLabelsReady =
-    !hidePlayerNames ||
-    (reportNameLabels.isReady && reportNameLabels.isValid);
+    reportNameVisibility.isReady &&
+    !reportNameVisibility.isSaving &&
+    (!hidePlayerNames ||
+      (reportNameLabels.isReady && reportNameLabels.isValid));
 
   const trackedServe = report?.insights.serveStats.tracked;
   const opponentServe = report?.insights.serveStats.opponent;
@@ -1007,13 +1011,18 @@ export default function HeadToHeadScreen() {
             <ReportAnonymityToggle
               testID="head-to-head-report-hide-names"
               hidePlayerNames={hidePlayerNames}
-              disabled={isReportBusy}
-              onToggle={() => setHidePlayerNames((current) => !current)}
+              disabled={
+                isReportBusy ||
+                !reportNameVisibility.isReady ||
+                reportNameVisibility.isSaving
+              }
+              onToggle={reportNameVisibility.toggle}
               labels={reportNameLabels.labels}
               labelsReady={reportNameLabels.isReady}
               labelsDirty={reportNameLabels.isDirty}
               labelsSaving={reportNameLabels.isSaving}
               labelsError={reportNameLabels.errorMessage}
+              visibilityError={reportNameVisibility.errorMessage}
               onLabelsChange={reportNameLabels.onChange}
               onSaveLabels={reportNameLabels.save}
             />

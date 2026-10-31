@@ -27,6 +27,7 @@ import { ReportAnonymityToggle } from '@/components/ReportAnonymityToggle';
 import { ReportSectionPicker } from '@/components/ReportSectionPicker';
 import { useColors } from '@/hooks/useColors';
 import { useLocalReportNameLabels } from '@/hooks/useLocalReportNameLabels';
+import { useLocalReportNameVisibility } from '@/hooks/useLocalReportNameVisibility';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import {
@@ -420,6 +421,8 @@ function MatrixLaneLabel({
 export default function MatchScreen() {
   const colors = useColors();
   const reportNameLabels = useLocalReportNameLabels();
+  const reportNameVisibility = useLocalReportNameVisibility();
+  const hidePlayerNames = reportNameVisibility.hidePlayerNames;
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
@@ -449,7 +452,6 @@ export default function MatchScreen() {
   } | null>(null);
   const [selectedReportSections, setSelectedReportSections] =
     useState<PlayerReportSection[]>(allPlayerReportSections);
-  const [hidePlayerNames, setHidePlayerNames] = useState(false);
   const [reportExportError, setReportExportError] = useState('');
   const [customTiebreakTarget, setCustomTiebreakTarget] = useState('');
   const [selectedReviewSetNumber, setSelectedReviewSetNumber] = useState<number | null>(null);
@@ -627,8 +629,10 @@ export default function MatchScreen() {
     (Platform.OS === 'web' || Boolean(reviewedReport?.uri));
   const isReportBusy = reportAction !== null;
   const reportLabelsReady =
-    !hidePlayerNames ||
-    (reportNameLabels.isReady && reportNameLabels.isValid);
+    reportNameVisibility.isReady &&
+    !reportNameVisibility.isSaving &&
+    (!hidePlayerNames ||
+      (reportNameLabels.isReady && reportNameLabels.isValid));
   const setHistory = match ? getLocalSetHistory(match) : [];
   const currentSet = setHistory.find((set) => set.isCurrent);
   const displayedSet =
@@ -2815,13 +2819,18 @@ export default function MatchScreen() {
         <ReportAnonymityToggle
           testID="player-report-hide-names"
           hidePlayerNames={hidePlayerNames}
-          disabled={isReportBusy}
-          onToggle={() => setHidePlayerNames((current) => !current)}
+          disabled={
+            isReportBusy ||
+            !reportNameVisibility.isReady ||
+            reportNameVisibility.isSaving
+          }
+          onToggle={reportNameVisibility.toggle}
           labels={reportNameLabels.labels}
           labelsReady={reportNameLabels.isReady}
           labelsDirty={reportNameLabels.isDirty}
           labelsSaving={reportNameLabels.isSaving}
           labelsError={reportNameLabels.errorMessage}
+          visibilityError={reportNameVisibility.errorMessage}
           onLabelsChange={reportNameLabels.onChange}
           onSaveLabels={reportNameLabels.save}
         />

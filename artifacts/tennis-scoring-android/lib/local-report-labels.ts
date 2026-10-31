@@ -11,8 +11,13 @@ export const DEFAULT_LOCAL_REPORT_NAME_LABELS: LocalReportNameLabels = {
 };
 
 export const LOCAL_REPORT_NAME_LABELS_KEY = ['device-report-name-labels'] as const;
+export const LOCAL_REPORT_NAME_VISIBILITY_KEY = [
+  'device-report-name-visibility',
+] as const;
 
 const STORAGE_KEY = '@tennis-scoring/report-name-labels/record-v1';
+const VISIBILITY_STORAGE_KEY =
+  '@tennis-scoring/report-name-visibility/record-v1';
 let writeQueue = Promise.resolve();
 
 function withWriteLock<T>(operation: () => Promise<T>): Promise<T> {
@@ -92,5 +97,27 @@ export function saveLocalReportNameLabels(
     const labels = normalizeLabels(input);
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(labels));
     return labels;
+  });
+}
+
+export function getLocalReportHideNamesPreference(): Promise<boolean> {
+  return withWriteLock(async () => {
+    const raw = await AsyncStorage.getItem(VISIBILITY_STORAGE_KEY);
+    if (raw === null) return false;
+    if (raw === 'true') return true;
+    if (raw === 'false') return false;
+    throw new Error('Saved report privacy preference is damaged. No data was changed.');
+  });
+}
+
+export function saveLocalReportHideNamesPreference(
+  hidePlayerNames: boolean,
+): Promise<boolean> {
+  return withWriteLock(async () => {
+    if (typeof hidePlayerNames !== 'boolean') {
+      throw new Error('Report privacy preference must be true or false.');
+    }
+    await AsyncStorage.setItem(VISIBILITY_STORAGE_KEY, String(hidePlayerNames));
+    return hidePlayerNames;
   });
 }

@@ -2937,6 +2937,43 @@ test('custom neutral report labels stay local and survive app restart', async (t
   assert.equal(networkRequestCount, 0);
 });
 
+test('hide-names choice stays local and survives leaving and reopening reports', async (t) => {
+  storageValues.clear();
+  const originalFetch = global.fetch;
+  let networkRequestCount = 0;
+  global.fetch = async () => {
+    networkRequestCount += 1;
+    throw new Error('Report privacy preferences must stay on this device.');
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const beforeRestart = loadStorageModulesAfterRestart().localReportNameLabels;
+  assert.equal(await beforeRestart.getLocalReportHideNamesPreference(), false);
+  assert.equal(
+    await beforeRestart.saveLocalReportHideNamesPreference(true),
+    true,
+  );
+  assert.deepEqual([...storageValues.entries()], [
+    ['@tennis-scoring/report-name-visibility/record-v1', 'true'],
+  ]);
+
+  const reopenedReportSettings =
+    loadStorageModulesAfterRestart().localReportNameLabels;
+  assert.equal(await reopenedReportSettings.getLocalReportHideNamesPreference(), true);
+  assert.equal(
+    await reopenedReportSettings.saveLocalReportHideNamesPreference(false),
+    false,
+  );
+  assert.equal(
+    await loadStorageModulesAfterRestart()
+      .localReportNameLabels.getLocalReportHideNamesPreference(),
+    false,
+  );
+  assert.equal(networkRequestCount, 0);
+});
+
 test('named report layouts can be created, renamed, removed, and reused offline', async (t) => {
   storageValues.clear();
   const originalFetch = global.fetch;
