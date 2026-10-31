@@ -1269,6 +1269,159 @@ test('head-to-head break-point rates compare each surface and separate missing l
   ]);
 });
 
+test('head-to-head match outcomes count only saved winners and status for each surface', () => {
+  const hardWin = breakPointMeeting(
+    'hard-win',
+    'Alex',
+    'Bailey',
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    '2026-10-01',
+    'Hard',
+  );
+  const hardLoss = breakPointMeeting(
+    'hard-loss',
+    'Alex',
+    'Bailey',
+    { opportunities: 9, converted: 9, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    '2026-10-02',
+    'Hard',
+  );
+  hardLoss.summary.winner = 'opponent';
+  const hardNoWinner = breakPointMeeting(
+    'hard-no-winner',
+    'Alex',
+    'Bailey',
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    '2026-10-03',
+    'Hard',
+  );
+  hardNoWinner.summary.winner = null;
+  const hardInProgress = breakPointMeeting(
+    'hard-in-progress',
+    'Alex',
+    'Bailey',
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    '2026-10-04',
+    'Hard',
+  );
+  hardInProgress.summary.status = 'in_progress';
+  hardInProgress.summary.winner = 'tracked';
+  const clayWin = breakPointMeeting(
+    'clay-win',
+    'Alex',
+    'Bailey',
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    '2026-10-05',
+    'Clay',
+  );
+  const grassLoss = breakPointMeeting(
+    'grass-loss',
+    'Alex',
+    'Bailey',
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    '2026-10-06',
+    'Grass',
+  );
+  grassLoss.summary.winner = 'opponent';
+  const carpetNoWinner = breakPointMeeting(
+    'carpet-no-winner',
+    'Alex',
+    'Bailey',
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    '2026-10-07',
+    'Carpet',
+  );
+  carpetNoWinner.summary.winner = null;
+  const otherInProgress = breakPointMeeting(
+    'other-in-progress',
+    'Alex',
+    'Bailey',
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    '2026-10-08',
+    'Other',
+  );
+  otherInProgress.summary.status = 'in_progress';
+  otherInProgress.summary.winner = null;
+
+  const report = buildHeadToHeadReport('Alex', 'Bailey', [
+    hardWin,
+    hardLoss,
+    hardNoWinner,
+    hardInProgress,
+    clayWin,
+    grassLoss,
+    carpetNoWinner,
+    otherInProgress,
+  ]);
+
+  assert.deepEqual(report.matchOutcomesBySurface, [
+    {
+      surface: 'Hard',
+      matchCount: 4,
+      wins: 1,
+      losses: 1,
+      completedWithoutWinner: 1,
+      inProgress: 1,
+    },
+    {
+      surface: 'Clay',
+      matchCount: 1,
+      wins: 1,
+      losses: 0,
+      completedWithoutWinner: 0,
+      inProgress: 0,
+    },
+    {
+      surface: 'Grass',
+      matchCount: 1,
+      wins: 0,
+      losses: 1,
+      completedWithoutWinner: 0,
+      inProgress: 0,
+    },
+    {
+      surface: 'Carpet',
+      matchCount: 1,
+      wins: 0,
+      losses: 0,
+      completedWithoutWinner: 1,
+      inProgress: 0,
+    },
+    {
+      surface: 'Other',
+      matchCount: 1,
+      wins: 0,
+      losses: 0,
+      completedWithoutWinner: 0,
+      inProgress: 1,
+    },
+  ]);
+
+  const html = buildHeadToHeadReportHtml(report);
+  assert.deepEqual(
+    reportRows(html, 'Head-to-head match outcomes by court surface'),
+    [
+      'Wins 1 1 0 0 0',
+      'Losses 1 0 1 0 0',
+      'Complete without a clear winner 1 0 0 1 0',
+      'In progress 1 0 0 0 1',
+      'Matches recorded 4 1 1 1 1',
+    ],
+  );
+  assert.match(
+    html,
+    /Counts use each saved match's status and recorded winner only, not point statistics/,
+  );
+});
+
 test('head-to-head break-point rates are unavailable for empty samples', () => {
   const noChances = breakPointMeeting(
     'alex-bailey-no-break-points',

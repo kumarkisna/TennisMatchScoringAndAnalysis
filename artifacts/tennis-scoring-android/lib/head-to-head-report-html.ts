@@ -623,6 +623,31 @@ export function buildHeadToHeadReportHtml(
       ),
     ],
   ]);
+  const matchOutcomesBySurface = report.matchOutcomesBySurface ?? [];
+  const matchOutcomeSurfaceRows = tableRows([
+    [
+      'Wins',
+      ...matchOutcomesBySurface.map(({ wins }) => String(wins)),
+    ],
+    [
+      'Losses',
+      ...matchOutcomesBySurface.map(({ losses }) => String(losses)),
+    ],
+    [
+      'Complete without a clear winner',
+      ...matchOutcomesBySurface.map(({ completedWithoutWinner }) =>
+        String(completedWithoutWinner),
+      ),
+    ],
+    [
+      'In progress',
+      ...matchOutcomesBySurface.map(({ inProgress }) => String(inProgress)),
+    ],
+    [
+      'Matches recorded',
+      ...matchOutcomesBySurface.map(({ matchCount }) => String(matchCount)),
+    ],
+  ]);
 
   const matchRows = report.meetings
     .map((meeting) => {
@@ -849,6 +874,12 @@ export function buildHeadToHeadReportHtml(
       <h3>${escapeHtml(trackedPlayer)} · personal average</h3>
       <p class="note">Pooled break-point chances across ${report.personalAverageMatches} saved ${report.personalAverageMatches === 1 ? 'match' : 'matches'} where this player was recorded as the tracked player, including this pairing when present.</p>
       <table><thead><tr><th>Statistic</th><th>Personal average</th></tr></thead><tbody>${personalBreakPointRows}</tbody></table>
+       <h3>Head-to-head match outcomes by court surface</h3>
+       <p class="note">Counts use each saved match's status and recorded winner only, not point statistics. Completed matches without a clear winner and matches in progress are listed separately.</p>
+       <table class="surface-break-point-table">
+         <thead><tr><th>Statistic</th>${matchOutcomesBySurface.map(({ surface }) => `<th>${escapeHtml(surface)}</th>`).join('')}</tr></thead>
+         <tbody>${matchOutcomeSurfaceRows}</tbody>
+       </table>
        <h3>Head-to-head break-point rates by court surface</h3>
        <p class="note">Rates pool recorded chances from this pairing on each surface. Match counts include meetings without point logs; the logged-match count shows how many matches contribute point samples. No point log and No chances are unavailable, not zero performance.</p>
        <table class="surface-break-point-table">

@@ -45,6 +45,15 @@ export interface HeadToHeadSurfaceBreakPoints {
   opponent: BreakPointStats;
 }
 
+export interface HeadToHeadSurfaceMatchOutcomes {
+  surface: PersonalAverageCourtSurface;
+  matchCount: number;
+  wins: number;
+  losses: number;
+  completedWithoutWinner: number;
+  inProgress: number;
+}
+
 export const PERSONAL_AVERAGE_COURT_SURFACES = [
   'Hard',
   'Clay',
@@ -76,6 +85,7 @@ export interface HeadToHeadReport {
   personalAverageMatches: number;
   personalAverageBreakPointsBySurface: SurfaceBreakPointBaseline[];
   breakPointsBySurface: HeadToHeadSurfaceBreakPoints[];
+  matchOutcomesBySurface: HeadToHeadSurfaceMatchOutcomes[];
 }
 
 function normalizeName(value: string): string {
@@ -357,6 +367,32 @@ export function buildHeadToHeadReport(
       };
     },
   );
+  const matchOutcomesBySurface = PERSONAL_AVERAGE_COURT_SURFACES.map(
+    (surface) => {
+      const surfaceMeetings = meetings.filter(
+        ({ summary }) => summary.surface === surface,
+      );
+      const completedSurfaceMeetings = surfaceMeetings.filter(
+        ({ summary }) => summary.status === 'complete',
+      );
+      return {
+        surface,
+        matchCount: surfaceMeetings.length,
+        wins: completedSurfaceMeetings.filter(
+          ({ summary }) => summary.winner === 'tracked',
+        ).length,
+        losses: completedSurfaceMeetings.filter(
+          ({ summary }) => summary.winner === 'opponent',
+        ).length,
+        completedWithoutWinner: completedSurfaceMeetings.filter(
+          ({ summary }) => summary.winner === null,
+        ).length,
+        inProgress: surfaceMeetings.filter(
+          ({ summary }) => summary.status !== 'complete',
+        ).length,
+      };
+    },
+  );
   const completeMeetings = meetings.filter(
     (meeting) => meeting.summary.status === 'complete',
   );
@@ -419,5 +455,6 @@ export function buildHeadToHeadReport(
     personalAverageMatches: pointSampledPersonalMeetings.length,
     personalAverageBreakPointsBySurface,
     breakPointsBySurface,
+    matchOutcomesBySurface,
   };
 }
