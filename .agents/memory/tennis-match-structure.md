@@ -27,6 +27,12 @@ description: Product requirements for multi-set tennis records, tiebreak-only se
 
 **How to apply:** Keep backup validation aligned with the scoring engine for standard games, standard-set tiebreaks, and match-tiebreak sets.
 
+**Rule:** An ace must award the point to that point's server, and a double fault must award it to the returner. Validate the pairing during new point saves and point-winner corrections using the actual game or tiebreak serve order.
+
+**Why:** The user requires these combinations to be rejected before they can create false serve statistics or reports; ATP describes an ace as an untouched legal serve, and ITF Rule 24 awards the point after two consecutive service faults to the receiver.
+
+**How to apply:** Reject mismatches at the on-device storage boundary and show an inline correction message without clearing point-entry details. Replayed corrections must re-check each point against its recalculated server; do not count invalid legacy ace/double-fault tags in analytics.
+
 **Rule:** Only completed sets with an unambiguous format-specific score count toward a match winner. Tied set scores have no named set winner, tied set totals have no named match winner, and in-progress matches stay labeled in progress.
 
 **Why:** The user asked to prevent false winner labels when set scores are tied or the match is unfinished.

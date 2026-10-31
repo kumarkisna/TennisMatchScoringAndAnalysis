@@ -210,6 +210,20 @@ export interface NewLocalPoint {
 
 const strokeTypes = STROKE_TYPE_OPTIONS.map(({ value }) => value);
 
+export function getLocalPointEndingCodeValidationError(
+  server: PlayerSide,
+  winner: PlayerSide,
+  endingCode: PointCode | null | undefined,
+): string | null {
+  if (endingCode === 'A' && winner !== server) {
+    return 'An ace must be awarded to the server.';
+  }
+  if (endingCode === 'D' && winner === server) {
+    return 'A double fault must be awarded to the returner.';
+  }
+  return null;
+}
+
 function validateStrokes(strokes: readonly NewLocalStroke[] = []): void {
   if (strokes.length > 20) throw new Error('A point can include up to 20 recorded strokes.');
   for (const stroke of strokes) {
@@ -589,8 +603,17 @@ function normalizeLocalMatch(value: Record<string, unknown>): LocalMatch {
   const normalizePoint = (point: LocalPoint): LocalPoint => {
     const normalizedPoint = { ...point } as LocalPoint & { syncStatus?: unknown };
     delete normalizedPoint.syncStatus;
+    const endingCode =
+      getLocalPointEndingCodeValidationError(
+        point.server,
+        point.winner,
+        point.endingCode,
+      ) === null
+        ? point.endingCode
+        : null;
     return {
       ...normalizedPoint,
+      endingCode,
       strokes: Array.isArray(point.strokes)
         ? point.strokes
             .filter(
@@ -996,6 +1019,14 @@ function rebuildLocalSetPoints(
     const server = isTiebreak
       ? tiebreakServer(set.firstServer, tiebreakPointCount)
       : gameServer(set.firstServer, gameNumber);
+    const validationError = getLocalPointEndingCodeValidationError(
+      server,
+      point.winner,
+      point.endingCode,
+    );
+    if (validationError) {
+      throw new Error(`${validationError} The match was not changed.`);
+    }
 
     points.push({
       ...point,
@@ -1318,14 +1349,21 @@ export async function recordLocalPoint(
       match.setFormat === 'match_tiebreak' ||
       (!score.isComplete && score.trackedGames === 6 && score.opponentGames === 6);
     const tiebreakPointCount = match.points.filter((point) => point.isTiebreak).length;
+    const server = isTiebreak
+      ? tiebreakServer(match.firstServer, tiebreakPointCount)
+      : gameServer(match.firstServer, gameNumber);
+    const validationError = getLocalPointEndingCodeValidationError(
+      server,
+      input.winner,
+      input.endingCode,
+    );
+    if (validationError) throw new Error(validationError);
     const point: LocalPoint = {
       id: newId(),
       sequenceNumber: match.points.length + 1,
       setNumber: match.setNumber,
       gameNumber,
-      server: isTiebreak
-        ? tiebreakServer(match.firstServer, tiebreakPointCount)
-        : gameServer(match.firstServer, gameNumber),
+      server,
       isTiebreak,
       winner: input.winner,
       endingCode: input.endingCode ?? null,

@@ -46,6 +46,7 @@ import {
   updateLocalSetReview,
   finishLocalMatch,
   editLocalPointWinner,
+  getLocalPointEndingCodeValidationError,
   localInsightsKey,
   localMatchKey,
   recordLocalPoint,
@@ -429,6 +430,8 @@ export default function MatchScreen() {
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const matchId = Array.isArray(params.id) ? params.id[0] ?? '' : params.id ?? '';
   const [endingCode, setEndingCode] = useState<PointCode | null>(null);
+  const [pointValidationError, setPointValidationError] = useState('');
+  const [editPointError, setEditPointError] = useState('');
   const [pointHistoryFilter, setPointHistoryFilter] =
     useState<'all' | 'break_points'>('all');
   const [firstServeFault, setFirstServeFault] = useState(false);
@@ -481,6 +484,8 @@ export default function MatchScreen() {
   useEffect(() => {
     setSelectedReviewSetNumber(null);
     setEndingCode(null);
+    setPointValidationError('');
+    setEditPointError('');
     setPointHistoryFilter('all');
     setFirstServeFault(false);
     setShotDirection(null);
@@ -530,11 +535,13 @@ export default function MatchScreen() {
         input.pointId,
         input.winner,
       ),
-    onSuccess: onUpdated,
+    onSuccess: (updatedMatch) => {
+      setEditPointError('');
+      onUpdated(updatedMatch);
+    },
     onError: (error) =>
-      Alert.alert(
-        'Could not change point',
-        error instanceof Error ? error.message : 'Please try again.',
+      setEditPointError(
+        error instanceof Error ? error.message : 'Could not change the point. Please try again.',
       ),
   });
   const addSet = useMutation({
@@ -775,6 +782,17 @@ export default function MatchScreen() {
     ) {
       return;
     }
+    recordPoint.reset();
+    setPointValidationError('');
+    const validationError = getLocalPointEndingCodeValidationError(
+      liveServerSide,
+      winner,
+      endingCode,
+    );
+    if (validationError) {
+      setPointValidationError(validationError);
+      return;
+    }
     recordPoint.mutate({
       winner,
       endingCode,
@@ -783,6 +801,12 @@ export default function MatchScreen() {
       rallyLength,
       strokes: strokeDrafts,
     });
+  }
+
+  function selectEndingCode(code: PointCode) {
+    recordPoint.reset();
+    setPointValidationError('');
+    setEndingCode((current) => (current === code ? null : code));
   }
 
   function stageStroke() {
@@ -967,6 +991,8 @@ export default function MatchScreen() {
 
   function confirmEditPoint(point: LocalPoint) {
     if (!match || isBusy) return;
+    setEditPointError('');
+    editPointWinner.reset();
     if (match.matchOutcome) {
       Alert.alert(
         'Resume scoring first',
@@ -1207,7 +1233,10 @@ export default function MatchScreen() {
     (side: Side) => (side === 'tracked' ? trackedName : opponentName);
   const serverName =
     match.score.nextServer === 'tracked' ? trackedName : opponentName;
-  const recordError = recordPoint.error?.message || undoPoint.error?.message;
+  const recordError =
+    pointValidationError ||
+    recordPoint.error?.message ||
+    undoPoint.error?.message;
   const matrixTiebreakScoreProgress = getTiebreakPointProgress(matrixTiebreakPoints);
   const matrixTiebreakWinner = viewedSet.score.isComplete
     ? matrixTiebreakPoints.at(-1)?.winner
@@ -1962,9 +1991,7 @@ export default function MatchScreen() {
                     code={item.code}
                     label={item.label}
                     selected={endingCode === item.code}
-                    onPress={() =>
-                      setEndingCode((current) => (current === item.code ? null : item.code))
-                    }
+                    onPress={() => selectEndingCode(item.code)}
                   />
                 ))}
               </View>
@@ -1980,9 +2007,7 @@ export default function MatchScreen() {
                     code={item.code}
                     label={item.label}
                     selected={endingCode === item.code}
-                    onPress={() =>
-                      setEndingCode((current) => (current === item.code ? null : item.code))
-                    }
+                    onPress={() => selectEndingCode(item.code)}
                   />
                 ))}
               </View>
@@ -2364,6 +2389,19 @@ export default function MatchScreen() {
             </Text>
           </View>
         </View>
+
+        {editPointError ? (
+          <View
+            testID="point-edit-error"
+            accessibilityRole="alert"
+            style={styles.mutationError}
+          >
+            <Ionicons name="alert-circle-outline" size={16} color={colors.destructive} />
+            <Text style={[styles.mutationErrorText, { color: colors.destructive }]}>
+              {editPointError}
+            </Text>
+          </View>
+        ) : null}
 
         <ScrollView
           ref={tiebreakMatrixScrollRef}

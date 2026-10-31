@@ -821,6 +821,293 @@ test('undoing and replacing a converted break point recomputes saved match stats
   assertBreakPointRates(replacementInsights, 0, 100);
 });
 
+test('ace and double-fault rules reject invalid saves and corrections without changing analytics', async () => {
+  storageValues.clear();
+  const { localMatches } = loadStorageModulesAfterRestart();
+  const match = await localMatches.createLocalMatch({
+    matchDate: '2026-10-30',
+    trackedPlayer: 'Sana Iyer',
+    opponent: 'Maya Rao',
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+  const original = await localMatches.getLocalMatch(match.id);
+  const originalInsights = await localMatches.getLocalInsights(match.id);
+  assert.ok(original);
+  assert.ok(originalInsights);
+
+  await assert.rejects(
+    localMatches.recordLocalPoint(match.id, {
+      winner: 'opponent',
+      endingCode: 'A',
+    }),
+    /An ace must be awarded to the server/,
+  );
+  assert.deepEqual(await localMatches.getLocalMatch(match.id), original);
+  assert.deepEqual(await localMatches.getLocalInsights(match.id), originalInsights);
+
+  await assert.rejects(
+    localMatches.recordLocalPoint(match.id, {
+      winner: 'tracked',
+      endingCode: 'D',
+    }),
+    /A double fault must be awarded to the returner/,
+  );
+  assert.deepEqual(await localMatches.getLocalMatch(match.id), original);
+  assert.deepEqual(await localMatches.getLocalInsights(match.id), originalInsights);
+
+  const withAce = await localMatches.recordLocalPoint(match.id, {
+    winner: 'tracked',
+    endingCode: 'A',
+  });
+  const acePoint = withAce.points[0];
+  assert.equal(acePoint.server, 'tracked');
+  const beforeInvalidAceEdit = await localMatches.getLocalMatch(match.id);
+  const beforeInvalidAceInsights = await localMatches.getLocalInsights(match.id);
+  await assert.rejects(
+    localMatches.editLocalPointWinner(match.id, 1, acePoint.id, 'opponent'),
+    /An ace must be awarded to the server/,
+  );
+  assert.deepEqual(await localMatches.getLocalMatch(match.id), beforeInvalidAceEdit);
+  assert.deepEqual(await localMatches.getLocalInsights(match.id), beforeInvalidAceInsights);
+
+  const withDoubleFault = await localMatches.recordLocalPoint(match.id, {
+    winner: 'opponent',
+    endingCode: 'D',
+  });
+  const doubleFaultPoint = withDoubleFault.points[1];
+  assert.equal(doubleFaultPoint.server, 'tracked');
+  const beforeInvalidDoubleFaultEdit = await localMatches.getLocalMatch(match.id);
+  const beforeInvalidDoubleFaultInsights =
+    await localMatches.getLocalInsights(match.id);
+  await assert.rejects(
+    localMatches.editLocalPointWinner(
+      match.id,
+      1,
+      doubleFaultPoint.id,
+      'tracked',
+    ),
+    /A double fault must be awarded to the returner/,
+  );
+  assert.deepEqual(
+    await localMatches.getLocalMatch(match.id),
+    beforeInvalidDoubleFaultEdit,
+  );
+  assert.deepEqual(
+    await localMatches.getLocalInsights(match.id),
+    beforeInvalidDoubleFaultInsights,
+  );
+  assert.equal(beforeInvalidDoubleFaultInsights.serveStats.tracked.aces, 1);
+  assert.equal(beforeInvalidDoubleFaultInsights.serveStats.tracked.doubleFaults, 1);
+  assert.equal(beforeInvalidDoubleFaultInsights.pointCount, 2);
+});
+
+test('legacy mismatched ace and double-fault tags do not appear in saved analytics', async () => {
+  storageValues.clear();
+  const { localMatches } = loadStorageModulesAfterRestart();
+  const match = await localMatches.createLocalMatch({
+    matchDate: '2026-10-30',
+    trackedPlayer: 'Sana Iyer',
+    opponent: 'Maya Rao',
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+  await localMatches.recordLocalPoint(match.id, {
+    winner: 'tracked',
+    endingCode: 'A',
+  });
+  await localMatches.recordLocalPoint(match.id, {
+    winner: 'opponent',
+    endingCode: 'D',
+  });
+
+  const storageKey = `@tennis-scoring/matches/record-v1/${match.id}`;
+  const stored = JSON.parse(storageValues.get(storageKey));
+  stored.points[0].winner = 'opponent';
+  stored.points[1].winner = 'tracked';
+  stored.score = localMatches.calculateLocalScore(stored, stored.points);
+  storageValues.set(storageKey, JSON.stringify(stored));
+
+  const normalized = await localMatches.getLocalMatch(match.id);
+  const insights = await localMatches.getLocalInsights(match.id);
+  assert.ok(normalized);
+  assert.ok(insights);
+  assert.equal(normalized.points.length, 2);
+  assert.equal(normalized.points[0].winner, 'opponent');
+  assert.equal(normalized.points[0].endingCode, null);
+  assert.equal(normalized.points[1].winner, 'tracked');
+  assert.equal(normalized.points[1].endingCode, null);
+  assert.equal(insights.serveStats.tracked.aces, 0);
+  assert.equal(insights.serveStats.tracked.doubleFaults, 0);
+  assert.equal(insights.codes.some(({ code }) => code === 'A'), false);
+  assert.equal(insights.codes.some(({ code }) => code === 'D'), false);
+
+  const backupCopy = structuredClone(stored);
+  backupCopy.id = 'backup-with-invalid-serve-tags';
+  const restored = await localMatches.mergeLocalMatchesFromBackup([backupCopy]);
+  assert.deepEqual(restored, { added: 1, skipped: 0 });
+  const importedMatch = await localMatches.getLocalMatch(backupCopy.id);
+  const importedInsights = await localMatches.getLocalInsights(backupCopy.id);
+  assert.ok(importedMatch);
+  assert.ok(importedInsights);
+  assert.deepEqual(
+    importedMatch.points.map(({ endingCode }) => endingCode),
+    [null, null],
+  );
+  assert.equal(importedInsights.serveStats.tracked.aces, 0);
+  assert.equal(importedInsights.serveStats.tracked.doubleFaults, 0);
+});
+
+test('earlier-point edits reject ace tags when replay changes the serving player', async () => {
+  storageValues.clear();
+  const { localMatches } = loadStorageModulesAfterRestart();
+  const match = await localMatches.createLocalMatch({
+    matchDate: '2026-10-30',
+    trackedPlayer: 'Sana Iyer',
+    opponent: 'Maya Rao',
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+  let saved = await localMatches.recordLocalPoint(match.id, { winner: 'opponent' });
+  for (let index = 0; index < 3; index += 1) {
+    saved = await localMatches.recordLocalPoint(match.id, { winner: 'tracked' });
+  }
+  saved = await localMatches.recordLocalPoint(match.id, {
+    winner: 'tracked',
+    endingCode: 'A',
+  });
+  const acePoint = saved.points[4];
+  assert.equal(acePoint.gameNumber, 1);
+  assert.equal(acePoint.server, 'tracked');
+
+  const insightsBefore = await localMatches.getLocalInsights(match.id);
+  await assert.rejects(
+    localMatches.editLocalPointWinner(match.id, 1, saved.points[0].id, 'tracked'),
+    /An ace must be awarded to the server/,
+  );
+  assert.deepEqual(await localMatches.getLocalMatch(match.id), saved);
+  assert.deepEqual(await localMatches.getLocalInsights(match.id), insightsBefore);
+  assert.equal(insightsBefore.serveStats.tracked.aces, 1);
+});
+
+test('valid ace and double-fault tags follow match-tiebreak serve rotation', async () => {
+  storageValues.clear();
+  const { localMatches } = loadStorageModulesAfterRestart();
+  const match = await localMatches.createLocalMatch({
+    matchDate: '2026-10-30',
+    trackedPlayer: 'Sana Iyer',
+    opponent: 'Maya Rao',
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+  let saved = match;
+  for (let index = 0; index < 24; index += 1) {
+    saved = await localMatches.recordLocalPoint(match.id, { winner: 'tracked' });
+  }
+  assert.equal(saved.score.isComplete, true);
+
+  saved = await localMatches.addLocalSet(match.id, 'match_tiebreak', 7);
+  const firstTiebreakServer = saved.score.nextServer;
+  const secondTiebreakServer =
+    firstTiebreakServer === 'tracked' ? 'opponent' : 'tracked';
+  saved = await localMatches.recordLocalPoint(match.id, {
+    winner: firstTiebreakServer,
+  });
+  await assert.rejects(
+    localMatches.recordLocalPoint(match.id, {
+      winner: firstTiebreakServer,
+      endingCode: 'A',
+    }),
+    /An ace must be awarded to the server/,
+  );
+
+  saved = await localMatches.recordLocalPoint(match.id, {
+    winner: secondTiebreakServer,
+    endingCode: 'A',
+  });
+  const acePoint = saved.points[1];
+  assert.equal(acePoint.server, secondTiebreakServer);
+  await assert.rejects(
+    localMatches.editLocalPointWinner(
+      match.id,
+      2,
+      acePoint.id,
+      firstTiebreakServer,
+    ),
+    /An ace must be awarded to the server/,
+  );
+
+  saved = await localMatches.recordLocalPoint(match.id, {
+    winner: firstTiebreakServer,
+    endingCode: 'D',
+  });
+  assert.equal(saved.points[2].server, secondTiebreakServer);
+  assert.equal(saved.points[2].winner, firstTiebreakServer);
+  const insights = await localMatches.getLocalInsights(match.id);
+  assert.ok(insights);
+  assert.equal(insights.serveStats[secondTiebreakServer].aces, 1);
+  assert.equal(insights.serveStats[secondTiebreakServer].doubleFaults, 1);
+  assert.equal(insights.pointCount, 27);
+});
+
+test('standard-set tiebreak serve rotation controls ace and double-fault winners', async () => {
+  storageValues.clear();
+  const { localMatches } = loadStorageModulesAfterRestart();
+  const match = await localMatches.createLocalMatch({
+    matchDate: '2026-10-30',
+    trackedPlayer: 'Sana Iyer',
+    opponent: 'Maya Rao',
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+  let saved = match;
+  for (let game = 0; game < 12; game += 1) {
+    const gameWinner = game % 2 === 0 ? 'tracked' : 'opponent';
+    for (let point = 0; point < 4; point += 1) {
+      saved = await localMatches.recordLocalPoint(match.id, {
+        winner: gameWinner,
+      });
+    }
+  }
+  assert.equal(saved.score.trackedGames, 6);
+  assert.equal(saved.score.opponentGames, 6);
+  assert.equal(saved.score.isTiebreak, true);
+
+  const firstTiebreakServer = saved.score.nextServer;
+  const secondTiebreakServer =
+    firstTiebreakServer === 'tracked' ? 'opponent' : 'tracked';
+  saved = await localMatches.recordLocalPoint(match.id, {
+    winner: firstTiebreakServer,
+  });
+  await assert.rejects(
+    localMatches.recordLocalPoint(match.id, {
+      winner: firstTiebreakServer,
+      endingCode: 'A',
+    }),
+    /An ace must be awarded to the server/,
+  );
+  saved = await localMatches.recordLocalPoint(match.id, {
+    winner: secondTiebreakServer,
+    endingCode: 'A',
+  });
+  assert.equal(saved.points.at(-1).server, secondTiebreakServer);
+  saved = await localMatches.recordLocalPoint(match.id, {
+    winner: firstTiebreakServer,
+    endingCode: 'D',
+  });
+  assert.equal(saved.points.at(-1).server, secondTiebreakServer);
+  const insights = await localMatches.getLocalInsights(match.id);
+  assert.ok(insights);
+  assert.equal(insights.serveStats[secondTiebreakServer].aces, 1);
+  assert.equal(insights.serveStats[secondTiebreakServer].doubleFaults, 1);
+  assert.equal(insights.pointCount, 51);
+});
+
 test('editing a point winner rebuilds later scores and serving order without losing its notes', async () => {
   storageValues.clear();
   const { localMatches } = loadStorageModulesAfterRestart();
@@ -1021,6 +1308,21 @@ test('match details expose accessible controls for all points and break-point mo
   assert.match(
     matchScreen,
     /queryClient\.setQueryData\(localMatchKey\(matchId\), updatedMatch\)/,
+  );
+  assert.match(matchScreen, /getLocalPointEndingCodeValidationError\(/);
+  assert.match(matchScreen, /setPointValidationError\(validationError\)/);
+  assert.match(matchScreen, /testID="point-edit-error"/);
+  assert.match(matchScreen, /pointValidationError \|\|/);
+  const addPointStart = matchScreen.indexOf('function addPoint(winner: Side) {');
+  const addPointEnd = matchScreen.indexOf('function selectEndingCode(', addPointStart);
+  const addPointBody = matchScreen.slice(addPointStart, addPointEnd);
+  assert.match(
+    addPointBody,
+    /if \(validationError\) \{\s*setPointValidationError\(validationError\);\s*return;\s*\}/,
+  );
+  assert.doesNotMatch(
+    addPointBody,
+    /setEndingCode\(null\)|setFirstServeFault\(false\)|setStrokeDrafts\(\[\]\)|setShotDirection\(null\)|setRallyLength\(null\)/,
   );
 });
 
