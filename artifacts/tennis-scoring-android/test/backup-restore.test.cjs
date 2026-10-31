@@ -554,6 +554,78 @@ test('backup save, share, and restore preserve all players and sets without netw
   assert.equal(networkRequestCount, 0);
 });
 
+test('malformed match outcomes reject a backup before changing device data', async () => {
+  storageValues.clear();
+  networkRequestCount = 0;
+  loadLocalModules();
+  const { player, match } = await createSampleRecords();
+  await activeModules.localMatches.recordLocalMatchOutcome(match.id, {
+    reason: 'walkover',
+    winner: 'tracked',
+  });
+  const validBackup = JSON.parse(
+    await loadBackupModule().createLocalBackupJson(),
+  );
+  const playersBefore = await activeModules.localPlayers.listLocalPlayers();
+  const matchBefore = await activeModules.localMatches.getLocalMatch(match.id);
+  const activePlayerBefore =
+    await activeModules.localPlayers.getActiveLocalPlayerId();
+  const storageBefore = [...storageValues.entries()];
+
+  const invalidOutcomeCases = [
+    {
+      description: 'unsupported outcome reason',
+      reason: 'disqualification',
+      winner: 'tracked',
+    },
+    {
+      description: 'unsupported awarded-winner side',
+      reason: 'walkover',
+      winner: 'server',
+    },
+  ];
+
+  for (const [index, invalidOutcome] of invalidOutcomeCases.entries()) {
+    const invalidBackup = JSON.parse(JSON.stringify(validBackup));
+    invalidBackup.players.push({
+      ...invalidBackup.players[0],
+      id: `candidate-${index}`,
+      name: `Candidate ${index}`,
+    });
+    invalidBackup.matches[0].matchOutcome = {
+      reason: invalidOutcome.reason,
+      winner: invalidOutcome.winner,
+    };
+    selectedBackupContents = JSON.stringify(invalidBackup);
+
+    await assert.rejects(
+      loadBackupModule().loadLocalBackupFromDevice(),
+      /invalid match or point history\. No data was imported/,
+      `A backup with an ${invalidOutcome.description} must be rejected.`,
+    );
+    assert.deepEqual(
+      [...storageValues.entries()],
+      storageBefore,
+      `A backup with an ${invalidOutcome.description} must not write to device storage.`,
+    );
+    assert.deepEqual(
+      await activeModules.localPlayers.listLocalPlayers(),
+      playersBefore,
+    );
+    assert.deepEqual(
+      await activeModules.localMatches.getLocalMatch(match.id),
+      matchBefore,
+    );
+    assert.equal(
+      await activeModules.localPlayers.getActiveLocalPlayerId(),
+      activePlayerBefore,
+    );
+    assert.equal(networkRequestCount, 0);
+  }
+
+  assert.equal(playersBefore[0].id, player.id);
+});
+
 test('backup restore keeps game notes with their sets and games and allows local edits', async () => {
   storageValues.clear();
   savedDeviceBackup = null;

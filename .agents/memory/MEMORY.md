@@ -1,5 +1,5 @@
 - [Android standalone storage](android-scoring-storage.md) — matches, profiles, and report analytics stay on-device; auth, sync, and sharing are out of scope.
-- [Match set structure and reporting](tennis-match-structure.md) — matches can contain unlimited sets; reports name winners only from unambiguous completed-set majorities.
+- [Match set structure and reporting](tennis-match-structure.md) — preserve multi-set scoring, clear winners, and validated backup outcomes.
 - [Player trend comparisons](player-trends.md) — compare saved players using date-ordered point logs, visible samples, and separate match-result totals.
 - [Unbranded private reports](private-reports.md) — omit company marks; use optional on-device neutral labels consistently in previews and PDFs.
 - [Saved player links](player-profile-links.md) — preserve profile URLs with local player records and make them directly openable.

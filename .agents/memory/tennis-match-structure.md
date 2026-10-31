@@ -32,3 +32,9 @@ description: Product requirements for multi-set tennis records, tiebreak-only se
 **Why:** The user asked to prevent false winner labels when set scores are tied or the match is unfinished.
 
 **How to apply:** Use regular game totals for standard sets and tiebreak-point totals for match-tiebreak sets. Do not substitute a player when a stored winner is absent.
+
+**Rule:** Match outcomes are optional in older backups. If present, accept only retirement or walkover reasons and a tracked/opponent awarded-winner side; reject malformed outcomes before changing any on-device data.
+
+**Why:** The user needs older backups to remain restorable while invalid match results must never partially import or alter existing local records.
+
+**How to apply:** Validate the complete backup before starting any import writes. Keep regression tests for invalid reasons, invalid winner sides, unchanged local storage, and legacy backups without outcome fields.
