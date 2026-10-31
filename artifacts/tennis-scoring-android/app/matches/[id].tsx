@@ -100,6 +100,9 @@ import {
   PLAYER_REPORT_SECTIONS,
   PLAYER_REPORT_SECTION_PRESETS,
   type PlayerReportSection,
+  loadReportSectionPreference,
+  PLAYER_REPORT_SECTION_PREFERENCE_KEY,
+  saveReportSectionPreference,
 } from '@/lib/report-sections';
 import { listLocalPlayers, LOCAL_PLAYERS_KEY } from '@/lib/local-players';
 
@@ -455,6 +458,11 @@ export default function MatchScreen() {
   } | null>(null);
   const [selectedReportSections, setSelectedReportSections] =
     useState<PlayerReportSection[]>(allPlayerReportSections);
+  const [reportSectionPreferenceReady, setReportSectionPreferenceReady] =
+    useState(false);
+  const [canPersistReportSectionPreference, setCanPersistReportSectionPreference] =
+    useState(false);
+  const reportSectionsChangedBeforeRestore = useRef(false);
   const [reportExportError, setReportExportError] = useState('');
   const [customTiebreakTarget, setCustomTiebreakTarget] = useState('');
   const [selectedReviewSetNumber, setSelectedReviewSetNumber] = useState<number | null>(null);
@@ -481,6 +489,45 @@ export default function MatchScreen() {
     queryKey: LOCAL_REPORT_BENCHMARKS_KEY,
     queryFn: getLocalReportBenchmarkSettings,
   });
+  useEffect(() => {
+    let isActive = true;
+
+    loadReportSectionPreference(
+      PLAYER_REPORT_SECTION_PREFERENCE_KEY,
+      PLAYER_REPORT_SECTIONS.map(({ id }) => id),
+      allPlayerReportSections(),
+    )
+      .then((sections) => {
+        if (!isActive) return;
+        if (!reportSectionsChangedBeforeRestore.current) {
+          setSelectedReportSections(sections);
+        }
+        setCanPersistReportSectionPreference(true);
+      })
+      .catch((error) => {
+        console.warn('Could not load player report section preferences.', error);
+      })
+      .finally(() => {
+        if (isActive) setReportSectionPreferenceReady(true);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!reportSectionPreferenceReady || !canPersistReportSectionPreference) return;
+    saveReportSectionPreference(
+      PLAYER_REPORT_SECTION_PREFERENCE_KEY,
+      selectedReportSections,
+    ).catch((error) => {
+      console.warn('Could not save player report section preferences.', error);
+    });
+  }, [
+    canPersistReportSectionPreference,
+    reportSectionPreferenceReady,
+    selectedReportSections,
+  ]);
   useEffect(() => {
     setSelectedReviewSetNumber(null);
     setEndingCode(null);
@@ -1105,11 +1152,17 @@ export default function MatchScreen() {
   function toggleReportSection(section: string) {
     if (!PLAYER_REPORT_SECTIONS.some((item) => item.id === section)) return;
     const selectedSection = section as PlayerReportSection;
+    reportSectionsChangedBeforeRestore.current = true;
     setSelectedReportSections((current) =>
       current.includes(selectedSection)
         ? current.filter((item) => item !== selectedSection)
         : [...current, selectedSection],
     );
+  }
+
+  function setReportSectionsFromPicker(sections: PlayerReportSection[]) {
+    reportSectionsChangedBeforeRestore.current = true;
+    setSelectedReportSections(sections);
   }
 
   if (matchQuery.isLoading) {
@@ -2849,10 +2902,14 @@ export default function MatchScreen() {
           sections={PLAYER_REPORT_SECTIONS}
           selected={selectedReportSections}
           onToggle={toggleReportSection}
-          onSelectAll={() => setSelectedReportSections(allPlayerReportSections())}
-          onClear={() => setSelectedReportSections([])}
+          onSelectAll={() =>
+            setReportSectionsFromPicker(allPlayerReportSections())
+          }
+          onClear={() => setReportSectionsFromPicker([])}
           presets={PLAYER_REPORT_SECTION_PRESETS}
-          onApplyPreset={(sections) => setSelectedReportSections([...sections])}
+          onApplyPreset={(sections) =>
+            setReportSectionsFromPicker([...sections])
+          }
         />
         <ReportAnonymityToggle
           testID="player-report-hide-names"

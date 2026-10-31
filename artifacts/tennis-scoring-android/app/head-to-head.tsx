@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -64,6 +64,9 @@ import {
   allHeadToHeadReportSections,
   HEAD_TO_HEAD_REPORT_SECTIONS,
   HEAD_TO_HEAD_REPORT_SECTION_PRESETS,
+  HEAD_TO_HEAD_REPORT_SECTION_PREFERENCE_KEY,
+  loadReportSectionPreference,
+  saveReportSectionPreference,
   type HeadToHeadReportSection,
 } from '@/lib/report-sections';
 
@@ -352,6 +355,51 @@ export default function HeadToHeadScreen() {
   const [reportError, setReportError] = useState('');
   const [selectedReportSections, setSelectedReportSections] =
     useState<HeadToHeadReportSection[]>(allHeadToHeadReportSections);
+  const [reportSectionPreferenceReady, setReportSectionPreferenceReady] =
+    useState(false);
+  const [canPersistReportSectionPreference, setCanPersistReportSectionPreference] =
+    useState(false);
+  const reportSectionsChangedBeforeRestore = useRef(false);
+
+  useEffect(() => {
+    let isActive = true;
+
+    loadReportSectionPreference(
+      HEAD_TO_HEAD_REPORT_SECTION_PREFERENCE_KEY,
+      HEAD_TO_HEAD_REPORT_SECTIONS.map(({ id }) => id),
+      allHeadToHeadReportSections(),
+    )
+      .then((sections) => {
+        if (!isActive) return;
+        if (!reportSectionsChangedBeforeRestore.current) {
+          setSelectedReportSections(sections);
+        }
+        setCanPersistReportSectionPreference(true);
+      })
+      .catch((error) => {
+        console.warn('Could not load head-to-head report section preferences.', error);
+      })
+      .finally(() => {
+        if (isActive) setReportSectionPreferenceReady(true);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!reportSectionPreferenceReady || !canPersistReportSectionPreference) return;
+    saveReportSectionPreference(
+      HEAD_TO_HEAD_REPORT_SECTION_PREFERENCE_KEY,
+      selectedReportSections,
+    ).catch((error) => {
+      console.warn('Could not save head-to-head report section preferences.', error);
+    });
+  }, [
+    canPersistReportSectionPreference,
+    reportSectionPreferenceReady,
+    selectedReportSections,
+  ]);
 
   const matchesQuery = useQuery({
     queryKey: LOCAL_MATCH_LIST_KEY,
@@ -829,11 +877,17 @@ export default function HeadToHeadScreen() {
   function toggleReportSection(section: string) {
     if (!HEAD_TO_HEAD_REPORT_SECTIONS.some((item) => item.id === section)) return;
     const selectedSection = section as HeadToHeadReportSection;
+    reportSectionsChangedBeforeRestore.current = true;
     setSelectedReportSections((current) =>
       current.includes(selectedSection)
         ? current.filter((item) => item !== selectedSection)
         : [...current, selectedSection],
     );
+  }
+
+  function setReportSectionsFromPicker(sections: HeadToHeadReportSection[]) {
+    reportSectionsChangedBeforeRestore.current = true;
+    setSelectedReportSections(sections);
   }
 
   return (
@@ -1009,11 +1063,13 @@ export default function HeadToHeadScreen() {
               selected={selectedReportSections}
               onToggle={toggleReportSection}
               onSelectAll={() =>
-                setSelectedReportSections(allHeadToHeadReportSections())
+                setReportSectionsFromPicker(allHeadToHeadReportSections())
               }
-              onClear={() => setSelectedReportSections([])}
+              onClear={() => setReportSectionsFromPicker([])}
               presets={HEAD_TO_HEAD_REPORT_SECTION_PRESETS}
-              onApplyPreset={(sections) => setSelectedReportSections([...sections])}
+              onApplyPreset={(sections) =>
+                setReportSectionsFromPicker([...sections])
+              }
             />
             <ReportAnonymityToggle
               testID="head-to-head-report-hide-names"

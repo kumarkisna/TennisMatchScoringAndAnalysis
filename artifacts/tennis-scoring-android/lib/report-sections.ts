@@ -1,3 +1,5 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 export const PLAYER_REPORT_SECTIONS = [
   { id: 'overview', label: 'Match overview' },
   { id: 'serve', label: 'Serve' },
@@ -78,4 +80,51 @@ export function allPlayerReportSections(): PlayerReportSection[] {
 
 export function allHeadToHeadReportSections(): HeadToHeadReportSection[] {
   return HEAD_TO_HEAD_REPORT_SECTIONS.map(({ id }) => id);
+}
+
+export const PLAYER_REPORT_SECTION_PREFERENCE_KEY =
+  'tennis-scoring:report-sections:player:v1';
+export const HEAD_TO_HEAD_REPORT_SECTION_PREFERENCE_KEY =
+  'tennis-scoring:report-sections:head-to-head:v1';
+
+export function parseReportSectionPreference<T extends string>(
+  raw: string | null,
+  validSections: readonly T[],
+  defaultSections: readonly T[],
+): T[] {
+  const defaults = [...defaultSections];
+  if (raw === null) return defaults;
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return defaults;
+
+    const selected = [...new Set(
+      parsed.filter(
+        (section): section is T =>
+          typeof section === 'string' &&
+          validSections.includes(section as T),
+      ),
+    )];
+
+    return parsed.length > 0 && selected.length === 0 ? defaults : selected;
+  } catch {
+    return defaults;
+  }
+}
+
+export async function loadReportSectionPreference<T extends string>(
+  storageKey: string,
+  validSections: readonly T[],
+  defaultSections: readonly T[],
+): Promise<T[]> {
+  const raw = await AsyncStorage.getItem(storageKey);
+  return parseReportSectionPreference(raw, validSections, defaultSections);
+}
+
+export async function saveReportSectionPreference<T extends string>(
+  storageKey: string,
+  selectedSections: readonly T[],
+): Promise<void> {
+  await AsyncStorage.setItem(storageKey, JSON.stringify(selectedSections));
 }
