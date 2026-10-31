@@ -1237,6 +1237,49 @@ test('head-to-head report lists anonymized break-point moments by meeting', () =
     { opportunities: 0, converted: 0, faced: 0, saved: 0 },
     '2026-09-29',
   );
+  const meetingWithFiveChances = breakPointMeeting(
+    'alex-bailey-five-chances',
+    'Alex',
+    'Bailey',
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    '2026-09-28',
+  );
+  const { match: fiveChanceSampleMatch } = breakPointSampleMatch();
+  meetingWithFiveChances.match = {
+    ...fiveChanceSampleMatch,
+    id: 'alex-bailey-five-chances',
+    matchDate: '2026-09-28',
+    trackedPlayer: 'Alex',
+    opponent: 'Bailey',
+    completedSets: [
+      setFixture(
+        1,
+        'standard',
+        gamePoints(1, 1, 'opponent', [
+          'opponent',
+          'tracked',
+          'opponent',
+          'tracked',
+          'opponent',
+          'tracked',
+          'tracked',
+          'opponent',
+          'tracked',
+          'opponent',
+          'tracked',
+          'opponent',
+          'tracked',
+          'opponent',
+          'tracked',
+          'tracked',
+        ]),
+      ),
+    ],
+    setNumber: 2,
+    setFormat: 'standard',
+    points: [],
+  };
   const report = buildHeadToHeadReport(
     'Alex',
     'Bailey',
@@ -1245,12 +1288,14 @@ test('head-to-head report lists anonymized break-point moments by meeting', () =
       newerMeeting,
       meetingWithoutBreakPointMoments,
       meetingWithoutPointLog,
+      meetingWithFiveChances,
     ],
     [
       olderMeeting,
       newerMeeting,
       meetingWithoutBreakPointMoments,
       meetingWithoutPointLog,
+      meetingWithFiveChances,
     ],
   );
   const html = buildHeadToHeadReportHtml(
@@ -1263,7 +1308,7 @@ test('head-to-head report lists anonymized break-point moments by meeting', () =
   );
   const rows = reportRowsInTable(html, 'break-point-context-table');
 
-  assert.equal(rows.length, 12);
+  assert.equal(rows.length, 17);
   assert.match(
     rows[0],
     /Meeting 1 · October 5, 2026 Set 1 Game 1 4 0 40 Saved by Main athlete/,
@@ -1280,7 +1325,7 @@ test('head-to-head report lists anonymized break-point moments by meeting', () =
     ...newerMeeting.match.completedSets.flatMap((set) => set.points),
     ...newerMeeting.match.points,
   ].length;
-  assert.equal(coverageRows.length, 4);
+  assert.equal(coverageRows.length, 5);
   assert.match(
     coverageRows[0],
     new RegExp(`Meeting 1 · October 5, 2026 ${savedPointCount} points saved 6 found`),
@@ -1293,13 +1338,18 @@ test('head-to-head report lists anonymized break-point moments by meeting', () =
     coverageRows[3],
     /Meeting 4 · September 29, 2026 No point log saved Unavailable — no point log/,
   );
+  assert.match(
+    coverageRows[4],
+    /Meeting 5 · September 28, 2026 16 points saved 5 found/,
+  );
   assert.doesNotMatch(coverageRows[2], /24 points saved/);
   const resultRows = reportRowsInTable(html, 'break-point-results-table');
-  assert.equal(resultRows.length, 4);
+  assert.equal(resultRows.length, 5);
   assert.match(
     resultRows[0],
-    /Meeting 1 · October 5, 2026 2\/3 · 66\.7% 3\/3 · 100\.0% 0\/3 · 0\.0% 1\/3 · 33\.3%/,
+    /Meeting 1 · October 5, 2026 2\/3 · 66\.7%/,
   );
+  assert.equal((resultRows[0].match(/Directional only/g) ?? []).length, 4);
   assert.match(
     resultRows[2],
     /Meeting 3 · September 30, 2026 No chances No chances No chances No chances/,
@@ -1308,8 +1358,34 @@ test('head-to-head report lists anonymized break-point moments by meeting', () =
     resultRows[3],
     /Meeting 4 · September 29, 2026 No point log No point log No point log No point log/,
   );
+  assert.match(
+    resultRows[4],
+    /Meeting 5 · September 28, 2026 1\/5 · 20\.0% No chances No chances 4\/5 · 80\.0%/,
+  );
+  assert.doesNotMatch(resultRows[2] + resultRows[3] + resultRows[4], /Directional only/);
   assert.match(html, /Return · converted \/ chances/);
   assert.match(html, /Serve · saved \/ faced/);
+  meetingWithFiveChances.match.completedSets[0].points =
+    meetingWithFiveChances.match.completedSets[0].points.slice(0, 14);
+  const correctedThresholdRows = reportRowsInTable(
+    buildHeadToHeadReportHtml(
+      report,
+      ['break-point-context'],
+      {
+        hidePlayerNames: true,
+        labels: { trackedPlayer: 'Main athlete', opponent: 'Visitor' },
+      },
+    ),
+    'break-point-results-table',
+  );
+  assert.match(
+    correctedThresholdRows[4],
+    /Meeting 5 · September 28, 2026 0\/4 · 0\.0% Directional only/,
+  );
+  assert.match(
+    correctedThresholdRows[4],
+    /4\/4 · 100\.0% Directional only/,
+  );
   assert.doesNotMatch(
     buildHeadToHeadReportHtml(report, ['overview']),
     /<h2>Break-point moments by meeting<\/h2>/,

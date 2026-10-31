@@ -419,6 +419,7 @@ export function getPlayerTrendComparisonSampleNotice(
 }
 
 const allPointCodes: PointCode[] = [...shotCodes, 'N', 'L', 'W', 'D', 'FE'];
+export const BREAK_POINT_DIRECTIONAL_SAMPLE_THRESHOLD = 5;
 
 function isPointCode(value: string): value is PointCode {
   return allPointCodes.includes(value as PointCode);
@@ -441,7 +442,7 @@ function breakPointFeedback(
     kind === 'conversion'
       ? `converted ${successful} of ${total} break-point chances`
       : `saved ${successful} of ${total} break points faced`;
-  if (total < 5) {
+  if (total < BREAK_POINT_DIRECTIONAL_SAMPLE_THRESHOLD) {
     return `Directional only, not conclusive: the tracked player ${detail} (${successPercent}%).`;
   }
 
@@ -490,7 +491,11 @@ function opponentBreakPointFeedback(
   if (details.length === 0) return null;
 
   const pattern = `the opponent ${details.join(' and ')}`;
-  if (sampleSizes.some((sampleSize) => sampleSize < 5)) {
+  if (
+    sampleSizes.some(
+      (sampleSize) => sampleSize < BREAK_POINT_DIRECTIONAL_SAMPLE_THRESHOLD,
+    )
+  ) {
     return `Directional only, not conclusive: ${pattern}.`;
   }
   return `Opponent break-point pattern: ${pattern}.`;

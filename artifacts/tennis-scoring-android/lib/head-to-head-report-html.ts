@@ -6,6 +6,7 @@ import {
   calculateBreakPointStats,
   getLocalPointHistory,
 } from '@/lib/local-matches';
+import { BREAK_POINT_DIRECTIONAL_SAMPLE_THRESHOLD } from '@/lib/player-insights';
 import { POINT_CODE_LABELS } from '@/lib/player-report-html';
 import {
   getAnonymizedReportPlayerLabels,
@@ -133,6 +134,24 @@ function tableRows(rows: readonly (readonly string[])[]): string {
     .join('');
 }
 
+function breakPointRateCell(
+  successful: number,
+  chances: number,
+  savedPointCount: number,
+): string {
+  if (savedPointCount === 0) return 'No point log';
+  if (chances === 0) return 'No chances';
+
+  const rate = `${successful}/${chances} · ${(
+    (successful / chances) *
+    100
+  ).toFixed(1)}%`;
+  const escapedRate = escapeHtml(rate);
+  return chances < BREAK_POINT_DIRECTIONAL_SAMPLE_THRESHOLD
+    ? `${escapedRate}<span class="directional-sample-label">Directional only</span>`
+    : escapedRate;
+}
+
 function breakPointMeetingTables(
   report: HeadToHeadReport,
   trackedPlayer: string,
@@ -226,24 +245,13 @@ function breakPointMeetingTables(
         <td>${savedPointCount === 0 ? 'No point log saved' : `${savedPointCount} points saved`}</td>
         <td>${momentsFound}</td>
       </tr>`);
-    const resultCell = (
-      numerator: number,
-      denominator: number,
-    ): string => {
-      if (savedPointCount === 0) return 'No point log';
-      if (denominator === 0) return 'No chances';
-      return `${numerator}/${denominator} · ${(
-        (numerator / denominator) *
-        100
-      ).toFixed(1)}%`;
-    };
     resultRows.push(`
       <tr>
         <td>${escapeHtml(meetingLabel)}</td>
-        <td>${escapeHtml(resultCell(pointStats.tracked.converted, pointStats.tracked.opportunities))}</td>
-        <td>${escapeHtml(resultCell(pointStats.tracked.saved, pointStats.tracked.faced))}</td>
-        <td>${escapeHtml(resultCell(pointStats.opponent.converted, pointStats.opponent.opportunities))}</td>
-        <td>${escapeHtml(resultCell(pointStats.opponent.saved, pointStats.opponent.faced))}</td>
+        <td>${breakPointRateCell(pointStats.tracked.converted, pointStats.tracked.opportunities, savedPointCount)}</td>
+        <td>${breakPointRateCell(pointStats.tracked.saved, pointStats.tracked.faced, savedPointCount)}</td>
+        <td>${breakPointRateCell(pointStats.opponent.converted, pointStats.opponent.opportunities, savedPointCount)}</td>
+        <td>${breakPointRateCell(pointStats.opponent.saved, pointStats.opponent.faced, savedPointCount)}</td>
       </tr>`);
     momentRows.push(...meetingMomentRows);
   });
@@ -730,6 +738,7 @@ export function buildHeadToHeadReportHtml(
       .break-point-results-table th:not(:first-child), .break-point-results-table td:not(:first-child) { width: 20%; text-align: center; }
       .break-point-results-table thead { display: table-header-group; }
       .break-point-results-table tr { break-inside: avoid; page-break-inside: avoid; }
+      .directional-sample-label { color: #a45c45; display: block; font-size: 6.5px; font-weight: 700; margin-top: 2px; }
       .break-point-context-table { break-inside: auto; font-size: 8px; page-break-inside: auto; table-layout: fixed; }
       .break-point-context-table th:first-child, .break-point-context-table td:first-child { width: 23%; }
       .break-point-context-table th:nth-child(2), .break-point-context-table td:nth-child(2),
@@ -804,7 +813,7 @@ export function buildHeadToHeadReportHtml(
         <thead><tr><th>Meeting</th><th>Saved point records</th><th>Break-point moments found</th></tr></thead>
         <tbody>${breakPointTables.coverageRows || '<tr><td colspan="3">No meetings are available.</td></tr>'}</tbody>
       </table>
-      <p class="note">Each rate is successes/chances: returns show converted break points/opportunities, and serves show saved break points/faced chances. “No point log” and “No chances” are unavailable, not zero performance.</p>
+      <p class="note">Each rate is successes/chances: returns show converted break points/opportunities, and serves show saved break points/faced chances. Rates with fewer than ${BREAK_POINT_DIRECTIONAL_SAMPLE_THRESHOLD} chances are marked “Directional only,” not conclusive. “No point log” and “No chances” are unavailable, not zero performance.</p>
       <table class="break-point-results-table">
         <thead>
           <tr><th rowspan="2">Meeting</th><th colspan="2">${escapeHtml(trackedPlayer)}</th><th colspan="2">${escapeHtml(opponent)}</th></tr>
