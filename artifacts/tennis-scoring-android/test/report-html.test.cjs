@@ -119,6 +119,10 @@ const headToHeadScreenSource = fs.readFileSync(
   path.join(__dirname, '../app/head-to-head.tsx'),
   'utf8',
 );
+const homeScreenSource = fs.readFileSync(
+  path.join(__dirname, '../app/index.tsx'),
+  'utf8',
+);
 const playerMatchScreenSource = fs.readFileSync(
   path.join(__dirname, '../app/matches/[id].tsx'),
   'utf8',
@@ -1072,7 +1076,7 @@ test('head-to-head break-point rates are unavailable for empty samples', () => {
   ]);
 });
 
-test('deleting a match removes its break points from the personal baseline and PDF', async () => {
+test('deleting matches clears final head-to-head history and invalidates reviewed PDFs', async () => {
   storageValues.clear();
   async function createBreakPointMatch(opponent, matchDate) {
     const match = await createLocalMatch({
@@ -1163,23 +1167,89 @@ test('deleting a match removes its break points from the personal baseline and P
   assert.match(remainingHtml, /1 recorded · 0 complete/);
   assert.match(remainingHtml, /Pooled break-point chances across 1 saved match/);
 
-  const deletedPairingReport = buildHeadToHeadReport(
-    'Alex',
-    'Bailey',
+  const reviewedVersion = buildHeadToHeadReportReviewVersion(
+    remainingReport.meetings
+      .map(({ summary }) => `${summary.id}:${summary.updatedAt}`)
+      .join('|'),
+    allHeadToHeadReportSections(),
     [],
-    afterDeletion.meetings,
+    getReportNameVisibilityVersion(false, {}),
   );
-  assert.equal(deletedPairingReport.matchesRecorded, 0);
-  assert.equal(deletedPairingReport.personalAverageMatches, 1);
-  assert.deepEqual(deletedPairingReport.personalAverageInsights.breakPoints.tracked, {
-    opportunities: 1,
-    converted: 1,
+  assert.ok(reviewedVersion);
+  const finalMatchId = remainingReport.meetings[0].summary.id;
+  assert.equal(await deleteLocalMatch(finalMatchId), true);
+  const afterFinalDeletion = await trackedMeetingsFromLocalMatches();
+  assert.deepEqual(afterFinalDeletion.summaries, []);
+  assert.deepEqual(afterFinalDeletion.meetings, []);
+  assert.deepEqual(
+    getHeadToHeadOpponentOptions('Alex', afterFinalDeletion.summaries),
+    [],
+  );
+
+  const emptyHistoryReport = buildHeadToHeadReport(
+    'Alex',
+    'Casey',
+    [],
+    afterFinalDeletion.meetings,
+  );
+  assert.equal(emptyHistoryReport.meetings.length, 0);
+  assert.equal(emptyHistoryReport.matchesRecorded, 0);
+  assert.equal(emptyHistoryReport.completedMatches, 0);
+  assert.equal(emptyHistoryReport.personalAverageMatches, 0);
+  assert.equal(emptyHistoryReport.insights.pointCount, 0);
+  assert.deepEqual(emptyHistoryReport.insights.breakPoints.tracked, {
+    opportunities: 0,
+    converted: 0,
     faced: 0,
     saved: 0,
   });
-  const deletedPairingHtml = buildHeadToHeadReportHtml(deletedPairingReport);
-  assert.match(deletedPairingHtml, /0 recorded · 0 complete/);
-  assert.match(deletedPairingHtml, /Pooled break-point chances across 1 saved match/);
+  assert.deepEqual(emptyHistoryReport.insights.breakPoints.opponent, {
+    opportunities: 0,
+    converted: 0,
+    faced: 0,
+    saved: 0,
+  });
+  assert.deepEqual(
+    emptyHistoryReport.personalAverageInsights.breakPoints.tracked,
+    {
+      opportunities: 0,
+      converted: 0,
+      faced: 0,
+      saved: 0,
+    },
+  );
+  assert.ok(
+    emptyHistoryReport.personalAverageBreakPointsBySurface.every(
+      ({ matchCount, breakPoints }) =>
+        matchCount === 0 &&
+        breakPoints.opportunities === 0 &&
+        breakPoints.faced === 0,
+    ),
+  );
+  const emptyHistoryHtml = buildHeadToHeadReportHtml(emptyHistoryReport);
+  assert.match(emptyHistoryHtml, /0 recorded · 0 complete/);
+  assert.match(emptyHistoryHtml, /Pooled break-point chances across 0 saved matches/);
+
+  const emptyReportVersion = buildHeadToHeadReportReviewVersion(
+    emptyHistoryReport.meetings
+      .map(({ summary }) => `${summary.id}:${summary.updatedAt}`)
+      .join('|'),
+    allHeadToHeadReportSections(),
+    [],
+    getReportNameVisibilityVersion(false, {}),
+  );
+  assert.equal(emptyReportVersion, '');
+  assert.equal(isReportReviewCurrent(reviewedVersion, emptyReportVersion), false);
+  const hasReviewedReport = Boolean(emptyReportVersion) &&
+    isReportReviewCurrent(reviewedVersion, emptyReportVersion) &&
+    Boolean('file:///reviewed-head-to-head.pdf');
+  assert.equal(hasReviewedReport, false);
+
+  assert.match(homeScreenSource, /invalidateQueries\(\{\s*queryKey:\s*LOCAL_MATCH_LIST_KEY\s*\}\)/);
+  assert.match(headToHeadScreenSource, /queryKey:\s*LOCAL_MATCH_LIST_KEY/);
+  assert.match(headToHeadScreenSource, /!opponentOptions\.length/);
+  assert.match(headToHeadScreenSource, /const reportHtml = report && reportBenchmarksQuery\.data/);
+  assert.match(headToHeadScreenSource, /!fileUri\s*\|\|\s*!hasReviewedReport/);
 });
 
 test('player statistics match a deterministic four-game point log', () => {
