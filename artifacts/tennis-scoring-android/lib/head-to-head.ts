@@ -37,6 +37,14 @@ export interface SurfaceBreakPointBaseline {
   breakPoints: BreakPointStats;
 }
 
+export interface HeadToHeadSurfaceBreakPoints {
+  surface: PersonalAverageCourtSurface;
+  matchCount: number;
+  pointLogCount: number;
+  tracked: BreakPointStats;
+  opponent: BreakPointStats;
+}
+
 export const PERSONAL_AVERAGE_COURT_SURFACES = [
   'Hard',
   'Clay',
@@ -67,6 +75,7 @@ export interface HeadToHeadReport {
   personalAveragePerformance: PlayerPerformanceSummary;
   personalAverageMatches: number;
   personalAverageBreakPointsBySurface: SurfaceBreakPointBaseline[];
+  breakPointsBySurface: HeadToHeadSurfaceBreakPoints[];
 }
 
 function normalizeName(value: string): string {
@@ -328,6 +337,26 @@ export function buildHeadToHeadReport(
         breakPoints: surfaceInsights.breakPoints.tracked,
       };
     });
+  const breakPointsBySurface = PERSONAL_AVERAGE_COURT_SURFACES.map(
+    (surface) => {
+      const surfaceMeetings = meetings.filter(
+        ({ summary }) => summary.surface === surface,
+      );
+      const pointSampledSurfaceMeetings = surfaceMeetings.filter(
+        (meeting) => meeting.insights.pointCount > 0,
+      );
+      const surfaceInsights = aggregateLocalInsights(
+        pointSampledSurfaceMeetings.map((meeting) => meeting.insights),
+      );
+      return {
+        surface,
+        matchCount: surfaceMeetings.length,
+        pointLogCount: pointSampledSurfaceMeetings.length,
+        tracked: surfaceInsights.breakPoints.tracked,
+        opponent: surfaceInsights.breakPoints.opponent,
+      };
+    },
+  );
   const completeMeetings = meetings.filter(
     (meeting) => meeting.summary.status === 'complete',
   );
@@ -389,5 +418,6 @@ export function buildHeadToHeadReport(
     ),
     personalAverageMatches: pointSampledPersonalMeetings.length,
     personalAverageBreakPointsBySurface,
+    breakPointsBySurface,
   };
 }

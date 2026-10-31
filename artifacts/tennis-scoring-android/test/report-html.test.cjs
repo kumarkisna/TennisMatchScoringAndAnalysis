@@ -1128,6 +1128,147 @@ test('surface break-point averages pool chances and mark missing rates unavailab
   );
 });
 
+test('head-to-head break-point rates compare each surface and separate missing logs from no chances', () => {
+  const hardOne = breakPointMeeting(
+    'pair-hard-one',
+    'Alex',
+    'Bailey',
+    { opportunities: 4, converted: 2, faced: 5, saved: 3 },
+    { opportunities: 1, converted: 1, faced: 3, saved: 2 },
+    '2026-10-01',
+    'Hard',
+  );
+  const hardTwo = breakPointMeeting(
+    'pair-hard-two',
+    'Alex',
+    'Bailey',
+    { opportunities: 6, converted: 3, faced: 4, saved: 2 },
+    { opportunities: 2, converted: 1, faced: 3, saved: 2 },
+    '2026-10-02',
+    'Hard',
+  );
+  const clayWithoutLog = breakPointMeeting(
+    'pair-clay-no-log',
+    'Alex',
+    'Bailey',
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    '2026-10-03',
+    'Clay',
+  );
+  clayWithoutLog.insights.pointCount = 0;
+  clayWithoutLog.summary.pointCount = 0;
+  const grassWithoutChances = breakPointMeeting(
+    'pair-grass-no-chances',
+    'Alex',
+    'Bailey',
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+    '2026-10-04',
+    'Grass',
+  );
+  const carpetWithPartialChances = breakPointMeeting(
+    'pair-carpet-partial',
+    'Alex',
+    'Bailey',
+    { opportunities: 1, converted: 1, faced: 0, saved: 0 },
+    { opportunities: 0, converted: 0, faced: 2, saved: 1 },
+    '2026-10-05',
+    'Carpet',
+  );
+  const reverseOriented = breakPointMeeting(
+    'reverse-pair-hard',
+    'Bailey',
+    'Alex',
+    { opportunities: 100, converted: 100, faced: 100, saved: 0 },
+    { opportunities: 100, converted: 0, faced: 100, saved: 0 },
+    '2026-10-06',
+    'Hard',
+  );
+
+  const report = buildHeadToHeadReport(
+    'Alex',
+    'Bailey',
+    [
+      hardOne,
+      hardTwo,
+      clayWithoutLog,
+      grassWithoutChances,
+      carpetWithPartialChances,
+      reverseOriented,
+    ],
+  );
+
+  assert.deepEqual(
+    report.breakPointsBySurface.map(
+      ({ surface, matchCount, pointLogCount, tracked, opponent }) => ({
+        surface,
+        matchCount,
+        pointLogCount,
+        tracked,
+        opponent,
+      }),
+    ),
+    [
+      {
+        surface: 'Hard',
+        matchCount: 2,
+        pointLogCount: 2,
+        tracked: { opportunities: 10, converted: 5, faced: 9, saved: 5 },
+        opponent: { opportunities: 3, converted: 2, faced: 6, saved: 4 },
+      },
+      {
+        surface: 'Clay',
+        matchCount: 1,
+        pointLogCount: 0,
+        tracked: { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+        opponent: { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+      },
+      {
+        surface: 'Grass',
+        matchCount: 1,
+        pointLogCount: 1,
+        tracked: { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+        opponent: { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+      },
+      {
+        surface: 'Carpet',
+        matchCount: 1,
+        pointLogCount: 1,
+        tracked: { opportunities: 1, converted: 1, faced: 0, saved: 0 },
+        opponent: { opportunities: 0, converted: 0, faced: 2, saved: 1 },
+      },
+      {
+        surface: 'Other',
+        matchCount: 0,
+        pointLogCount: 0,
+        tracked: { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+        opponent: { opportunities: 0, converted: 0, faced: 0, saved: 0 },
+      },
+    ],
+  );
+
+  const html = buildHeadToHeadReportHtml(report);
+  assert.deepEqual(
+    reportRows(html, 'Head-to-head break-point rates by court surface'),
+    [
+      'Matches recorded 2 1 1 1 0',
+      'Matches with point logs 2 0 1 1 0',
+      'Alex · break points converted 5/10 · 50.0% No point log No chances 1/1 · 100.0% No point log',
+      'Alex · break points saved 5/9 · 55.6% No point log No chances No chances No point log',
+      'Bailey · break points converted 2/3 · 66.7% No point log No chances No chances No point log',
+      'Bailey · break points saved 4/6 · 66.7% No point log No chances 1/2 · 50.0% No point log',
+    ],
+  );
+  assert.deepEqual(reportRows(html, 'Personal break-point rates by court surface'), [
+    'Matches included 2 0 1 1 0',
+    'Break points converted 5/10 · 50.0% — — 1/1 · 100.0% —',
+    'Break points missed 5/10 · 50.0% — — 0/1 · 0.0% —',
+    'Break points saved 5/9 · 55.6% — — — —',
+    'Break points lost while serving 4/9 · 44.4% — — — —',
+  ]);
+});
+
 test('head-to-head break-point rates are unavailable for empty samples', () => {
   const noChances = breakPointMeeting(
     'alex-bailey-no-break-points',

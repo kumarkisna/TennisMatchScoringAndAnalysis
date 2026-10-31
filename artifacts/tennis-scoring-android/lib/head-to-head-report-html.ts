@@ -572,6 +572,57 @@ export function buildHeadToHeadReportHtml(
       ),
     ],
   ]);
+  const headToHeadSurfaces = report.breakPointsBySurface ?? [];
+  const headToHeadSurfaceRows = tableRows([
+    [
+      'Matches recorded',
+      ...headToHeadSurfaces.map(({ matchCount }) => String(matchCount)),
+    ],
+    [
+      'Matches with point logs',
+      ...headToHeadSurfaces.map(({ pointLogCount }) => String(pointLogCount)),
+    ],
+    [
+      `${trackedPlayer} · break points converted`,
+      ...headToHeadSurfaces.map(({ pointLogCount, tracked }) =>
+        pointLogCount === 0
+          ? 'No point log'
+          : tracked.opportunities === 0
+            ? 'No chances'
+            : rate(tracked.converted, tracked.opportunities),
+      ),
+    ],
+    [
+      `${trackedPlayer} · break points saved`,
+      ...headToHeadSurfaces.map(({ pointLogCount, tracked }) =>
+        pointLogCount === 0
+          ? 'No point log'
+          : tracked.faced === 0
+            ? 'No chances'
+            : rate(tracked.saved, tracked.faced),
+      ),
+    ],
+    [
+      `${opponent} · break points converted`,
+      ...headToHeadSurfaces.map(({ pointLogCount, opponent: stats }) =>
+        pointLogCount === 0
+          ? 'No point log'
+          : stats.opportunities === 0
+            ? 'No chances'
+            : rate(stats.converted, stats.opportunities),
+      ),
+    ],
+    [
+      `${opponent} · break points saved`,
+      ...headToHeadSurfaces.map(({ pointLogCount, opponent: stats }) =>
+        pointLogCount === 0
+          ? 'No point log'
+          : stats.faced === 0
+            ? 'No chances'
+            : rate(stats.saved, stats.faced),
+      ),
+    ],
+  ]);
 
   const matchRows = report.meetings
     .map((meeting) => {
@@ -798,6 +849,12 @@ export function buildHeadToHeadReportHtml(
       <h3>${escapeHtml(trackedPlayer)} · personal average</h3>
       <p class="note">Pooled break-point chances across ${report.personalAverageMatches} saved ${report.personalAverageMatches === 1 ? 'match' : 'matches'} where this player was recorded as the tracked player, including this pairing when present.</p>
       <table><thead><tr><th>Statistic</th><th>Personal average</th></tr></thead><tbody>${personalBreakPointRows}</tbody></table>
+       <h3>Head-to-head break-point rates by court surface</h3>
+       <p class="note">Rates pool recorded chances from this pairing on each surface. Match counts include meetings without point logs; the logged-match count shows how many matches contribute point samples. No point log and No chances are unavailable, not zero performance.</p>
+       <table class="surface-break-point-table">
+         <thead><tr><th>Statistic</th>${headToHeadSurfaces.map(({ surface }) => `<th>${escapeHtml(surface)}</th>`).join('')}</tr></thead>
+         <tbody>${headToHeadSurfaceRows}</tbody>
+       </table>
       <h3>Personal break-point rates by court surface</h3>
       <p class="note">Each rate pools recorded chances from point-recorded matches on that surface. The match count is shown separately, and Other is included as its own group. Rates are unavailable where no chances were recorded.</p>
       <table class="surface-break-point-table">
