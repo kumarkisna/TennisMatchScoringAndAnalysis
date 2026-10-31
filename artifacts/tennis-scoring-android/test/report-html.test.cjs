@@ -128,6 +128,7 @@ const localReportLayoutManagerSource = fs.readFileSync(
   'utf8',
 );
 const {
+  addLocalSet,
   appendLocalNotePrompt,
   calculateBreakPointStats,
   calculateLocalInsights,
@@ -598,6 +599,47 @@ async function createSavedPointReportFixture() {
   };
 }
 
+async function createTwoSetSavedPointReportFixture() {
+  const match = await createLocalMatch({
+    matchDate: '2026-10-30',
+    event: 'Two-set report correction check',
+    round: 'Final',
+    trackedPlayer: 'Tracked',
+    opponent: 'Opponent',
+    chairCoach: null,
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+  const firstSetWinners =
+    'ttttttotottttootttttootototottotoooooooottootoootttt';
+  let savedMatch = match;
+  for (const [index, winnerCode] of [...firstSetWinners].entries()) {
+    savedMatch = await recordLocalPoint(match.id, {
+      winner: winnerCode === 't' ? 'tracked' : 'opponent',
+      endingCode:
+        index === 0 ? 'A' : index === 6 ? 'N' : index === 20 ? 'F' : null,
+    });
+  }
+  savedMatch = await addLocalSet(match.id, 'standard');
+  const laterSetInputs = [
+    { winner: 'tracked', firstServeFault: true },
+    { winner: 'tracked' },
+    { winner: 'tracked' },
+    { winner: 'tracked' },
+    { winner: 'opponent' },
+    { winner: 'opponent', endingCode: 'N' },
+  ];
+  for (const input of laterSetInputs) {
+    savedMatch = await recordLocalPoint(match.id, input);
+  }
+
+  return {
+    matchId: match.id,
+    rallyPointId: savedMatch.completedSets[0].points[1].id,
+  };
+}
+
 async function buildSavedPointReportSnapshot(matchId) {
   const match = await getLocalMatch(matchId);
   assert.ok(match, 'Expected the corrected match to remain saved locally');
@@ -614,6 +656,7 @@ async function buildSavedPointReportSnapshot(matchId) {
   );
 
   return {
+    match,
     insights,
     performance,
     playerHtml,
@@ -1504,6 +1547,118 @@ test('saved-point corrections and undo refresh match and head-to-head report sta
     errorOpponent: '—',
     pointCount: 2,
   });
+});
+
+test('multi-set point corrections refresh reports and preserve later-set data', async () => {
+  storageValues.clear();
+  const { matchId, rallyPointId } =
+    await createTwoSetSavedPointReportFixture();
+  const initial = await buildSavedPointReportSnapshot(matchId);
+  const laterSetServers = [
+    'tracked',
+    'tracked',
+    'tracked',
+    'tracked',
+    'opponent',
+    'opponent',
+  ];
+
+  assert.equal(initial.match.completedSets.length, 1);
+  assert.equal(initial.match.setNumber, 2);
+  assert.equal(initial.match.firstServer, 'opponent');
+  assert.deepEqual(
+    initial.match.points.map((point) => point.server),
+    laterSetServers,
+  );
+  assertPointAnalysisInBothReports(initial, {
+    rallyTile: '1/58 (1.7%)',
+    rallyTracked: '0/58 · 0.0%',
+    rallyOpponent: '1/58 · 1.7%',
+    errorTile: '2',
+    errorTracked: '2 · 58 recorded points',
+    errorOpponent: '0 · 58 recorded points',
+    pointCount: 58,
+  });
+  assertServeMetricInBothReports(
+    initial,
+    'Second serve in',
+    '1/1 (100.0%)',
+    '1/1 · 100.0%',
+    '—',
+    '—',
+  );
+  assert.equal(initial.insights.serveStats.tracked.aces, 1);
+  assert.equal(initial.insights.serveStats.tracked.firstServeFaults, 1);
+  assert.equal(initial.insights.serveStats.opponent.firstServeFaults, 0);
+
+  await editLocalPointWinner(matchId, 1, rallyPointId, 'opponent');
+  const corrected = await buildSavedPointReportSnapshot(matchId);
+  assert.equal(
+    corrected.match.completedSets[0].points[1].winner,
+    'opponent',
+  );
+  assert.equal(corrected.match.completedSets[0].firstServer, 'tracked');
+  assert.equal(corrected.match.firstServer, 'opponent');
+  assert.notDeepEqual(
+    corrected.match.points.map((point) => point.server),
+    initial.match.points.map((point) => point.server),
+  );
+  assert.deepEqual(corrected.match.points, initial.match.points);
+  assert.deepEqual(
+    corrected.match.points.map((point) => point.server),
+    ['opponent', 'opponent', 'opponent', 'opponent', 'tracked', 'tracked'],
+  );
+  assertPointAnalysisInBothReports(corrected, {
+    rallyTile: '1/58 (1.7%)',
+    rallyTracked: '1/58 · 1.7%',
+    rallyOpponent: '0/58 · 0.0%',
+    errorTile: '2',
+    errorTracked: '2 · 58 recorded points',
+    errorOpponent: '0 · 58 recorded points',
+    pointCount: 58,
+  });
+  assertServeMetricInBothReports(
+    corrected,
+    'Second serve in',
+    '—',
+    '—',
+    '1/1 (100.0%)',
+    '1/1 · 100.0%',
+  );
+  assert.equal(corrected.insights.serveStats.tracked.firstServeFaults, 0);
+  assert.equal(corrected.insights.serveStats.opponent.firstServeFaults, 1);
+
+  await undoLocalPoint(matchId);
+  const afterUndo = await buildSavedPointReportSnapshot(matchId);
+  assert.deepEqual(
+    afterUndo.match.completedSets[0],
+    corrected.match.completedSets[0],
+  );
+  assert.deepEqual(
+    afterUndo.match.points,
+    corrected.match.points.slice(0, -1),
+  );
+  assert.deepEqual(
+    afterUndo.match.points.map((point) => point.server),
+    laterSetServers.slice(0, -1),
+  );
+  assertPointAnalysisInBothReports(afterUndo, {
+    rallyTile: '1/57 (1.8%)',
+    rallyTracked: '1/57 · 1.8%',
+    rallyOpponent: '0/57 · 0.0%',
+    errorTile: '1',
+    errorTracked: '1 · 57 recorded points',
+    errorOpponent: '0 · 57 recorded points',
+    pointCount: 57,
+  });
+  assertServeMetricInBothReports(
+    afterUndo,
+    'Second serve in',
+    '—',
+    '—',
+    '1/1 (100.0%)',
+    '1/1 · 100.0%',
+  );
 });
 
 test('player feedback interprets break-point results and marks small samples directional', () => {
