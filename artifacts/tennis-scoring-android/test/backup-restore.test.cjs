@@ -847,6 +847,90 @@ test('backup restore remaps both saved player links and keeps each player histor
   assert.equal(networkRequestCount, 0);
 });
 
+test('backup restore keeps the existing main player while importing new records', async () => {
+  storageValues.clear();
+  networkRequestCount = 0;
+  loadLocalModules();
+
+  const backupTrackedPlayer =
+    await activeModules.localPlayers.addLocalPlayer('Backup Tracked Player');
+  const backupOpponent =
+    await activeModules.localPlayers.addLocalPlayer('Backup Opponent');
+  await activeModules.localPlayers.setActiveLocalPlayerId(
+    backupTrackedPlayer.id,
+  );
+  const importedMatch = await activeModules.localMatches.createLocalMatch({
+    matchDate: '2026-10-30',
+    event: 'Imported Match',
+    trackedPlayer: backupTrackedPlayer.name,
+    trackedPlayerId: backupTrackedPlayer.id,
+    opponent: backupOpponent.name,
+    opponentPlayerId: backupOpponent.id,
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+  await activeModules.localMatches.recordLocalPoint(importedMatch.id, {
+    winner: 'tracked',
+  });
+  const backupContents = await loadBackupModule().createLocalBackupJson();
+  const exportedBackup = JSON.parse(backupContents);
+  assert.equal(exportedBackup.activePlayerId, backupTrackedPlayer.id);
+
+  storageValues.clear();
+  loadLocalModules();
+  const existingMainPlayer =
+    await activeModules.localPlayers.addLocalPlayer('Existing Main Player');
+  await activeModules.localPlayers.setActiveLocalPlayerId(
+    existingMainPlayer.id,
+  );
+  const existingMatch = await activeModules.localMatches.createLocalMatch({
+    matchDate: '2026-10-29',
+    event: 'Already Saved Match',
+    trackedPlayer: existingMainPlayer.name,
+    trackedPlayerId: existingMainPlayer.id,
+    opponent: 'Local Opponent',
+    surface: 'Clay',
+    firstServer: 'opponent',
+    setNumber: 1,
+  });
+  assert.notEqual(exportedBackup.activePlayerId, existingMainPlayer.id);
+  selectedBackupContents = backupContents;
+
+  const restoreResult = await loadBackupModule().loadLocalBackupFromDevice();
+  const restoredPlayers = await activeModules.localPlayers.listLocalPlayers();
+  const restoredTrackedPlayer = restoredPlayers.find(
+    (player) => player.name === backupTrackedPlayer.name,
+  );
+  const restoredOpponent = restoredPlayers.find(
+    (player) => player.name === backupOpponent.name,
+  );
+  const restoredMatch =
+    await activeModules.localMatches.getLocalMatch(importedMatch.id);
+  const retainedMatch =
+    await activeModules.localMatches.getLocalMatch(existingMatch.id);
+
+  assert.deepEqual(restoreResult, {
+    cancelled: false,
+    playersAdded: 2,
+    playersSkipped: 0,
+    matchesAdded: 1,
+    matchesSkipped: 0,
+  });
+  assert.ok(restoredTrackedPlayer);
+  assert.ok(restoredOpponent);
+  assert.ok(restoredMatch);
+  assert.equal(restoredMatch.trackedPlayerId, restoredTrackedPlayer.id);
+  assert.equal(restoredMatch.opponentPlayerId, restoredOpponent.id);
+  assert.equal(restoredMatch.points.length, 1);
+  assert.ok(retainedMatch);
+  assert.equal(
+    await activeModules.localPlayers.getActiveLocalPlayerId(),
+    existingMainPlayer.id,
+  );
+  assert.equal(networkRequestCount, 0);
+});
+
 test('restoring custom report labels leaves saved records unchanged', async () => {
   storageValues.clear();
   networkRequestCount = 0;

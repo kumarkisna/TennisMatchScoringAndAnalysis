@@ -44,3 +44,9 @@ description: Product requirements for multi-set tennis records, tiebreak-only se
 **Why:** The user needs older backups to remain restorable while invalid match results must never partially import or alter existing local records.
 
 **How to apply:** Validate the complete backup before starting any import writes. Keep regression tests for invalid reasons, invalid winner sides, unchanged local storage, and legacy backups without outcome fields.
+
+**Rule:** Importing a valid backup must preserve the device's existing selected tracked player. Use the backup's selected player only when the device has no active player.
+
+**Why:** The user wants backup restore to add records without silently switching the player they are currently tracking.
+
+**How to apply:** Capture the active player before merging, map imported player and match IDs as needed, and test restoring a backup with a different active player while confirming new records import and the existing selection remains.
