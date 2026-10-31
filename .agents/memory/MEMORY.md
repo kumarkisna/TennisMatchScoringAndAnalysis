@@ -1,6 +1,6 @@
 - [Android standalone storage](android-scoring-storage.md) — matches, profiles, and report analytics stay on-device; auth, sync, and sharing are out of scope.
 - [Match set structure and reporting](tennis-match-structure.md) — matches can contain unlimited sets; reports name winners only from unambiguous completed-set majorities.
-- [Player trend comparisons](player-trends.md) — compare saved players using date-ordered on-device point logs and attempt-weighted percentages with visible samples.
+- [Player trend comparisons](player-trends.md) — compare saved players using date-ordered point logs, visible samples, and separate match-result totals.
 - [Unbranded private reports](private-reports.md) — omit company marks; use optional on-device neutral labels consistently in previews and PDFs.
 - [Saved player links](player-profile-links.md) — preserve profile URLs with local player records and make them directly openable.
 - [pnpm security policy](pnpm-security-policy.md) — inspect workspace settings after dependency commands; pnpm can rewrite the release-age protection.

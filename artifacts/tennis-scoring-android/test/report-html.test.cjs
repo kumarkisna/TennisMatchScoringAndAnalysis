@@ -2663,11 +2663,15 @@ test('head-to-head summaries separate ordinary results, retirements, and walkove
     walkovers: { count: 1, wins: 1, losses: 0, noWinner: 0 },
     inProgress: 1,
   });
-  assert.equal(report.performance.matchesInSample, 4);
+  assert.equal(report.performance.matchesInSample, 3);
   const html = buildHeadToHeadReportHtml(report);
   assert.match(html, /Ordinary 2 \(1–0\) · 1 without a clear winner/);
   assert.match(html, /Retirements 1 \(0–1\)/);
   assert.match(html, /Walkovers 1 \(1–0\)/);
+  assert.match(
+    headToHeadScreenSource,
+    /formatPlayerMatchOutcomeSummary\(report\.matchOutcomeTotals\)/,
+  );
 });
 
 test('head-to-head reports compare selected local benchmarks without exposing preset names', () => {
