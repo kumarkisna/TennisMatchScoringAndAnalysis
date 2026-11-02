@@ -6,3 +6,4 @@
 - [pnpm security policy](pnpm-security-policy.md) — inspect workspace settings after dependency commands; pnpm can rewrite the release-age protection.
 - [Home and history split](home-history.md) — keep the two newest matches on Home; put older matches in a dedicated newest-first History screen.
 - [Vibrant local themes](offline-themes.md) — offer clearly varied, vivid palettes and editable custom colors while preserving the original default and offline storage.
+- [Expo monorepo autolinking](expo-monorepo-autolinking.md) — include both app and workspace-root node_modules in autolinking search paths.

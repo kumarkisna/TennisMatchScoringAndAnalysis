@@ -26,6 +26,9 @@
       "output": "static"
     },
     "plugins": ["expo-router"],
+    "autolinking": {
+      "searchPaths": ["../../node_modules", "./node_modules"]
+    },
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
