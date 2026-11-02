@@ -92,6 +92,18 @@ The app's `.gitignore` excludes this generated folder. Build from it locally; do
 
 Android Studio's bundled Java runtime can be newer than the version this React Native build expects. Use JDK 17 for Gradle.
 
+### Set Java for Git Bash
+
+Android Studio's Gradle JDK selection does not automatically set `JAVA_HOME` in a separate Git Bash window. Find the JDK path shown in the Gradle settings above. In Git Bash, set `JAVA_HOME` to that JDK folder (not its `bin` subfolder), converting a Windows path such as `C:\Program Files\Java\jdk-17` to `/c/Program Files/Java/jdk-17`:
+
+```bash
+export JAVA_HOME="/c/Program Files/Java/jdk-17"
+export PATH="$JAVA_HOME/bin:$PATH"
+java -version
+```
+
+Replace the example path with the JDK 17 path on your computer. These commands last for the current Git Bash window only. To make them persistent, add a Windows user variable named `JAVA_HOME` with the JDK folder as its value, add `%JAVA_HOME%\bin` to the user `Path`, and reopen Git Bash.
+
 ## 6. Build an APK
 
 ### Standalone release APK
@@ -111,6 +123,15 @@ The usual output path is:
 ```text
 artifacts\tennis-scoring-android\android\app\build\outputs\apk\release\app-release.apk
 ```
+
+You can also build from Git Bash. From the repository root, after setting `JAVA_HOME` as described above, run:
+
+```bash
+cd artifacts/tennis-scoring-android/android
+./gradlew.bat assembleRelease
+```
+
+The command should finish with `BUILD SUCCESSFUL`. The generated APK is in the output folder shown above.
 
 For a properly signed APK to install on devices or share, use **Build → Generate Signed Bundle / APK → APK** and follow the wizard. Create a signing key or select the existing key used for prior releases. Keep the keystore and passwords private, backed up, and outside GitHub; future updates must use the same Android package ID and signing key.
 
@@ -148,9 +169,29 @@ If `NODE_PATH` already has a value, append these paths rather than replacing the
 
 - **`sh` is not recognized:** run dependency commands from Git Bash at the repository root.
 - **pnpm reports a lockfile mismatch:** confirm `pnpm --version` is `10.26.1`, then run `pnpm install --frozen-lockfile` again from the repository root.
-- **Gradle reports a Java or JDK error:** set Android Studio's Gradle JDK to JDK 17 and sync again.
+- **`JAVA_HOME is not set` in Git Bash:** Android Studio's Gradle JDK selection does not set it for standalone terminals. Set `JAVA_HOME` and add its `bin` directory to `PATH` as described above, then confirm `java -version` works in that same window.
 - **Gradle asks for an SDK or license:** install the named SDK component from Android Studio's SDK Manager and accept its license.
-- **Ninja reports a path or `build.ninja` error:** move the clone to a shorter path such as `C:\ts`, keep `node-linker=hoisted` in the local root `.npmrc`, reinstall, and regenerate Android with `pnpm exec expo prebuild --platform android`.
+- **Ninja reports `mkdir(...)`, a path longer than 260 characters, or a CMake codegen path error on Windows:** enable Windows long paths from PowerShell opened as Administrator, then restart Windows:
+
+  ```powershell
+  New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+  ```
+
+  In Android Studio's **SDK Manager → SDK Tools**, enable **Show Package Details** and install **CMake 3.31.6**. Add this line to the user-level file `%USERPROFILE%\.gradle\gradle.properties` (create the file if needed):
+
+  ```properties
+  android.cmakeVersion=3.31.6
+  ```
+
+  This setting belongs in `gradle.properties`, not `android/build.gradle`. Putting the unquoted version in the Groovy build file can cause `BigDecimal.call()` errors. Remove generated native build outputs and rebuild from PowerShell:
+
+  ```powershell
+  cd C:\ts\artifacts\tennis-scoring-android\android
+  Remove-Item -Recurse -Force .\app\.cxx, .\app\build -ErrorAction SilentlyContinue
+  .\gradlew.bat assembleRelease
+  ```
+
+  Replace `C:\ts` if your clone is elsewhere. Keep the clone at a short path such as `C:\ts` and keep `node-linker=hoisted` in the local root `.npmrc`; these also help reduce generated path lengths.
 - **The debug APK stays on the splash screen:** run the release task instead. Debug builds expect Metro to serve the JavaScript bundle.
 - **Gradle cannot download its wrapper:** check the network or Android Studio's proxy settings; do not change the Gradle wrapper version just to work around a timeout.
 - **You need to update an installed APK:** keep the same Android package ID and signing key. Back up app data before uninstalling.
