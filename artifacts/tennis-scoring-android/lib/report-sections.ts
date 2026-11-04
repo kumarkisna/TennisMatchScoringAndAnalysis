@@ -57,6 +57,7 @@ export const HEAD_TO_HEAD_REPORT_SECTIONS = [
   { id: 'return-points', label: 'Return and points' },
   { id: 'break-points', label: 'Break points' },
   { id: 'break-point-context', label: 'Break-point moments' },
+  { id: 'timing', label: 'Timing and reset patterns' },
   { id: 'point-ending', label: 'Recorded point-ending tags' },
   { id: 'point-context', label: 'Point context tags' },
   { id: 'coaching', label: 'Coaching observations' },
@@ -74,7 +75,14 @@ export const HEAD_TO_HEAD_REPORT_SECTION_PRESETS = [
   {
     id: 'statistics',
     label: 'Statistics',
-    sections: ['overview', 'meetings', 'serve', 'return-points', 'break-points'],
+    sections: [
+      'overview',
+      'meetings',
+      'serve',
+      'return-points',
+      'break-points',
+      'timing',
+    ],
   },
   {
     id: 'full',

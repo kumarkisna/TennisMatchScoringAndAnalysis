@@ -16,9 +16,11 @@ import Svg, { Circle, G, Line, Path, Text as SvgText } from 'react-native-svg';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import {
+  getLocalMatch,
   listLocalPlayerMatchInsights,
   PLAYER_PERFORMANCE_HISTORY_KEY,
   STROKE_TYPE_OPTIONS,
+  type LocalPoint,
 } from '@/lib/local-matches';
 import { listLocalPlayers } from '@/lib/local-players';
 import {
@@ -34,6 +36,14 @@ import {
   type PlayerTrendMatch,
   type PlayerTrendMetricKey,
 } from '@/lib/player-insights';
+import {
+  formatTimingDetails,
+  getMatchTimingPoints,
+  summarizePlayerTimingAcrossMatches,
+  type MatchTimingSummary,
+  type PlayerTimingMatch,
+  type TimingIntervalSummary,
+} from '@/lib/match-timing';
 
 function formatDate(date: string) {
   const [year, month, day] = date.slice(0, 10).split('-').map(Number);
@@ -45,6 +55,11 @@ function formatDate(date: string) {
     timeZone: 'UTC',
   });
 }
+
+type PlayerTimingHistoryMatch = Omit<PlayerTimingMatch, 'points'> & {
+  matchId: string;
+  points: LocalPoint[];
+};
 
 function trendLabel(match: PlayerTrendMatch) {
   return match.event?.trim() || 'Match';
@@ -643,6 +658,185 @@ function StrokeRatingHistory({
   );
 }
 
+function formatTimingDifference(durationMs: number): string {
+  return `${(Math.abs(durationMs) / 1000).toFixed(1)}s`;
+}
+
+function describeTimingPeriodComparison(
+  selected: MatchTimingSummary,
+  outside: MatchTimingSummary,
+): string {
+  const selectedPauses = selected.betweenPoints.all;
+  const outsidePauses = outside.betweenPoints.all;
+  if (
+    selectedPauses.count < 3 ||
+    outsidePauses.count < 3 ||
+    selectedPauses.medianMs === null ||
+    outsidePauses.medianMs === null
+  ) {
+    return 'Add at least 3 marked between-point gaps inside and outside this date range for a personal comparison.';
+  }
+
+  const medianDifference = selectedPauses.medianMs - outsidePauses.medianMs;
+  const paceDescription =
+    Math.abs(medianDifference) < 1000
+      ? 'The median reset pause was similar inside and outside this period.'
+      : `The median reset pause was ${formatTimingDifference(medianDifference)} ${
+          medianDifference < 0 ? 'shorter' : 'longer'
+        } in this period than in other saved matches.`;
+  const selectedSpread = selectedPauses.interquartileRangeMs;
+  const outsideSpread = outsidePauses.interquartileRangeMs;
+  const consistencyDescription =
+    selectedPauses.count >= 5 &&
+    outsidePauses.count >= 5 &&
+    selectedSpread !== null &&
+    outsideSpread !== null &&
+    Math.abs(selectedSpread - outsideSpread) >= 1000
+      ? ` The middle-50% spread was ${formatTimingDifference(
+          selectedSpread - outsideSpread,
+        )} ${
+          selectedSpread < outsideSpread ? 'narrower' : 'wider'
+        }, indicating more or less consistent recorded pauses.`
+      : '';
+
+  return `${paceDescription}${consistencyDescription} This describes reset timing, not rally speed or how smooth play felt.`;
+}
+
+function PlayerTimingAverageCard({
+  playerName,
+  periodLabel,
+  selectedMatches,
+  outsideMatches,
+  selectedMatchCount,
+  dateRangeActive,
+  outsidePeriodAvailable,
+  testID,
+}: {
+  playerName: string;
+  periodLabel: string;
+  selectedMatches: PlayerTimingHistoryMatch[];
+  outsideMatches: PlayerTimingHistoryMatch[];
+  selectedMatchCount: number;
+  dateRangeActive: boolean;
+  outsidePeriodAvailable: boolean;
+  testID: string;
+}) {
+  const colors = useColors();
+  const selected = summarizePlayerTimingAcrossMatches(selectedMatches);
+  const outside = summarizePlayerTimingAcrossMatches(outsideMatches);
+  const selectedMarkedMatches = selectedMatches.filter((match) =>
+    match.points.some(
+      (point) =>
+        point.pointStartedAtMs !== undefined ||
+        point.firstServeFaultAtMs !== undefined ||
+        point.secondServeAtMs !== undefined,
+    ),
+  ).length;
+  const rows: {
+    label: string;
+    selected: TimingIntervalSummary;
+    outside: TimingIntervalSummary;
+  }[] = [
+    {
+      label: 'First fault to second serve',
+      selected: selected.firstToSecondServe.tracked,
+      outside: outside.firstToSecondServe.tracked,
+    },
+    {
+      label: 'Between all recorded points',
+      selected: selected.betweenPoints.all,
+      outside: outside.betweenPoints.all,
+    },
+    {
+      label: 'Between points · same game',
+      selected: selected.betweenPoints.sameGame,
+      outside: outside.betweenPoints.sameGame,
+    },
+    {
+      label: 'After own point win',
+      selected: selected.betweenPoints.afterTrackedWin,
+      outside: outside.betweenPoints.afterTrackedWin,
+    },
+    {
+      label: 'After own point loss',
+      selected: selected.betweenPoints.afterTrackedLoss,
+      outside: outside.betweenPoints.afterTrackedLoss,
+    },
+    {
+      label: 'After own tagged error or double fault',
+      selected: selected.betweenPoints.afterTrackedError,
+      outside: outside.betweenPoints.afterTrackedError,
+    },
+    {
+      label: 'Between-game changeovers',
+      selected: selected.betweenPoints.gameChangeover,
+      outside: outside.betweenPoints.gameChangeover,
+    },
+  ];
+
+  return (
+    <View
+      testID={testID}
+      style={[
+        styles.timingAverageCard,
+        { backgroundColor: colors.card, borderColor: colors.border },
+      ]}
+    >
+      <View style={styles.timingAverageHeading}>
+        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+          Timing and reset patterns · {playerName}
+        </Text>
+        <Text style={[styles.sampleCount, { color: colors.mutedForeground }]}>
+          {selectedMatchCount} matches
+        </Text>
+      </View>
+      <Text style={[styles.dateRangeHint, { color: colors.mutedForeground }]}>
+        {periodLabel}: {selectedMarkedMatches} of {selectedMatchCount} matches
+        have at least one timing marker. Unmarked points are not counted as zero.
+      </Text>
+      {rows.map((row) => (
+        <View
+          key={row.label}
+          style={[styles.timingAverageRow, { borderTopColor: colors.border }]}
+        >
+          <Text style={[styles.timingAverageLabel, { color: colors.foreground }]}>
+            {row.label}
+          </Text>
+          <Text style={[styles.timingAverageValue, { color: colors.primary }]}>
+            {formatTimingDetails(row.selected)}
+          </Text>
+          {outsidePeriodAvailable ? (
+            <Text
+              style={[
+                styles.timingAverageBaseline,
+                { color: colors.mutedForeground },
+              ]}
+            >
+              Outside selected dates: {formatTimingDetails(row.outside)}
+            </Text>
+          ) : null}
+        </View>
+      ))}
+      {outsidePeriodAvailable ? (
+        <Text style={[styles.timingAverageInsight, { color: colors.foreground }]}>
+          {describeTimingPeriodComparison(selected, outside)}
+        </Text>
+      ) : dateRangeActive ? (
+        <Text style={[styles.dateRangeHint, { color: colors.mutedForeground }]}>
+          No saved matches fall outside this date range, so there is no personal
+          baseline to compare.
+        </Text>
+      ) : (
+        <Text style={[styles.dateRangeHint, { color: colors.mutedForeground }]}>
+          Choose a date range to compare this period with your other saved matches.
+          Shorter pauses suggest quicker resets, not faster rally speed. The event
+          markers are manual tap estimates.
+        </Text>
+      )}
+    </View>
+  );
+}
+
 function PlayerTrendHistory({
   playerName,
   matches,
@@ -845,9 +1039,26 @@ async function loadPlayerTrendHistory(playerId: string) {
   const player = players.find((item) => item.id === playerId);
   if (!player) return null;
   const records = await listLocalPlayerMatchInsights(player.id, players);
+  const timingMatches = (
+    await Promise.all(
+      records.map(async ({ match, playerSide }) => {
+        const localMatch = await getLocalMatch(match.id);
+        return localMatch
+          ? {
+              matchId: match.id,
+              playerSide,
+              points: getMatchTimingPoints(localMatch),
+            }
+          : null;
+      }),
+    )
+  ).filter(
+    (match): match is PlayerTimingHistoryMatch => match !== null,
+  );
   return {
     player,
     matches: buildPlayerPerformanceHistory(records),
+    timingMatches,
   };
 }
 
@@ -920,6 +1131,30 @@ export default function PlayerDevelopmentScreen() {
     dateRangeError ? null : startDate || null,
     dateRangeError ? null : endDate || null,
   );
+  const hasValidTimingDateRange =
+    Boolean(startDate || endDate) && !dateRangeError;
+  const selectedPrimaryMatchIds = new Set(matches.map((match) => match.id));
+  const primaryTimingHistory = historyQuery.data?.timingMatches ?? [];
+  const selectedPrimaryTimingMatches = primaryTimingHistory.filter((match) =>
+    selectedPrimaryMatchIds.has(match.matchId),
+  );
+  const outsidePrimaryTimingMatches = hasValidTimingDateRange
+    ? primaryTimingHistory.filter(
+        (match) => !selectedPrimaryMatchIds.has(match.matchId),
+      )
+    : [];
+  const selectedComparisonMatchIds = new Set(
+    comparisonMatches.map((match) => match.id),
+  );
+  const comparisonTimingHistory = comparisonQuery.data?.timingMatches ?? [];
+  const selectedComparisonTimingMatches = comparisonTimingHistory.filter(
+    (match) => selectedComparisonMatchIds.has(match.matchId),
+  );
+  const outsideComparisonTimingMatches = hasValidTimingDateRange
+    ? comparisonTimingHistory.filter(
+        (match) => !selectedComparisonMatchIds.has(match.matchId),
+      )
+    : [];
   const pointSampledMatches = matches.filter(
     (match) => match.metrics.overall.total > 0,
   );
@@ -1094,6 +1329,38 @@ export default function PlayerDevelopmentScreen() {
                 />
               ) : null}
             </View>
+            <PlayerTimingAverageCard
+              testID="player-timing-average-primary"
+              playerName={player.name}
+              periodLabel={
+                hasValidTimingDateRange ? 'Selected period' : 'All saved matches'
+              }
+              selectedMatches={selectedPrimaryTimingMatches}
+              outsideMatches={outsidePrimaryTimingMatches}
+              selectedMatchCount={matches.length}
+              dateRangeActive={hasValidTimingDateRange}
+              outsidePeriodAvailable={
+                hasValidTimingDateRange &&
+                outsidePrimaryTimingMatches.length > 0
+              }
+            />
+            {comparisonPlayerId && comparisonPlayer && comparisonQuery.isSuccess ? (
+              <PlayerTimingAverageCard
+                testID="player-timing-average-comparison"
+                playerName={comparisonPlayer.name}
+                periodLabel={
+                  hasValidTimingDateRange ? 'Selected period' : 'All saved matches'
+                }
+                selectedMatches={selectedComparisonTimingMatches}
+                outsideMatches={outsideComparisonTimingMatches}
+                selectedMatchCount={comparisonMatches.length}
+                dateRangeActive={hasValidTimingDateRange}
+                outsidePeriodAvailable={
+                  hasValidTimingDateRange &&
+                  outsideComparisonTimingMatches.length > 0
+                }
+              />
+            ) : null}
             <View style={styles.metricHeader}>
               <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
                 Percentage over time
@@ -1503,6 +1770,45 @@ const styles = StyleSheet.create({
   summaryMeta: { fontFamily: 'DMSans_500Medium', fontSize: 9 },
   historySection: { gap: 7, marginBottom: 11 },
   strokeRatingSection: { gap: 8, marginBottom: 10 },
+  timingAverageCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    gap: 8,
+    marginBottom: 14,
+  },
+  timingAverageHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  timingAverageRow: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 8,
+    gap: 3,
+  },
+  timingAverageLabel: {
+    fontFamily: 'DMSans_700Bold',
+    fontSize: 11,
+  },
+  timingAverageValue: {
+    fontFamily: 'DMSans_600SemiBold',
+    fontSize: 10,
+    lineHeight: 15,
+  },
+  timingAverageBaseline: {
+    fontFamily: 'DMSans_400Regular',
+    fontSize: 9,
+    lineHeight: 14,
+  },
+  timingAverageInsight: {
+    borderRadius: 8,
+    padding: 9,
+    fontFamily: 'DMSans_500Medium',
+    fontSize: 10,
+    lineHeight: 15,
+  },
   strokeRatingCard: { borderWidth: 1, borderRadius: 10, padding: 11, gap: 5 },
   strokeRatingHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   strokeRatingName: { flex: 1, fontFamily: 'DMSans_700Bold', fontSize: 12 },

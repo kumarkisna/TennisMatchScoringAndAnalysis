@@ -54,6 +54,11 @@ import {
 } from '@/lib/report-pdf';
 import { POINT_CODE_LABELS } from '@/lib/player-report-html';
 import {
+  formatTimingDuration,
+  summarizeMatchTimingAcrossMatches,
+  type TimingIntervalSummary,
+} from '@/lib/match-timing';
+import {
   formatPlayerMatchOutcomeSummary,
   type ContextPerformanceInsight,
 } from '@/lib/player-insights';
@@ -149,6 +154,23 @@ function averageValue(count: number, sample: number, unit: string): RateValue {
         sample: `${count} aces / ${sample} ${unit}`,
       }
     : { value: '—', sample: `No ${unit} recorded` };
+}
+
+function timingValue(summary: TimingIntervalSummary): RateValue {
+  if (
+    summary.count === 0 ||
+    summary.medianMs === null ||
+    summary.minMs === null ||
+    summary.maxMs === null ||
+    summary.q1Ms === null ||
+    summary.q3Ms === null
+  ) {
+    return unavailableValue('No timing markers');
+  }
+  return {
+    value: `${formatTimingDuration(summary.medianMs)} median`,
+    sample: `n=${summary.count} · range ${formatTimingDuration(summary.minMs)}–${formatTimingDuration(summary.maxMs)} · middle 50% ${formatTimingDuration(summary.q1Ms)}–${formatTimingDuration(summary.q3Ms)}`,
+  };
 }
 
 function formatDate(value: string): string {
@@ -481,30 +503,42 @@ export default function HeadToHeadScreen() {
           }),
         )
       ).filter((meeting): meeting is HeadToHeadMeeting => meeting !== null);
-      const meetings = allTrackedMeetings.filter(
+      const allTrackedMeetingsWithPointData = (
+        await Promise.all(
+          allTrackedMeetings.map(async (meeting) => {
+            const match = await getLocalMatch(meeting.summary.id);
+            return match ? { ...meeting, match } : null;
+          }),
+        )
+      ).filter(
+        (
+          meeting,
+        ): meeting is HeadToHeadMeeting & {
+          match: NonNullable<HeadToHeadMeeting['match']>;
+        } => meeting !== null,
+      );
+      const meetingsWithPointData = allTrackedMeetingsWithPointData.filter(
         ({ summary }) =>
           normalizedName(summary.opponent) === normalizedName(selectedOpponent),
-      );
-      const meetingsWithPointData = await Promise.all(
-        meetings.map(async (meeting) => {
-          const match = await getLocalMatch(meeting.summary.id);
-          return match ? { ...meeting, match } : meeting;
-        }),
       );
       return buildHeadToHeadReport(
         selectedTrackedPlayer,
         selectedOpponent,
         meetingsWithPointData,
-        allTrackedMeetings,
+        allTrackedMeetingsWithPointData,
       );
     },
   });
 
   const report = reportQuery.data;
-  const reportVersion =
-    report?.meetings
-      .map(({ summary }) => `${summary.id}:${summary.updatedAt}`)
-      .join('|') ?? '';
+  const reportVersion = report
+    ? [
+        report.meetings
+          .map(({ summary }) => `${summary.id}:${summary.updatedAt}`)
+          .join('|'),
+        report.personalAverageMeetingVersions?.join('|') ?? '',
+      ].join('::')
+    : '';
   const reportLabelVersion = getReportNameVisibilityVersion(
     hidePlayerNames,
     reportNameLabels.labels,
@@ -805,6 +839,41 @@ export default function HeadToHeadScreen() {
               report.insights.breakPoints.opponent.saved,
             report.insights.breakPoints.opponent.faced,
           ),
+        },
+      ]
+    : [];
+  const timing = report?.timing ?? summarizeMatchTimingAcrossMatches([]);
+  const timingRows: StatRow[] = report
+    ? [
+        {
+          label: 'First fault to second serve',
+          tracked: timingValue(timing.firstToSecondServe.tracked),
+          opponent: timingValue(timing.firstToSecondServe.opponent),
+        },
+        {
+          label: 'Between points · same game',
+          tracked: timingValue(timing.betweenPoints.sameGame),
+          opponent: timingValue(timing.betweenPoints.sameGame),
+        },
+        {
+          label: 'Pause after own point win',
+          tracked: timingValue(timing.betweenPoints.afterTrackedWin),
+          opponent: timingValue(timing.betweenPoints.afterOpponentWin),
+        },
+        {
+          label: 'Pause after own point loss',
+          tracked: timingValue(timing.betweenPoints.afterTrackedLoss),
+          opponent: timingValue(timing.betweenPoints.afterOpponentLoss),
+        },
+        {
+          label: 'Pause after own tagged error / double fault',
+          tracked: timingValue(timing.betweenPoints.afterTrackedError),
+          opponent: timingValue(timing.betweenPoints.afterOpponentError),
+        },
+        {
+          label: 'Between-game changeover · shared interval',
+          tracked: timingValue(timing.betweenPoints.gameChangeover),
+          opponent: timingValue(timing.betweenPoints.gameChangeover),
         },
       ]
     : [];
@@ -1177,6 +1246,17 @@ export default function HeadToHeadScreen() {
               opponentName={report.opponent}
               colors={colors}
             />
+            <StatTable
+              testID="head-to-head-timing-summary"
+              title="Timing and reset patterns"
+              rows={timingRows}
+              trackedName={report.trackedPlayer}
+              opponentName={report.opponent}
+              colors={colors}
+            />
+            <Text style={[styles.sectionHint, { color: colors.mutedForeground }]}>
+              Shorter between-point pauses mean quicker recorded resets; a narrower middle-50% spread means more consistent intervals. These markers do not measure rally speed or prove that play felt smooth.
+            </Text>
             <View
               testID="head-to-head-personal-break-point-average"
               style={[

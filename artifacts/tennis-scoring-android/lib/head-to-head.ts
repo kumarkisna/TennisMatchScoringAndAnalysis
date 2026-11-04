@@ -22,6 +22,11 @@ import {
   type PlayerMatchOutcomeSummary,
   type PlayerPerformanceSummary,
 } from '@/lib/player-insights';
+import {
+  getMatchTimingPoints,
+  summarizeMatchTimingAcrossMatches,
+  type MatchTimingSummary,
+} from '@/lib/match-timing';
 
 export interface HeadToHeadMeeting {
   summary: LocalMatchSummary;
@@ -100,6 +105,9 @@ export interface HeadToHeadReport {
   personalAverageInsights: LocalInsights;
   personalAveragePerformance: PlayerPerformanceSummary;
   personalAverageMatches: number;
+  timing?: MatchTimingSummary;
+  personalAverageTiming?: MatchTimingSummary;
+  personalAverageMeetingVersions?: string[];
   personalAverageBreakPointsBySurface: SurfaceBreakPointBaseline[];
   breakPointsBySurface: HeadToHeadSurfaceBreakPoints[];
   serveStatsBySurface: HeadToHeadSurfaceServe[];
@@ -351,6 +359,16 @@ export function buildHeadToHeadReport(
   const personalAverageInsights = aggregateLocalInsights(
     personalMeetings.map((meeting) => meeting.insights),
   );
+  const timing = summarizeMatchTimingAcrossMatches(
+    meetings.map((meeting) =>
+      meeting.match ? getMatchTimingPoints(meeting.match) : [],
+    ),
+  );
+  const personalAverageTiming = summarizeMatchTimingAcrossMatches(
+    personalMeetings.map((meeting) =>
+      meeting.match ? getMatchTimingPoints(meeting.match) : [],
+    ),
+  );
   const personalAverageBreakPointsBySurface =
     PERSONAL_AVERAGE_COURT_SURFACES.map((surface) => {
       const surfaceMeetings = pointSampledPersonalMeetings.filter(
@@ -500,6 +518,11 @@ export function buildHeadToHeadReport(
       pointSampledPersonalMeetings.length,
     ),
     personalAverageMatches: pointSampledPersonalMeetings.length,
+    timing,
+    personalAverageTiming,
+    personalAverageMeetingVersions: personalMeetings.map(
+      ({ summary }) => `${summary.id}:${summary.updatedAt}`,
+    ),
     personalAverageBreakPointsBySurface,
     breakPointsBySurface,
     serveStatsBySurface,

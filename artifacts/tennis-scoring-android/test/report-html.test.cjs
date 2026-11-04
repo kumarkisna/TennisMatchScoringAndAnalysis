@@ -135,6 +135,10 @@ const playerMatchScreenSource = fs.readFileSync(
   path.join(__dirname, '../app/matches/[id].tsx'),
   'utf8',
 );
+const playerDevelopmentScreenSource = fs.readFileSync(
+  path.join(__dirname, '../app/players/[id]/development.tsx'),
+  'utf8',
+);
 const reportNameVisibilityHookSource = fs.readFileSync(
   path.join(__dirname, '../hooks/useLocalReportNameVisibility.ts'),
   'utf8',
@@ -173,6 +177,7 @@ const {
   HEAD_TO_HEAD_REPORT_SECTION_PRESETS,
   PLAYER_REPORT_SECTION_PRESETS,
 } = require('../lib/report-sections.ts');
+const { summarizePlayerTimingAcrossMatches } = require('../lib/match-timing.ts');
 
 test('report layouts provide overview, statistics, and full presets for both report types', () => {
   const expectedLabels = ['Overview only', 'Statistics', 'Full report'];
@@ -214,6 +219,7 @@ test('report layouts provide overview, statistics, and full presets for both rep
     'serve',
     'return-points',
     'break-points',
+    'timing',
   ]);
   assert.deepEqual(
     HEAD_TO_HEAD_REPORT_SECTION_PRESETS[2].sections,
@@ -243,6 +249,10 @@ test('single-match and head-to-head report pickers expose saved local layouts', 
   assert.match(localReportLayoutManagerSource, /deleteLocalReportLayout\(/);
   assert.match(localReportLayoutManagerSource, /onApply\(validSections\)/);
   assert.match(localReportLayoutManagerSource, /LOCAL_REPORT_LAYOUTS_KEY/);
+  assert.match(playerDevelopmentScreenSource, /player-timing-average-primary/);
+  assert.match(playerDevelopmentScreenSource, /selectedPrimaryMatchIds/);
+  assert.match(playerDevelopmentScreenSource, /outsidePrimaryTimingMatches/);
+  assert.match(playerDevelopmentScreenSource, /describeTimingPeriodComparison/);
 });
 
 test('both report screens use the same saved local hide-names preference', () => {
@@ -961,6 +971,75 @@ test('head-to-head personal break-point averages pool each tracked-player match 
     'Break points saved 5/9 · 55.6%',
     'Break points lost while serving 4/9 · 44.4%',
   ]);
+});
+
+test('head-to-head reports pool timing intervals and include the player average', () => {
+  const start = Date.parse('2026-10-30T00:00:00.000Z');
+  const points = [
+    {
+      ...pointFixture(1, 1, 'tracked', 'tracked', false, 1),
+      createdAt: new Date(start).toISOString(),
+    },
+    {
+      ...pointFixture(1, 1, 'opponent', 'opponent', false, 2),
+      createdAt: new Date(start + 6000).toISOString(),
+      pointStartedAtMs: start + 10000,
+      firstServeFaultAtMs: start + 1000,
+      secondServeAtMs: start + 4500,
+    },
+    {
+      ...pointFixture(1, 1, 'tracked', 'tracked', false, 3),
+      createdAt: new Date(start + 18000).toISOString(),
+      pointStartedAtMs: start + 20000,
+    },
+  ];
+  const meeting = breakPointMeeting(
+    'alex-bailey-timing',
+    'Alex',
+    'Bailey',
+    { opportunities: 2, converted: 1, faced: 1, saved: 1 },
+    { opportunities: 1, converted: 0, faced: 2, saved: 1 },
+    '2026-10-30',
+  );
+  const match = {
+    ...performanceSampleMatch(),
+    id: meeting.summary.id,
+    trackedPlayer: 'Alex',
+    opponent: 'Bailey',
+    points,
+  };
+  const meetingWithMatch = { ...meeting, match };
+  const report = buildHeadToHeadReport(
+    'Alex',
+    'Bailey',
+    [meetingWithMatch],
+    [meetingWithMatch],
+  );
+
+  assert.equal(report.timing.betweenPoints.all.count, 2);
+  assert.equal(report.timing.betweenPoints.all.medianMs, 12000);
+  assert.equal(report.timing.firstToSecondServe.opponent.medianMs, 3500);
+  assert.equal(report.personalAverageTiming.betweenPoints.all.count, 2);
+  const playerOrientedTiming = summarizePlayerTimingAcrossMatches([
+    { playerSide: 'opponent', points },
+  ]);
+  assert.equal(
+    playerOrientedTiming.betweenPoints.afterTrackedLoss.medianMs,
+    10000,
+  );
+  assert.equal(playerOrientedTiming.firstToSecondServe.tracked.count, 1);
+  assert.deepEqual(report.personalAverageMeetingVersions, [
+    `${meeting.summary.id}:${meeting.summary.updatedAt}`,
+  ]);
+
+  const html = buildHeadToHeadReportHtml(report, ['timing']);
+  assert.match(html, /Median 12s/);
+  assert.match(html, /middle 50% 11s–13s/);
+  assert.match(html, /Pooled marked intervals across 1 saved match/);
+  assert.match(
+    html,
+    /Neither measure establishes rally speed or proves that play felt smooth/i,
+  );
 });
 
 test('surface break-point averages pool chances and mark missing rates unavailable', () => {
@@ -4751,6 +4830,7 @@ test('head-to-head PDF includes only selected analysis sections', () => {
   assert.match(html, /<h2>Serve<\/h2>/);
   assert.match(html, /<h2>Meetings and set scores<\/h2>/);
   assert.match(html, /<h2>Return and points<\/h2>/);
+  assert.match(html, /<h2>Timing and reset patterns<\/h2>/);
   assert.doesNotMatch(html, /<h2>Point-ending tags<\/h2>/);
   assert.doesNotMatch(html, /<h2>Coaching observations<\/h2>/);
 });

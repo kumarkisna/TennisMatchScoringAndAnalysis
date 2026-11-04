@@ -25,3 +25,11 @@ Compare selected percentage metrics using the combined won-attempt numerator and
 **Why:** Ratings are observations entered on the tracked player's match sheet, not objectively measured match statistics. Crediting them to the opposing player or treating blank sets as zero would misrepresent both ownership and meaning.
 
 **How to apply:** Build stroke-rating history only from on-device set reviews where the selected player was tracked. Keep summaries descriptive, and retain set-level ratings in local backups and match reports.
+
+## Timing and reset trends
+
+**Rule:** Pool only marked timing intervals across the selected player's saved matches, orienting point winners and servers to that player's side. Show sample counts and the interval spread; compare a selected period with that player's other matches only when both groups have enough marked observations. Describe shorter gaps as quicker recorded resets and narrower spreads as more consistent intervals, not as faster rallies or proof of smooth play.
+
+**Why:** The timestamps come from manual event taps, so they estimate reset and serve intervals rather than measuring rally tempo or subjective smoothness.
+
+**How to apply:** Keep missing markers unavailable rather than treating them as zero. Use date-filtered match IDs for the selected period and never join intervals across matches.

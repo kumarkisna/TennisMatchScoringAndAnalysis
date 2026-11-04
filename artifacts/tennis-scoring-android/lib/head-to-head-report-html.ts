@@ -20,6 +20,10 @@ import {
   type HeadToHeadReportSection,
 } from '@/lib/report-sections';
 import { buildReportReviewVersion } from '@/lib/report-review';
+import {
+  formatTimingDetails,
+  summarizeMatchTimingAcrossMatches,
+} from '@/lib/match-timing';
 
 type HeadToHeadBenchmarkMetrics = Pick<
   LocalReportBenchmarkPreset,
@@ -294,6 +298,10 @@ export function buildHeadToHeadReportHtml(
   const trackedServe = insights.serveStats.tracked;
   const opponentServe = insights.serveStats.opponent;
   const recordedSetCount = insights.sets.filter((set) => set.pointCount > 0).length;
+  const timing =
+    report.timing ?? summarizeMatchTimingAcrossMatches([]);
+  const personalAverageTiming =
+    report.personalAverageTiming ?? summarizeMatchTimingAcrossMatches([]);
   const trackedSecondServeIn = Math.max(
     0,
     trackedServe.secondServePoints - trackedServe.doubleFaults,
@@ -537,6 +545,64 @@ export function buildHeadToHeadReportHtml(
         </tr>`,
     )
     .join('');
+  const timingRows = tableRows([
+    [
+      'First fault to second-serve start',
+      formatTimingDetails(timing.firstToSecondServe.tracked),
+      formatTimingDetails(timing.firstToSecondServe.opponent),
+    ],
+    [
+      'Between points · same game',
+      formatTimingDetails(timing.betweenPoints.sameGame),
+      formatTimingDetails(timing.betweenPoints.sameGame),
+    ],
+    [
+      'After this player wins a point',
+      formatTimingDetails(timing.betweenPoints.afterTrackedWin),
+      formatTimingDetails(timing.betweenPoints.afterOpponentWin),
+    ],
+    [
+      'After this player loses a point',
+      formatTimingDetails(timing.betweenPoints.afterTrackedLoss),
+      formatTimingDetails(timing.betweenPoints.afterOpponentLoss),
+    ],
+    [
+      'After this player’s tagged error or double fault',
+      formatTimingDetails(timing.betweenPoints.afterTrackedError),
+      formatTimingDetails(timing.betweenPoints.afterOpponentError),
+    ],
+    [
+      'Between-game changeovers',
+      formatTimingDetails(timing.betweenPoints.gameChangeover),
+      formatTimingDetails(timing.betweenPoints.gameChangeover),
+    ],
+  ]);
+  const personalTimingRows = tableRows([
+    [
+      'First fault to second-serve start',
+      formatTimingDetails(personalAverageTiming.firstToSecondServe.tracked),
+    ],
+    [
+      'Between points · same game',
+      formatTimingDetails(personalAverageTiming.betweenPoints.sameGame),
+    ],
+    [
+      'After a point win',
+      formatTimingDetails(personalAverageTiming.betweenPoints.afterTrackedWin),
+    ],
+    [
+      'After a point loss',
+      formatTimingDetails(personalAverageTiming.betweenPoints.afterTrackedLoss),
+    ],
+    [
+      'After a tagged error or double fault',
+      formatTimingDetails(personalAverageTiming.betweenPoints.afterTrackedError),
+    ],
+    [
+      'Between-game changeovers',
+      formatTimingDetails(personalAverageTiming.betweenPoints.gameChangeover),
+    ],
+  ]);
   const personalAverageSurfaces =
     report.personalAverageBreakPointsBySurface;
   const personalAverageSurfaceRows = tableRows([
@@ -981,6 +1047,15 @@ export function buildHeadToHeadReportHtml(
         <thead><tr><th>Statistic</th>${personalAverageSurfaces.map(({ surface }) => `<th>${escapeHtml(surface)}</th>`).join('')}</tr></thead>
         <tbody>${personalAverageSurfaceRows}</tbody>
       </table>
+      ` : ''}
+
+      ${includes('timing') ? `
+      <h2>Timing and reset patterns</h2>
+      <p class="note">These pooled medians, ranges, middle-50% spreads, and sample counts use only manually marked intervals from this head-to-head pairing. A shorter between-point pause means a quicker recorded reset; a narrower middle-50% spread means more consistent intervals. Neither measure establishes rally speed or proves that play felt smooth.</p>
+      <table><thead><tr><th>Measure</th><th>${escapeHtml(trackedPlayer)}</th><th>${escapeHtml(opponent)}</th></tr></thead><tbody>${timingRows}</tbody></table>
+      <h3>${escapeHtml(trackedPlayer)} · personal timing average</h3>
+      <p class="note">Pooled marked intervals across ${report.personalAverageMatches} saved ${report.personalAverageMatches === 1 ? 'match' : 'matches'} where this player was recorded as the tracked player. Matches without timing markers do not count as zero-time samples.</p>
+      <table><thead><tr><th>Measure</th><th>Personal average</th></tr></thead><tbody>${personalTimingRows}</tbody></table>
       ` : ''}
 
       ${includes('break-point-context') ? `
