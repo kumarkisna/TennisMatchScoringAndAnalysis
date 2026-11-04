@@ -67,6 +67,7 @@ const homeScreenStatePath = path.join(__dirname, '../lib/home-screen-state.ts');
 const themePresetsPath = path.join(__dirname, '../lib/theme-presets.ts');
 const colorsPath = path.join(__dirname, '../constants/colors.ts');
 const playerInsightsPath = path.join(__dirname, '../lib/player-insights.ts');
+const matchTimingPath = path.join(__dirname, '../lib/match-timing.ts');
 
 function loadStorageModulesAfterRestart() {
   delete require.cache[require.resolve(localMatchesPath)];
@@ -284,6 +285,97 @@ test('saved match points and editable player profiles survive offline app restar
   ]);
   assert.deepEqual(editedPlayer.profileUrlLabels, ['ATP profile', 'Club page']);
   assert.equal(networkRequestCount, 0);
+});
+
+test('saved point timing markers can be edited, cleared, validated, and restored locally', async () => {
+  storageValues.clear();
+  const { localMatches } = loadStorageModulesAfterRestart();
+  const match = await localMatches.createLocalMatch({
+    matchDate: '2026-11-04',
+    event: null,
+    round: null,
+    trackedPlayer: 'Tracked Player',
+    opponent: 'Opponent Player',
+    chairCoach: null,
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+  const now = Date.now();
+  await localMatches.recordLocalPoint(match.id, {
+    winner: 'tracked',
+    firstServeFault: true,
+    pointStartedAtMs: now - 9000,
+    firstServeFaultAtMs: now - 6000,
+    secondServeAtMs: now - 3000,
+  });
+  const original = await localMatches.getLocalMatch(match.id);
+  assert.ok(original);
+  const point = original.points[0];
+  assert.ok(point);
+  const savedAtMs = Date.parse(point.createdAt);
+  const updatedMarkers = {
+    pointStartedAtMs: savedAtMs - 14000,
+    firstServeFaultAtMs: savedAtMs - 8500,
+    secondServeAtMs: savedAtMs - 4000,
+  };
+
+  const updated = await localMatches.updateLocalPointTimingMarkers(
+    match.id,
+    1,
+    point.id,
+    updatedMarkers,
+  );
+  assert.deepEqual(updated.score, original.score);
+  assert.equal(updated.points[0].winner, original.points[0].winner);
+  assert.equal(updated.points[0].createdAt, original.points[0].createdAt);
+  assert.equal(updated.points[0].pointStartedAtMs, updatedMarkers.pointStartedAtMs);
+  assert.equal(updated.points[0].firstServeFaultAtMs, updatedMarkers.firstServeFaultAtMs);
+  assert.equal(updated.points[0].secondServeAtMs, updatedMarkers.secondServeAtMs);
+
+  const matchTiming = require(matchTimingPath);
+  const summary = matchTiming.summarizeMatchTiming(updated.points);
+  assert.equal(summary.firstToSecondServe.tracked.medianMs, 4500);
+
+  await assert.rejects(
+    localMatches.updateLocalPointTimingMarkers(match.id, 1, point.id, {
+      ...updatedMarkers,
+      secondServeAtMs: savedAtMs - 9000,
+    }),
+    /second-serve start cannot be before the first-serve fault/,
+  );
+  const unchanged = await localMatches.getLocalMatch(match.id);
+  assert.equal(unchanged.points[0].secondServeAtMs, updatedMarkers.secondServeAtMs);
+
+  const afterRestart = loadStorageModulesAfterRestart().localMatches;
+  const restored = await afterRestart.getLocalMatch(match.id);
+  assert.ok(restored);
+  assert.equal(restored.points[0].pointStartedAtMs, updatedMarkers.pointStartedAtMs);
+  assert.equal(restored.points[0].firstServeFaultAtMs, updatedMarkers.firstServeFaultAtMs);
+  assert.equal(restored.points[0].secondServeAtMs, updatedMarkers.secondServeAtMs);
+  assert.equal(
+    matchTiming.summarizeMatchTiming(restored.points).firstToSecondServe.tracked.medianMs,
+    4500,
+  );
+
+  const cleared = await afterRestart.updateLocalPointTimingMarkers(match.id, 1, point.id, {
+    pointStartedAtMs: null,
+    firstServeFaultAtMs: null,
+    secondServeAtMs: null,
+  });
+  assert.equal(cleared.points[0].pointStartedAtMs, undefined);
+  assert.equal(cleared.points[0].firstServeFaultAtMs, undefined);
+  assert.equal(cleared.points[0].secondServeAtMs, undefined);
+  assert.deepEqual(cleared.score, original.score);
+  assert.equal(cleared.points[0].winner, original.points[0].winner);
+  assert.deepEqual(
+    localMatches.calculateLocalInsights(cleared).serveStats,
+    localMatches.calculateLocalInsights(original).serveStats,
+  );
+  assert.equal(
+    matchTiming.summarizeMatchTiming(cleared.points).firstToSecondServe.tracked.count,
+    0,
+  );
 });
 
 test('legacy stroke ratings convert once to the ten-point scale', async () => {

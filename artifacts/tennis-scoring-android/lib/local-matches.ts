@@ -217,6 +217,12 @@ export interface NewLocalPoint {
   secondServeAtMs?: number;
 }
 
+export interface LocalPointTimingMarkersUpdate {
+  pointStartedAtMs: number | null;
+  firstServeFaultAtMs: number | null;
+  secondServeAtMs: number | null;
+}
+
 const strokeTypes = STROKE_TYPE_OPTIONS.map(({ value }) => value);
 
 export function getLocalPointEndingCodeValidationError(
@@ -1545,6 +1551,100 @@ export async function editLocalPointWinner(
         match.matchStatus === 'complete' && !currentSet.score.isComplete
           ? 'in_progress'
           : match.matchStatus,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await writeMatch(updated);
+    return updated;
+  });
+}
+
+export async function updateLocalPointTimingMarkers(
+  id: string,
+  setNumber: number,
+  pointId: string,
+  markers: LocalPointTimingMarkersUpdate,
+): Promise<LocalMatch> {
+  if (!Number.isInteger(setNumber) || setNumber < 1) {
+    throw new Error('Choose a valid set number.');
+  }
+  if (
+    ![markers.pointStartedAtMs, markers.firstServeFaultAtMs, markers.secondServeAtMs]
+      .every((value) => value === null || (Number.isSafeInteger(value) && value >= 0))
+  ) {
+    throw new Error('Timing markers must be valid nonnegative timestamps.');
+  }
+
+  return withWriteLock(async () => {
+    const match = await readMatch(id);
+    if (!match) throw new Error('This match is not saved on this device.');
+    const setHistory = getLocalSetHistory(match);
+    const targetSet = setHistory.find((set) => set.setNumber === setNumber);
+    const targetPoint = targetSet?.points.find((point) => point.id === pointId);
+    if (!targetSet || !targetPoint) {
+      throw new Error('That saved point could not be found in this match.');
+    }
+
+    const savedAtMs = Date.parse(targetPoint.createdAt);
+    if (!Number.isFinite(savedAtMs)) {
+      throw new Error('This point has an invalid saved time, so its markers cannot be edited.');
+    }
+    const markerTimes = [
+      markers.pointStartedAtMs,
+      markers.firstServeFaultAtMs,
+      markers.secondServeAtMs,
+    ];
+    if (markerTimes.some((time) => time !== null && time > savedAtMs)) {
+      throw new Error('Timing markers cannot be later than when this point was saved.');
+    }
+    if (markers.firstServeFaultAtMs !== null && !targetPoint.firstServeFault) {
+      throw new Error('A first-serve-fault marker needs a recorded first-serve fault.');
+    }
+    if (
+      markers.secondServeAtMs !== null &&
+      markers.firstServeFaultAtMs === null
+    ) {
+      throw new Error('Mark the first-serve fault before the second-serve start.');
+    }
+    if (
+      markers.firstServeFaultAtMs !== null &&
+      markers.secondServeAtMs !== null &&
+      markers.secondServeAtMs < markers.firstServeFaultAtMs
+    ) {
+      throw new Error('The second-serve start cannot be before the first-serve fault.');
+    }
+    if (
+      markers.pointStartedAtMs !== null &&
+      [markers.firstServeFaultAtMs, markers.secondServeAtMs].some(
+        (time) => time !== null && time < markers.pointStartedAtMs!,
+      )
+    ) {
+      throw new Error('The point must start before its serve timing markers.');
+    }
+
+    const updatedPoints = targetSet.points.map((point) =>
+      point.id === pointId
+        ? {
+            ...point,
+            ...(markers.pointStartedAtMs === null
+              ? { pointStartedAtMs: undefined }
+              : { pointStartedAtMs: markers.pointStartedAtMs }),
+            ...(markers.firstServeFaultAtMs === null
+              ? { firstServeFaultAtMs: undefined }
+              : { firstServeFaultAtMs: markers.firstServeFaultAtMs }),
+            ...(markers.secondServeAtMs === null
+              ? { secondServeAtMs: undefined }
+              : { secondServeAtMs: markers.secondServeAtMs }),
+          }
+        : point,
+    );
+    const completedSets = match.completedSets.map((set) =>
+      set.setNumber === setNumber ? { ...set, points: updatedPoints } : set,
+    );
+    const updated: LocalMatch = {
+      ...match,
+      completedSets,
+      ...(match.setNumber === setNumber ? { points: updatedPoints } : {}),
       updatedAt: new Date().toISOString(),
     };
 

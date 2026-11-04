@@ -56,6 +56,7 @@ import {
   STROKE_RATING_MAX,
   STROKE_TYPE_OPTIONS,
   updateLocalMatchDetails,
+  updateLocalPointTimingMarkers,
   undoLocalPoint,
   validateLocalMatchDetails,
   type CourtSurface,
@@ -116,9 +117,40 @@ type NoteEditorTarget =
       setNumber: number;
       field: 'footworkNote' | 'tacticalNote' | 'mentalNote';
     };
+type PointTimingDraft = {
+  pointStartedAt: string;
+  firstServeFaultAt: string;
+  secondServeAt: string;
+};
 
 const courtSurfaces: CourtSurface[] = ['Hard', 'Clay', 'Grass', 'Carpet', 'Other'];
 const MATRIX_POINT_COLUMN_STEP = 36;
+
+function secondsBeforePointWasSaved(
+  markerAtMs: number | undefined,
+  pointCreatedAt: string,
+): string {
+  if (markerAtMs === undefined) return '';
+  const savedAtMs = Date.parse(pointCreatedAt);
+  if (!Number.isFinite(savedAtMs)) return '';
+  return ((savedAtMs - markerAtMs) / 1000)
+    .toFixed(3)
+    .replace(/\.?0+$/, '');
+}
+
+function parseTimingSecondsBeforeSave(value: string, savedAtMs: number): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (!/^(?:\d+(?:\.\d{1,3})?|\.\d{1,3})$/.test(trimmed)) {
+    throw new Error('Enter seconds using up to three decimal places, or leave the marker blank.');
+  }
+  const seconds = Number(trimmed);
+  const markerAtMs = savedAtMs - Math.round(seconds * 1000);
+  if (!Number.isSafeInteger(markerAtMs) || markerAtMs < 0) {
+    throw new Error('Timing markers must be within the point’s saved time.');
+  }
+  return markerAtMs;
+}
 
 function NotePromptChips({
   scope,
@@ -454,6 +486,9 @@ export default function MatchScreen() {
   const [isSetReviewExpanded, setIsSetReviewExpanded] = useState(false);
   const [noteEditorTarget, setNoteEditorTarget] = useState<NoteEditorTarget | null>(null);
   const [noteEditorDraft, setNoteEditorDraft] = useState('');
+  const [timingEditorPoint, setTimingEditorPoint] = useState<LocalPoint | null>(null);
+  const [timingEditorDraft, setTimingEditorDraft] = useState<PointTimingDraft | null>(null);
+  const [timingEditorError, setTimingEditorError] = useState('');
   const [shotDirection, setShotDirection] = useState<ShotDirection | null>(null);
   const [rallyLength, setRallyLength] = useState<RallyLength | null>(null);
   const [reportAction, setReportAction] = useState<'preview' | 'share' | null>(null);
@@ -601,6 +636,32 @@ export default function MatchScreen() {
     onError: (error) =>
       setEditPointError(
         error instanceof Error ? error.message : 'Could not change the point. Please try again.',
+      ),
+  });
+  const updatePointTiming = useMutation({
+    mutationFn: (input: {
+      setNumber: number;
+      pointId: string;
+      pointStartedAtMs: number | null;
+      firstServeFaultAtMs: number | null;
+      secondServeAtMs: number | null;
+    }) =>
+      updateLocalPointTimingMarkers(matchId, input.setNumber, input.pointId, {
+        pointStartedAtMs: input.pointStartedAtMs,
+        firstServeFaultAtMs: input.firstServeFaultAtMs,
+        secondServeAtMs: input.secondServeAtMs,
+      }),
+    onSuccess: (updatedMatch) => {
+      onUpdated(updatedMatch);
+      setTimingEditorPoint(null);
+      setTimingEditorDraft(null);
+      setTimingEditorError('');
+    },
+    onError: (error) =>
+      setTimingEditorError(
+        error instanceof Error
+          ? error.message
+          : 'Could not update point timing. Please try again.',
       ),
   });
   const addSet = useMutation({
@@ -846,6 +907,68 @@ export default function MatchScreen() {
     if (firstServeFaultAtMs === null) return;
     const markedAt = Date.now();
     if (markedAt >= firstServeFaultAtMs) setSecondServeAtMs(markedAt);
+  }
+
+  function openPointTimingEditor(point: LocalPoint) {
+    updatePointTiming.reset();
+    setTimingEditorError('');
+    setTimingEditorPoint(point);
+    setTimingEditorDraft({
+      pointStartedAt: secondsBeforePointWasSaved(
+        point.pointStartedAtMs,
+        point.createdAt,
+      ),
+      firstServeFaultAt: secondsBeforePointWasSaved(
+        point.firstServeFaultAtMs,
+        point.createdAt,
+      ),
+      secondServeAt: secondsBeforePointWasSaved(
+        point.secondServeAtMs,
+        point.createdAt,
+      ),
+    });
+  }
+
+  function closePointTimingEditor() {
+    if (updatePointTiming.isPending) return;
+    setTimingEditorPoint(null);
+    setTimingEditorDraft(null);
+    setTimingEditorError('');
+  }
+
+  function savePointTimingEditor() {
+    if (!timingEditorPoint || !timingEditorDraft) return;
+    const savedAtMs = Date.parse(timingEditorPoint.createdAt);
+    if (!Number.isFinite(savedAtMs)) {
+      setTimingEditorError('This point has an invalid saved time, so its markers cannot be edited.');
+      return;
+    }
+    try {
+      updatePointTiming.reset();
+      setTimingEditorError('');
+      updatePointTiming.mutate({
+        setNumber: timingEditorPoint.setNumber,
+        pointId: timingEditorPoint.id,
+        pointStartedAtMs: parseTimingSecondsBeforeSave(
+          timingEditorDraft.pointStartedAt,
+          savedAtMs,
+        ),
+        firstServeFaultAtMs: parseTimingSecondsBeforeSave(
+          timingEditorDraft.firstServeFaultAt,
+          savedAtMs,
+        ),
+        secondServeAtMs: parseTimingSecondsBeforeSave(
+          timingEditorDraft.secondServeAt,
+          savedAtMs,
+        ),
+      });
+    } catch (error) {
+      setTimingEditorError(
+        error instanceof Error
+          ? error.message
+          : 'Enter valid timing values and try again.',
+      );
+    }
   }
 
   function toggleFirstServeFault() {
@@ -3789,6 +3912,21 @@ export default function MatchScreen() {
                       </Text>
                     ) : null}
                   </View>
+                  <Pressable
+                    testID={`button-edit-point-timing-${point.id}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Edit timing for point ${point.sequenceNumber}`}
+                    onPress={() => openPointTimingEditor(point)}
+                    style={({ pressed }) => [
+                      styles.logTimingButton,
+                      { opacity: pressed ? 0.65 : 1 },
+                    ]}
+                  >
+                    <Ionicons name="time-outline" size={13} color={colors.primary} />
+                    <Text style={[styles.logTimingButtonText, { color: colors.primary }]}>
+                      Timing
+                    </Text>
+                  </Pressable>
                   <Text style={[styles.logCode, { color: colors.accent }]}>
                     {point.endingCode || '—'}
                   </Text>
@@ -3911,6 +4049,167 @@ export default function MatchScreen() {
                 />
                 <Text style={[styles.editErrorText, { color: colors.destructive }]}>
                   {updateGameNote.error?.message || updateSetReview.error?.message}
+                </Text>
+              </View>
+            ) : null}
+          </KeyboardAwareScrollViewCompat>
+        </SafeAreaView>
+      </Modal>
+      <Modal
+        visible={Boolean(timingEditorPoint)}
+        animationType="slide"
+        onRequestClose={closePointTimingEditor}
+      >
+        <SafeAreaView
+          style={[styles.editModalSafeArea, { backgroundColor: colors.background }]}
+        >
+          <View style={[styles.editModalHeader, { borderBottomColor: colors.border }]}>
+            <Pressable
+              testID="button-cancel-edit-point-timing"
+              accessibilityRole="button"
+              accessibilityLabel="Cancel timing edits"
+              disabled={updatePointTiming.isPending}
+              onPress={closePointTimingEditor}
+              style={styles.editModalIconButton}
+            >
+              <Ionicons name="close" size={23} color={colors.foreground} />
+            </Pressable>
+            <View style={styles.editModalTitleGroup}>
+              <Text style={[styles.eyebrow, { color: colors.accent }]}>
+                POINT TIMING
+              </Text>
+              <Text style={[styles.editModalTitle, { color: colors.foreground }]}>
+                {timingEditorPoint
+                  ? `Set ${timingEditorPoint.setNumber} · Point ${timingEditorPoint.sequenceNumber}`
+                  : 'Edit point timing'}
+              </Text>
+            </View>
+            <Pressable
+              testID="button-save-point-timing"
+              accessibilityRole="button"
+              accessibilityLabel="Save point timing"
+              disabled={updatePointTiming.isPending || !timingEditorDraft}
+              onPress={savePointTimingEditor}
+              style={[
+                styles.noteSaveButton,
+                {
+                  backgroundColor: colors.primary,
+                  opacity:
+                    updatePointTiming.isPending || !timingEditorDraft ? 0.55 : 1,
+                },
+              ]}
+            >
+              {updatePointTiming.isPending ? (
+                <ActivityIndicator size="small" color={colors.primaryForeground} />
+              ) : (
+                <Text style={[styles.noteActionText, { color: colors.primaryForeground }]}>
+                  Save
+                </Text>
+              )}
+            </Pressable>
+          </View>
+          <KeyboardAwareScrollViewCompat
+            contentContainerStyle={styles.editModalContent}
+            bottomOffset={24}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Text style={[styles.editModalNote, { color: colors.mutedForeground }]}>
+              Enter seconds before this point was saved. Earlier events have larger values;
+              leave a field blank to clear its marker.
+            </Text>
+            {timingEditorPoint && timingEditorDraft
+              ? (
+                  [
+                    {
+                      key: 'pointStartedAt',
+                      label: 'Point start',
+                      available: true,
+                    },
+                    {
+                      key: 'firstServeFaultAt',
+                      label: 'First-serve fault',
+                      available: timingEditorPoint.firstServeFault,
+                    },
+                    {
+                      key: 'secondServeAt',
+                      label: 'Second-serve start',
+                      available: timingEditorPoint.firstServeFault,
+                    },
+                  ] as const
+                ).map(({ key, label, available }) => (
+                  <View key={key} style={styles.timingEditorField}>
+                    <View style={styles.timingEditorFieldHeader}>
+                      <Text style={[styles.timingEditorFieldLabel, { color: colors.foreground }]}>
+                        {label}
+                      </Text>
+                      {timingEditorDraft[key] ? (
+                        <Pressable
+                          testID={`button-clear-point-timing-${key}`}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Clear ${label.toLowerCase()} marker`}
+                          disabled={updatePointTiming.isPending || !available}
+                          onPress={() =>
+                            setTimingEditorDraft((current) =>
+                              current ? { ...current, [key]: '' } : current,
+                            )
+                          }
+                          style={({ pressed }) => [
+                            styles.timingEditorClearButton,
+                            { opacity: !available ? 0.45 : pressed ? 0.65 : 1 },
+                          ]}
+                        >
+                          <Text style={[styles.timingEditorClearText, { color: colors.destructive }]}>
+                            Clear
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                    <TextInput
+                      testID={`input-point-timing-${key}`}
+                      accessibilityLabel={`${label}, seconds before point was saved`}
+                      editable={available && !updatePointTiming.isPending}
+                      keyboardType="decimal-pad"
+                      value={timingEditorDraft[key]}
+                      onChangeText={(value) =>
+                        setTimingEditorDraft((current) =>
+                          current ? { ...current, [key]: value } : current,
+                        )
+                      }
+                      placeholder={available ? 'Not marked' : 'No first-serve fault recorded'}
+                      placeholderTextColor={colors.mutedForeground}
+                      style={[
+                        styles.timingEditorInput,
+                        {
+                          color: colors.foreground,
+                          borderColor: colors.border,
+                          backgroundColor: available ? colors.card : colors.secondary,
+                        },
+                      ]}
+                    />
+                    {!available ? (
+                      <Text style={[styles.timingEditorHelp, { color: colors.mutedForeground }]}>
+                        Timing is available when this point has a recorded first-serve fault.
+                      </Text>
+                    ) : null}
+                  </View>
+                ))
+              : null}
+            {timingEditorError ? (
+              <View
+                testID="point-timing-edit-error"
+                accessibilityRole="alert"
+                style={[
+                  styles.editErrorBanner,
+                  { borderColor: colors.destructive, backgroundColor: colors.card },
+                ]}
+              >
+                <Ionicons
+                  name="alert-circle-outline"
+                  size={16}
+                  color={colors.destructive}
+                />
+                <Text style={[styles.editErrorText, { color: colors.destructive }]}>
+                  {timingEditorError}
                 </Text>
               </View>
             ) : null}
@@ -4468,6 +4767,15 @@ const styles = StyleSheet.create({
   logDescription: { flex: 1, minWidth: 0, gap: 3 },
   logWinner: { flexShrink: 1, minWidth: 0, fontFamily: 'DMSans_600SemiBold', fontSize: 11 },
   logDetail: { flexShrink: 1, minWidth: 0, fontFamily: 'DMSans_400Regular', fontSize: 9 },
+  logTimingButton: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 2 },
+  logTimingButtonText: { fontFamily: 'DMSans_600SemiBold', fontSize: 9 },
+  timingEditorField: { gap: 6 },
+  timingEditorFieldHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  timingEditorFieldLabel: { fontFamily: 'DMSans_600SemiBold', fontSize: 12 },
+  timingEditorClearButton: { minHeight: 30, justifyContent: 'center', paddingHorizontal: 8 },
+  timingEditorClearText: { fontFamily: 'DMSans_600SemiBold', fontSize: 10 },
+  timingEditorInput: { minHeight: 44, borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, fontFamily: 'DMSans_500Medium', fontSize: 14, fontVariant: ['tabular-nums'] },
+  timingEditorHelp: { fontFamily: 'DMSans_400Regular', fontSize: 10, lineHeight: 14 },
   breakPointScoreBefore: { gap: 2, minWidth: 0, paddingTop: 1 },
   breakPointScoreTitle: { fontFamily: 'DMSans_400Regular', fontSize: 8 },
   breakPointScoreRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 7 },

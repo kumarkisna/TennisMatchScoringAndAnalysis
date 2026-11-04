@@ -110,6 +110,15 @@ test('live point entry exposes optional event timing markers without changing sc
   );
 });
 
+test('saved point timing can be opened, corrected, and cleared independently', () => {
+  assert.match(screenSource, /button-edit-point-timing-\$\{point\.id\}/);
+  assert.match(screenSource, /input-point-timing-\$\{key\}/);
+  assert.match(screenSource, /button-clear-point-timing-\$\{key\}/);
+  assert.match(screenSource, /updateLocalPointTimingMarkers\(matchId/);
+  assert.match(screenSource, /seconds before this point was saved/);
+  assert.match(screenSource, /Earlier events have larger values/);
+});
+
 test('undo removes the latest shot from its lane and restores both point scores', async () => {
   storageValues.clear();
   const match = await localMatches.createLocalMatch({
