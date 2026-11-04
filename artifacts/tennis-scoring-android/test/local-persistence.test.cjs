@@ -3122,6 +3122,12 @@ test('player trend summaries separate match outcomes without inventing point sam
     developmentScreen,
     /describePlayerTimingPeriodComparison\(selected, outside\)/,
   );
+  assert.match(
+    developmentScreen,
+    /describePlayerTimingOutcomeComparison\(\s*selected,\s*outside,\s*comparison\.context,\s*playerName,\s*\)/,
+  );
+  assert.match(developmentScreen, /player-timing-after-wins-comparison/);
+  assert.match(developmentScreen, /player-timing-after-losses-comparison/);
   assert.match(developmentScreen, /isSegmentOpen = false/);
 });
 
@@ -3418,6 +3424,51 @@ test('player reset pace insight requires samples and shows medians with counts',
   assert.match(steadier, /4\.0s shorter/);
   assert.match(steadier, /3\.0s narrower, suggesting more consistent recorded pauses/);
   assert.match(steadier, /median \(n=5\)/);
+});
+
+test('player reset comparisons after wins and losses stay sample-gated and separate', () => {
+  const playerInsights = loadPlayerInsights();
+  const interval = (count, medianMs) => ({ count, medianMs });
+  const summary = (afterTrackedWin, afterTrackedLoss) => ({
+    betweenPoints: { afterTrackedWin, afterTrackedLoss },
+  });
+  const selected = summary(interval(3, 2000), interval(2, 8000));
+  const baseline = summary(interval(4, 5000), interval(3, 4000));
+
+  const afterWins = playerInsights.describePlayerTimingOutcomeComparison(
+    selected,
+    baseline,
+    'afterTrackedWin',
+    'Jordan',
+  );
+  assert.match(afterWins, /after point wins by Jordan/i);
+  assert.match(afterWins, /3\.0s shorter/);
+  assert.match(afterWins, /selected period: 2\.0s median \(n=3\)/i);
+  assert.match(afterWins, /other saved matches: 5\.0s median \(n=4\)/i);
+  assert.match(afterWins, /manual tap estimates/i);
+  assert.match(afterWins, /does not establish a cause or prove a change in self-control/i);
+
+  const afterLosses = playerInsights.describePlayerTimingOutcomeComparison(
+    selected,
+    baseline,
+    'afterTrackedLoss',
+    'Jordan',
+  );
+  assert.match(afterLosses, /comparison after point losses by Jordan is unavailable/i);
+  assert.match(afterLosses, /selected period n=2; other saved matches n=3/i);
+  assert.match(afterLosses, /at least 3 marked between-point gaps in each period/i);
+  assert.doesNotMatch(afterLosses, /shorter|longer|similar between periods/i);
+
+  const supportedLosses = playerInsights.describePlayerTimingOutcomeComparison(
+    summary(interval(3, 2000), interval(4, 8000)),
+    summary(interval(3, 5000), interval(3, 5000)),
+    'afterTrackedLoss',
+    'Jordan',
+  );
+  assert.match(supportedLosses, /3\.0s longer/);
+  assert.match(supportedLosses, /after point losses by Jordan/i);
+  assert.match(supportedLosses, /selected period: 8\.0s median \(n=4\)/i);
+  assert.match(supportedLosses, /other saved matches: 5\.0s median \(n=3\)/i);
 });
 
 test('point correction and undo refresh current-set timing markers and crossing intervals', async () => {

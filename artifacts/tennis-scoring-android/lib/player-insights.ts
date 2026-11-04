@@ -209,8 +209,46 @@ export interface PlayerTimingMatchTrend {
 export const PLAYER_TIMING_PACE_MINIMUM_INTERVALS = 3;
 export const PLAYER_TIMING_CONSISTENCY_MINIMUM_INTERVALS = 5;
 
+export type PlayerTimingOutcomeContext = 'afterTrackedWin' | 'afterTrackedLoss';
+
 function formatTimingDifference(durationMs: number): string {
   return `${(Math.abs(durationMs) / 1000).toFixed(1)}s`;
+}
+
+export function describePlayerTimingOutcomeComparison(
+  selected: MatchTimingSummary,
+  baseline: MatchTimingSummary,
+  context: PlayerTimingOutcomeContext,
+  playerName: string,
+): string {
+  const selectedPauses = selected.betweenPoints[context];
+  const baselinePauses = baseline.betweenPoints[context];
+  const outcomeLabel =
+    context === 'afterTrackedWin'
+      ? `after point wins by ${playerName}`
+      : `after point losses by ${playerName}`;
+  if (
+    selectedPauses.count < PLAYER_TIMING_PACE_MINIMUM_INTERVALS ||
+    baselinePauses.count < PLAYER_TIMING_PACE_MINIMUM_INTERVALS ||
+    selectedPauses.medianMs === null ||
+    baselinePauses.medianMs === null
+  ) {
+    return `This comparison ${outcomeLabel} is unavailable: selected period n=${selectedPauses.count}; other saved matches n=${baselinePauses.count}. Record at least ${PLAYER_TIMING_PACE_MINIMUM_INTERVALS} marked between-point gaps in each period.`;
+  }
+
+  const medianDifference = selectedPauses.medianMs - baselinePauses.medianMs;
+  const paceDescription =
+    Math.abs(medianDifference) < 1000
+      ? `The median reset pause ${outcomeLabel} was similar between periods.`
+      : `The median reset pause ${outcomeLabel} was ${formatTimingDifference(
+          medianDifference,
+        )} ${medianDifference < 0 ? 'shorter' : 'longer'} in the selected period than in other saved matches.`;
+
+  return `${paceDescription} Selected period: ${formatTimingDifference(
+    selectedPauses.medianMs,
+  )} median (n=${selectedPauses.count}); other saved matches: ${formatTimingDifference(
+    baselinePauses.medianMs,
+  )} median (n=${baselinePauses.count}). These are manual tap estimates; a timing difference does not establish a cause or prove a change in self-control.`;
 }
 
 export function describePlayerTimingPeriodComparison(

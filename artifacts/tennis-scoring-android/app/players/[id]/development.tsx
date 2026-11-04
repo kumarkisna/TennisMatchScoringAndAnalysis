@@ -26,6 +26,7 @@ import { listLocalPlayers } from '@/lib/local-players';
 import {
   buildPlayerPerformanceHistory,
   describePlayerTimingPeriodComparison,
+  describePlayerTimingOutcomeComparison,
   formatPlayerMatchOutcomeSummary,
   filterPlayerTrendMatchesByDateRange,
   getPlayerTrendComparisonSampleNotice,
@@ -41,6 +42,7 @@ import {
   type PlayerTimingGrouping,
   type PlayerTimingGroupSummary,
   type PlayerTimingMatchTrend,
+  type PlayerTimingOutcomeContext,
 } from '@/lib/player-insights';
 import {
   formatTimingDetails,
@@ -1133,6 +1135,22 @@ function PlayerTimingAverageCard({
       outside: outside.betweenPoints.gameChangeover,
     },
   ];
+  const outcomeComparisons: {
+    context: PlayerTimingOutcomeContext;
+    testID: string;
+    label: string;
+  }[] = [
+    {
+      context: 'afterTrackedWin',
+      testID: 'player-timing-after-wins-comparison',
+      label: `After point wins by ${playerName}`,
+    },
+    {
+      context: 'afterTrackedLoss',
+      testID: 'player-timing-after-losses-comparison',
+      label: `After point losses by ${playerName}`,
+    },
+  ];
 
   return (
     <View
@@ -1178,9 +1196,45 @@ function PlayerTimingAverageCard({
         </View>
       ))}
       {outsidePeriodAvailable ? (
-        <Text style={[styles.timingAverageInsight, { color: colors.foreground }]}>
-          {describePlayerTimingPeriodComparison(selected, outside)}
-        </Text>
+        <>
+          <Text style={[styles.timingAverageInsight, { color: colors.foreground }]}>
+            {describePlayerTimingPeriodComparison(selected, outside)}
+          </Text>
+          <View style={styles.timingOutcomeComparisons}>
+            {outcomeComparisons.map((comparison) => (
+              <View
+                key={comparison.context}
+                testID={comparison.testID}
+                style={[
+                  styles.timingOutcomeComparison,
+                  { borderTopColor: colors.border },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.timingAverageLabel,
+                    { color: colors.foreground },
+                  ]}
+                >
+                  {comparison.label}
+                </Text>
+                <Text
+                  style={[
+                    styles.timingAverageBaseline,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  {describePlayerTimingOutcomeComparison(
+                    selected,
+                    outside,
+                    comparison.context,
+                    playerName,
+                  )}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </>
       ) : dateRangeActive ? (
         <Text style={[styles.dateRangeHint, { color: colors.mutedForeground }]}>
           No saved matches fall outside this date range, so there is no personal
@@ -2176,6 +2230,12 @@ const styles = StyleSheet.create({
     fontFamily: 'DMSans_500Medium',
     fontSize: 10,
     lineHeight: 15,
+  },
+  timingOutcomeComparisons: { gap: 6 },
+  timingOutcomeComparison: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 7,
+    gap: 3,
   },
   strokeRatingCard: { borderWidth: 1, borderRadius: 10, padding: 11, gap: 5 },
   strokeRatingHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
