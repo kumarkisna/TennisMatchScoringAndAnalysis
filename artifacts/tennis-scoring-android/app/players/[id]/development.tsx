@@ -32,12 +32,14 @@ import {
   PLAYER_TREND_METRICS,
   summarizePlayerMatchOutcomes,
   summarizePlayerStrokeRating,
+  summarizePlayerTimingByMatch,
   summarizePlayerTrendMetric,
   type PlayerTrendMatch,
   type PlayerTrendMetricKey,
   summarizePlayerTiming,
   type PlayerTimingGrouping,
   type PlayerTimingGroupSummary,
+  type PlayerTimingMatchTrend,
 } from '@/lib/player-insights';
 import {
   formatTimingDetails,
@@ -114,11 +116,272 @@ function TimingIntervalCard({
   );
 }
 
+function PlayerTimingTrendChart({
+  playerName,
+  matches,
+}: {
+  playerName: string;
+  matches: PlayerTrendMatch[];
+}) {
+  const colors = useColors();
+  const trends: PlayerTimingMatchTrend[] =
+    summarizePlayerTimingByMatch(matches);
+  if (trends.length === 0) {
+    return (
+      <View
+        testID="player-timing-match-trend-empty"
+        style={[
+          styles.timingTrendEmpty,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+      >
+        <Text style={[styles.timingUnavailable, { color: colors.mutedForeground }]}>
+          No matches fall within the selected date range.
+        </Text>
+      </View>
+    );
+  }
+
+  const chartWidth = Math.max(320, trends.length * 76);
+  const chartHeight = 212;
+  const left = 45;
+  const right = chartWidth - 12;
+  const xFor = (index: number) =>
+    trends.length === 1
+      ? (left + right) / 2
+      : left + (index * (right - left)) / (trends.length - 1);
+  const panels = [
+    {
+      key: 'firstToSecondServe',
+      label: 'First fault to second serve',
+      color: colors.primary,
+      top: 20,
+      bottom: 69,
+      countY: 84,
+      dateY: null,
+    },
+    {
+      key: 'betweenPoints',
+      label: 'Between points',
+      color: colors.accent,
+      top: 106,
+      bottom: 155,
+      countY: 171,
+      dateY: 202,
+    },
+  ] as const satisfies readonly {
+    key: 'firstToSecondServe' | 'betweenPoints';
+    label: string;
+    color: string;
+    top: number;
+    bottom: number;
+    countY: number;
+    dateY: number | null;
+  }[];
+  const accessibilityLabel = trends
+    .map((match) => {
+      const serve = match.firstToSecondServe;
+      const between = match.betweenPoints;
+      const event = match.event ? `, ${match.event}` : '';
+      return `${formatDate(match.date)}, ${match.opponent}${event}: first fault to second serve ${
+        serve.medianMs === null
+          ? 'unavailable'
+          : `${formatTimingDuration(serve.medianMs)}, ${serve.count} samples`
+      }; between points ${
+        between.medianMs === null
+          ? 'unavailable'
+          : `${formatTimingDuration(between.medianMs)}, ${between.count} samples`
+      }`;
+    })
+    .join('. ');
+
+  return (
+    <View
+      testID="player-timing-match-trend"
+      style={[
+        styles.timingTrendCard,
+        { backgroundColor: colors.card, borderColor: colors.border },
+      ]}
+    >
+      <Text style={[styles.timingGroupTitle, { color: colors.foreground }]}>
+        Timing by match · {playerName}
+      </Text>
+      <Text style={[styles.timingTrendNote, { color: colors.mutedForeground }]}>
+        Each point is that match’s median. n = marked intervals; gaps mean none
+        were recorded.
+      </Text>
+      <ScrollView
+        horizontal
+        nestedScrollEnabled
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.chartScrollContent}
+      >
+        <Svg
+          width={chartWidth}
+          height={chartHeight}
+          accessibilityLabel={accessibilityLabel}
+        >
+          {panels.map((panel) => {
+            const values = trends
+              .map((match) => match[panel.key].medianMs)
+              .filter((value): value is number => value !== null);
+            const hasSamples = values.length > 0;
+            const minValue = hasSamples
+              ? values.reduce((minimum, value) => Math.min(minimum, value), Infinity)
+              : 0;
+            const maxValue = hasSamples
+              ? values.reduce((maximum, value) => Math.max(maximum, value), 0)
+              : 1;
+            const padding = hasSamples
+              ? Math.max((maxValue - minValue) * 0.15, maxValue * 0.08, 1000)
+              : 0;
+            const min = Math.max(0, minValue - padding);
+            const max = hasSamples
+              ? Math.max(maxValue + padding, min + 1)
+              : 1;
+            const yFor = (value: number) =>
+              panel.bottom -
+              ((value - min) / (max - min)) * (panel.bottom - panel.top);
+            let pathData = '';
+            let isSegmentOpen = false;
+            trends.forEach((match, index) => {
+              const value = match[panel.key].medianMs;
+              if (value === null) {
+                isSegmentOpen = false;
+                return;
+              }
+              pathData += `${isSegmentOpen ? 'L' : 'M'} ${xFor(index)} ${yFor(value)} `;
+              isSegmentOpen = true;
+            });
+
+            return (
+              <G key={panel.key}>
+                <SvgText
+                  x={left}
+                  y={panel.top - 7}
+                  fill={panel.color}
+                  fontSize={9}
+                  fontWeight="600"
+                >
+                  {panel.label}
+                </SvgText>
+                {[0, 1, 2].map((tickIndex) => {
+                  const y =
+                    panel.top +
+                    (tickIndex / 2) * (panel.bottom - panel.top);
+                  const tickValue = max - (tickIndex / 2) * (max - min);
+                  return (
+                    <G key={`${panel.key}-tick-${tickIndex}`}>
+                      <Line
+                        x1={left}
+                        x2={right}
+                        y1={y}
+                        y2={y}
+                        stroke={colors.border}
+                        strokeWidth={1}
+                      />
+                      {hasSamples ? (
+                        <SvgText
+                          x={left - 5}
+                          y={y + 3}
+                          fill={colors.mutedForeground}
+                          fontSize={7}
+                          textAnchor="end"
+                        >
+                          {formatTimingDuration(tickValue)}
+                        </SvgText>
+                      ) : null}
+                    </G>
+                  );
+                })}
+                {hasSamples ? (
+                  <Path
+                    d={pathData}
+                    fill="none"
+                    stroke={panel.color}
+                    strokeWidth={2.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                ) : (
+                  <SvgText
+                    x={(left + right) / 2}
+                    y={(panel.top + panel.bottom) / 2 + 3}
+                    fill={colors.mutedForeground}
+                    fontSize={9}
+                    textAnchor="middle"
+                  >
+                    No marked intervals
+                  </SvgText>
+                )}
+                {trends.map((match, index) => {
+                  const summary = match[panel.key];
+                  const value = summary.medianMs;
+                  const x = xFor(index);
+                  const y = value === null ? null : yFor(value);
+                  return (
+                    <G key={`${panel.key}-${match.id}`}>
+                      {value !== null && y !== null ? (
+                        <>
+                          <Circle
+                            cx={x}
+                            cy={y}
+                            r={3.5}
+                            fill={panel.color}
+                            stroke={colors.card}
+                            strokeWidth={1.5}
+                          />
+                          <SvgText
+                            x={x}
+                            y={y <= panel.top + 10 ? y + 12 : y - 7}
+                            fill={panel.color}
+                            fontSize={8}
+                            fontWeight="600"
+                            textAnchor="middle"
+                          >
+                            {formatTimingDuration(value)}
+                          </SvgText>
+                        </>
+                      ) : null}
+                      <SvgText
+                        x={x}
+                        y={panel.countY}
+                        fill={colors.mutedForeground}
+                        fontSize={8}
+                        textAnchor="middle"
+                      >
+                        {`n=${summary.count}`}
+                      </SvgText>
+                      {panel.dateY !== null ? (
+                        <SvgText
+                          x={x}
+                          y={panel.dateY}
+                          fill={colors.mutedForeground}
+                          fontSize={8}
+                          textAnchor="middle"
+                        >
+                          {formatDate(match.date)}
+                        </SvgText>
+                      ) : null}
+                    </G>
+                  );
+                })}
+              </G>
+            );
+          })}
+        </Svg>
+      </ScrollView>
+    </View>
+  );
+}
+
 function PlayerTimingHistory({
+  playerName,
   matches,
   grouping,
   onGroupingChange,
 }: {
+  playerName: string;
   matches: PlayerTrendMatch[];
   grouping: PlayerTimingGrouping;
   onGroupingChange: (grouping: PlayerTimingGrouping) => void;
@@ -139,6 +402,7 @@ function PlayerTimingHistory({
       <Text style={[styles.countHint, { color: colors.mutedForeground }]}>
         Manual markers only; longer times are not automatically better or worse. Date filters above apply.
       </Text>
+      <PlayerTimingTrendChart playerName={playerName} matches={matches} />
       <View style={styles.timingGroupingChoices}>
         {timingGroupingOptions.map((option) => {
           const selected = grouping === option.key;
@@ -1815,6 +2079,7 @@ export default function PlayerDevelopmentScreen() {
               </>
             )}
             <PlayerTimingHistory
+              playerName={player.name}
               matches={matches}
               grouping={timingGrouping}
               onGroupingChange={setTimingGrouping}
@@ -1966,6 +2231,9 @@ const styles = StyleSheet.create({
   strokeRatingSamples: { fontFamily: 'DMSans_600SemiBold', fontSize: 10, lineHeight: 15 },
   timingGroupingChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 10 },
   timingGroupCard: { borderWidth: 1, borderRadius: 10, padding: 11, marginBottom: 8, gap: 9 },
+  timingTrendCard: { borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 11, gap: 5 },
+  timingTrendEmpty: { borderWidth: 1, borderRadius: 10, padding: 12, marginBottom: 11 },
+  timingTrendNote: { fontFamily: 'DMSans_400Regular', fontSize: 9, lineHeight: 14 },
   timingGroupTitle: { fontFamily: 'DMSans_700Bold', fontSize: 12 },
   timingMetrics: { flexDirection: 'row', gap: 9 },
   timingMetric: { flex: 1, minWidth: 0, gap: 3 },

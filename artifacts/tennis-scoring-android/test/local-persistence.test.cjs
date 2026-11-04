@@ -3111,6 +3111,14 @@ test('player trend summaries separate match outcomes without inventing point sam
   assert.match(developmentScreen, /No \$\{value\.countLabel\} recorded/);
   assert.match(developmentScreen, /testID="player-timing-history"/);
   assert.match(developmentScreen, /summarizePlayerTiming\(matches, grouping\)/);
+  assert.match(
+    developmentScreen,
+    /<PlayerTimingTrendChart playerName=\{playerName\} matches=\{matches\} \/>/,
+  );
+  assert.match(developmentScreen, /summarizePlayerTimingByMatch\(matches\)/);
+  assert.match(developmentScreen, /testID="player-timing-match-trend"/);
+  assert.match(developmentScreen, /n=\$\{summary\.count\}/);
+  assert.match(developmentScreen, /isSegmentOpen = false/);
 });
 
 test('player reset timing combines marked intervals and leaves unsupported groups unavailable', () => {
@@ -3146,10 +3154,17 @@ test('player reset timing combines marked intervals and leaves unsupported group
     secondServeAtMs,
     createdAt: new Date(createdAtMs).toISOString(),
   });
-  const makeRecord = ({ id, playerSide, winner, surface, points }) => ({
+  const makeRecord = ({
+    id,
+    playerSide,
+    winner,
+    surface,
+    points,
+    matchDate = '2026-11-01',
+  }) => ({
     match: {
       id,
-      matchDate: '2026-11-01',
+      matchDate,
       event: null,
       round: null,
       trackedPlayer: 'Selected Player',
@@ -3215,6 +3230,7 @@ test('player reset timing combines marked intervals and leaves unsupported group
       playerSide: 'opponent',
       winner: 'tracked',
       surface: 'Clay',
+      matchDate: '2026-11-02',
       points: [
         makePoint({
           id: 'b1',
@@ -3237,6 +3253,66 @@ test('player reset timing combines marked intervals and leaves unsupported group
     }),
   ];
   const history = playerInsights.buildPlayerPerformanceHistory(records);
+  const historyWithUnmarkedMatch = playerInsights.buildPlayerPerformanceHistory([
+    ...records,
+    makeRecord({
+      id: 'unmarked',
+      playerSide: 'tracked',
+      winner: null,
+      surface: 'Grass',
+      matchDate: '2026-11-03',
+      points: [],
+    }),
+  ]);
+  const timingByMatch =
+    playerInsights.summarizePlayerTimingByMatch(historyWithUnmarkedMatch);
+  assert.deepEqual(
+    timingByMatch.map((match) => ({
+      id: match.id,
+      date: match.date,
+      serveCount: match.firstToSecondServe.count,
+      serveMedianMs: match.firstToSecondServe.medianMs,
+      betweenPointCount: match.betweenPoints.count,
+      betweenPointMedianMs: match.betweenPoints.medianMs,
+    })),
+    [
+      {
+        id: 'win-hard',
+        date: '2026-11-01',
+        serveCount: 2,
+        serveMedianMs: 2000,
+        betweenPointCount: 2,
+        betweenPointMedianMs: 3000,
+      },
+      {
+        id: 'loss-clay',
+        date: '2026-11-02',
+        serveCount: 1,
+        serveMedianMs: 6000,
+        betweenPointCount: 1,
+        betweenPointMedianMs: 6000,
+      },
+      {
+        id: 'unmarked',
+        date: '2026-11-03',
+        serveCount: 0,
+        serveMedianMs: null,
+        betweenPointCount: 0,
+        betweenPointMedianMs: null,
+      },
+    ],
+  );
+  const selectedDateRange = playerInsights.filterPlayerTrendMatchesByDateRange(
+    historyWithUnmarkedMatch,
+    '2026-11-02',
+    '2026-11-03',
+  );
+  assert.deepEqual(
+    playerInsights
+      .summarizePlayerTimingByMatch(selectedDateRange)
+      .map((match) => match.id),
+    ['loss-clay', 'unmarked'],
+  );
 
   assert.deepEqual(playerInsights.summarizePlayerTiming(history), [
     {

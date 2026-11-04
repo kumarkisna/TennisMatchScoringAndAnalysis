@@ -196,6 +196,15 @@ export interface PlayerTimingGroupSummary {
   matchesWithBetweenPointSamples: number;
 }
 
+export interface PlayerTimingMatchTrend {
+  id: string;
+  date: string;
+  event: string | null;
+  opponent: string;
+  firstToSecondServe: TimingIntervalSummary;
+  betweenPoints: TimingIntervalSummary;
+}
+
 export interface PlayerStrokeRatingSample {
   setNumber: number;
   rating: number;
@@ -466,6 +475,26 @@ function summarizeTimingValues(values: readonly number[]): TimingIntervalSummary
     q3Ms,
     interquartileRangeMs: q3Ms - q1Ms,
   };
+}
+
+export function summarizePlayerTimingByMatch(
+  matches: readonly PlayerTrendMatch[],
+): PlayerTimingMatchTrend[] {
+  return [...matches]
+    .sort(
+      (left, right) =>
+        left.date.localeCompare(right.date) || left.id.localeCompare(right.id),
+    )
+    .map((match) => ({
+      id: match.id,
+      date: match.date,
+      event: match.event,
+      opponent: match.opponent,
+      firstToSecondServe: summarizeTimingValues(
+        match.timing.firstToSecondServeMs,
+      ),
+      betweenPoints: summarizeTimingValues(match.timing.betweenPointsMs),
+    }));
 }
 
 const PLAYER_TIMING_RESULT_GROUPS = [
