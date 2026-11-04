@@ -1,0 +1,29 @@
+kind = "video"
+videoAspectRatio = "16:9"
+previewPath = "/tennis-scoring-app-walkthrough/"
+title = "TennisScoring App Walkthrough"
+description = "A short animated guide to setting up a match, recording each tennis point, managing multiple sets, and reviewing player development in the offline-only TennisScoring Android app."
+version = "1.0.0"
+id = "artifacts/tennis-scoring-app-walkthrough"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/tennis-scoring-app-walkthrough/" ]
+localPort = 18232
+
+[services.development]
+run = "pnpm --filter @workspace/tennis-scoring-app-walkthrough run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/tennis-scoring-app-walkthrough", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/tennis-scoring-app-walkthrough/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18232"
+BASE_PATH = "/tennis-scoring-app-walkthrough/"
