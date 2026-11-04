@@ -3118,6 +3118,10 @@ test('player trend summaries separate match outcomes without inventing point sam
   assert.match(developmentScreen, /summarizePlayerTimingByMatch\(matches\)/);
   assert.match(developmentScreen, /testID="player-timing-match-trend"/);
   assert.match(developmentScreen, /n=\$\{summary\.count\}/);
+  assert.match(
+    developmentScreen,
+    /describePlayerTimingPeriodComparison\(selected, outside\)/,
+  );
   assert.match(developmentScreen, /isSegmentOpen = false/);
 });
 
@@ -3364,6 +3368,56 @@ test('player reset timing combines marked intervals and leaves unsupported group
     q3Ms: null,
     interquartileRangeMs: null,
   });
+});
+
+test('player reset pace insight requires samples and shows medians with counts', () => {
+  const playerInsights = loadPlayerInsights();
+  const timingSummary = (count, medianMs, interquartileRangeMs) => ({
+    betweenPoints: {
+      all: { count, medianMs, interquartileRangeMs },
+    },
+  });
+
+  const insufficient = playerInsights.describePlayerTimingPeriodComparison(
+    timingSummary(2, 2000, 1000),
+    timingSummary(4, 5000, 2000),
+  );
+  assert.match(insufficient, /not enough data/i);
+  assert.match(insufficient, /at least 3 marked between-point gaps in both periods/i);
+  assert.doesNotMatch(insufficient, /shorter|longer|more consistent/i);
+
+  const supported = playerInsights.describePlayerTimingPeriodComparison(
+    timingSummary(3, 2000, 800),
+    timingSummary(3, 5000, 1500),
+  );
+  assert.match(supported, /3\.0s shorter/);
+  assert.match(supported, /Selected period: 2\.0s median \(n=3\)/);
+  assert.match(supported, /other saved matches: 5\.0s median \(n=3\)/);
+  assert.match(supported, /not rally speed or how smooth play felt/i);
+  assert.match(supported, /manual tap estimates/i);
+  assert.doesNotMatch(supported, /middle-50% spread/);
+
+  const similar = playerInsights.describePlayerTimingPeriodComparison(
+    timingSummary(3, 2500, 800),
+    timingSummary(3, 3000, 900),
+  );
+  assert.match(similar, /similar between periods/);
+  assert.match(similar, /Selected period: 2\.5s median \(n=3\)/);
+  assert.match(similar, /other saved matches: 3\.0s median \(n=3\)/);
+
+  const threshold = playerInsights.describePlayerTimingPeriodComparison(
+    timingSummary(3, 2000, 800),
+    timingSummary(3, 3000, 900),
+  );
+  assert.match(threshold, /1\.0s shorter/);
+
+  const steadier = playerInsights.describePlayerTimingPeriodComparison(
+    timingSummary(5, 2000, 1000),
+    timingSummary(5, 6000, 4000),
+  );
+  assert.match(steadier, /4\.0s shorter/);
+  assert.match(steadier, /3\.0s narrower, suggesting more consistent recorded pauses/);
+  assert.match(steadier, /median \(n=5\)/);
 });
 
 test('point correction and undo refresh current-set timing markers and crossing intervals', async () => {

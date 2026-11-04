@@ -25,6 +25,7 @@ import {
 import { listLocalPlayers } from '@/lib/local-players';
 import {
   buildPlayerPerformanceHistory,
+  describePlayerTimingPeriodComparison,
   formatPlayerMatchOutcomeSummary,
   filterPlayerTrendMatchesByDateRange,
   getPlayerTrendComparisonSampleNotice,
@@ -45,7 +46,6 @@ import {
   formatTimingDetails,
   getMatchTimingPoints,
   summarizePlayerTimingAcrossMatches,
-  type MatchTimingSummary,
   type PlayerTimingMatch,
   type TimingIntervalSummary,
 } from '@/lib/match-timing';
@@ -1062,50 +1062,6 @@ function StrokeRatingHistory({
   );
 }
 
-function formatTimingDifference(durationMs: number): string {
-  return `${(Math.abs(durationMs) / 1000).toFixed(1)}s`;
-}
-
-function describeTimingPeriodComparison(
-  selected: MatchTimingSummary,
-  outside: MatchTimingSummary,
-): string {
-  const selectedPauses = selected.betweenPoints.all;
-  const outsidePauses = outside.betweenPoints.all;
-  if (
-    selectedPauses.count < 3 ||
-    outsidePauses.count < 3 ||
-    selectedPauses.medianMs === null ||
-    outsidePauses.medianMs === null
-  ) {
-    return 'Add at least 3 marked between-point gaps inside and outside this date range for a personal comparison.';
-  }
-
-  const medianDifference = selectedPauses.medianMs - outsidePauses.medianMs;
-  const paceDescription =
-    Math.abs(medianDifference) < 1000
-      ? 'The median reset pause was similar inside and outside this period.'
-      : `The median reset pause was ${formatTimingDifference(medianDifference)} ${
-          medianDifference < 0 ? 'shorter' : 'longer'
-        } in this period than in other saved matches.`;
-  const selectedSpread = selectedPauses.interquartileRangeMs;
-  const outsideSpread = outsidePauses.interquartileRangeMs;
-  const consistencyDescription =
-    selectedPauses.count >= 5 &&
-    outsidePauses.count >= 5 &&
-    selectedSpread !== null &&
-    outsideSpread !== null &&
-    Math.abs(selectedSpread - outsideSpread) >= 1000
-      ? ` The middle-50% spread was ${formatTimingDifference(
-          selectedSpread - outsideSpread,
-        )} ${
-          selectedSpread < outsideSpread ? 'narrower' : 'wider'
-        }, indicating more or less consistent recorded pauses.`
-      : '';
-
-  return `${paceDescription}${consistencyDescription} This describes reset timing, not rally speed or how smooth play felt.`;
-}
-
 function PlayerTimingAverageCard({
   playerName,
   periodLabel,
@@ -1223,7 +1179,7 @@ function PlayerTimingAverageCard({
       ))}
       {outsidePeriodAvailable ? (
         <Text style={[styles.timingAverageInsight, { color: colors.foreground }]}>
-          {describeTimingPeriodComparison(selected, outside)}
+          {describePlayerTimingPeriodComparison(selected, outside)}
         </Text>
       ) : dateRangeActive ? (
         <Text style={[styles.dateRangeHint, { color: colors.mutedForeground }]}>

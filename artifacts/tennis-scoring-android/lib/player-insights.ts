@@ -20,6 +20,7 @@ import {
 } from '@/lib/local-matches';
 import {
   collectMatchTimingSamples,
+  type MatchTimingSummary,
   type TimingIntervalSummary,
 } from '@/lib/match-timing';
 
@@ -203,6 +204,60 @@ export interface PlayerTimingMatchTrend {
   opponent: string;
   firstToSecondServe: TimingIntervalSummary;
   betweenPoints: TimingIntervalSummary;
+}
+
+export const PLAYER_TIMING_PACE_MINIMUM_INTERVALS = 3;
+export const PLAYER_TIMING_CONSISTENCY_MINIMUM_INTERVALS = 5;
+
+function formatTimingDifference(durationMs: number): string {
+  return `${(Math.abs(durationMs) / 1000).toFixed(1)}s`;
+}
+
+export function describePlayerTimingPeriodComparison(
+  selected: MatchTimingSummary,
+  baseline: MatchTimingSummary,
+): string {
+  const selectedPauses = selected.betweenPoints.all;
+  const baselinePauses = baseline.betweenPoints.all;
+  if (
+    selectedPauses.count < PLAYER_TIMING_PACE_MINIMUM_INTERVALS ||
+    baselinePauses.count < PLAYER_TIMING_PACE_MINIMUM_INTERVALS ||
+    selectedPauses.medianMs === null ||
+    baselinePauses.medianMs === null
+  ) {
+    return `Not enough data for a reset-pace comparison yet. Record at least ${PLAYER_TIMING_PACE_MINIMUM_INTERVALS} marked between-point gaps in both periods.`;
+  }
+
+  const medianDifference = selectedPauses.medianMs - baselinePauses.medianMs;
+  const paceDescription =
+    Math.abs(medianDifference) < 1000
+      ? 'The median between-point reset was similar between periods.'
+      : `The median between-point reset was ${formatTimingDifference(medianDifference)} ${
+          medianDifference < 0 ? 'shorter' : 'longer'
+        } in the selected period than in other saved matches.`;
+  const selectedSpread = selectedPauses.interquartileRangeMs;
+  const baselineSpread = baselinePauses.interquartileRangeMs;
+  const consistencyDescription =
+    selectedPauses.count >= PLAYER_TIMING_CONSISTENCY_MINIMUM_INTERVALS &&
+    baselinePauses.count >= PLAYER_TIMING_CONSISTENCY_MINIMUM_INTERVALS &&
+    selectedSpread !== null &&
+    baselineSpread !== null &&
+    Math.abs(selectedSpread - baselineSpread) >= 1000
+      ? ` The middle-50% spread was ${formatTimingDifference(
+          selectedSpread - baselineSpread,
+        )} ${
+          selectedSpread < baselineSpread ? 'narrower' : 'wider'
+        }, suggesting ${
+          selectedSpread < baselineSpread ? 'more' : 'less'
+        } consistent recorded pauses.`
+      : '';
+  const sampleDetails = ` Selected period: ${formatTimingDifference(
+    selectedPauses.medianMs,
+  )} median (n=${selectedPauses.count}); other saved matches: ${formatTimingDifference(
+    baselinePauses.medianMs,
+  )} median (n=${baselinePauses.count}).`;
+
+  return `${paceDescription}${consistencyDescription}${sampleDetails} This describes reset timing, not rally speed or how smooth play felt. These event markers are manual tap estimates.`;
 }
 
 export interface PlayerStrokeRatingSample {
