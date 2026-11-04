@@ -6,6 +6,13 @@ const test = require('node:test');
 const ts = require('typescript');
 
 const storageValues = new Map();
+const MATCH_RECORD_PREFIX = '@tennis-scoring/matches/record-v1/';
+function storeRawMatch(match) {
+  storageValues.set(
+    `${MATCH_RECORD_PREFIX}${match.id}`,
+    JSON.stringify(match),
+  );
+}
 const asyncStorage = {
   async getItem(key) {
     return storageValues.has(key) ? storageValues.get(key) : null;
@@ -3189,6 +3196,201 @@ test('player reset timing combines marked intervals and leaves unsupported group
     q3Ms: null,
     interquartileRangeMs: null,
   });
+});
+
+test('point correction and undo refresh current-set timing markers and crossing intervals', async () => {
+  storageValues.clear();
+  const { localMatches } = loadStorageModulesAfterRestart();
+  const timing = require(path.join(__dirname, '../lib/match-timing.ts'));
+  const match = await localMatches.createLocalMatch({
+    matchDate: '2026-11-02',
+    trackedPlayer: 'Alex Player',
+    opponent: 'Bailey Player',
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+  let saved = match;
+  for (let index = 0; index < 6; index += 1) {
+    saved = await localMatches.recordLocalPoint(match.id, { winner: 'tracked' });
+  }
+
+  const base = Date.parse('2025-01-01T00:00:00.000Z');
+  const timedPoints = saved.points.map((point, index) => {
+    const timedPoint = {
+      ...point,
+      createdAt: new Date(base + index * 1000).toISOString(),
+    };
+    if (index === 4) {
+      return {
+        ...timedPoint,
+        createdAt: new Date(base + 6000).toISOString(),
+        firstServeFault: true,
+        firstServeFaultAtMs: base + 3000,
+        secondServeAtMs: base + 3500,
+        pointStartedAtMs: base + 4000,
+      };
+    }
+    if (index === 5) {
+      return {
+        ...timedPoint,
+        firstServeFault: true,
+        firstServeFaultAtMs: base + 6500,
+        secondServeAtMs: base + 7000,
+        pointStartedAtMs: base + 8000,
+      };
+    }
+    return timedPoint;
+  });
+  storeRawMatch({ ...saved, points: timedPoints });
+
+  const getTiming = async () => {
+    const localMatch = await localMatches.getLocalMatch(match.id);
+    assert.ok(localMatch);
+    return {
+      match: localMatch,
+      summary: timing.summarizeMatchTiming(
+        timing.getMatchTimingPoints(localMatch),
+      ),
+    };
+  };
+  const pointFour = timedPoints[3];
+  const beforeCorrection = await getTiming();
+  assert.equal(beforeCorrection.match.points[4].gameNumber, 2);
+  assert.equal(beforeCorrection.summary.betweenPoints.gameChangeover.count, 1);
+  assert.equal(beforeCorrection.summary.betweenPoints.gameChangeover.medianMs, 1000);
+  assert.equal(beforeCorrection.summary.betweenPoints.sameGame.medianMs, 2000);
+  assert.equal(
+    beforeCorrection.summary.firstToSecondServe.tracked.count +
+      beforeCorrection.summary.firstToSecondServe.opponent.count,
+    2,
+  );
+
+  await localMatches.editLocalPointWinner(
+    match.id,
+    1,
+    pointFour.id,
+    'opponent',
+  );
+  const afterCorrection = await getTiming();
+  assert.equal(afterCorrection.match.points[4].gameNumber, 1);
+  assert.equal(afterCorrection.match.points[5].gameNumber, 2);
+  assert.equal(afterCorrection.summary.betweenPoints.sameGame.medianMs, 1000);
+  assert.equal(afterCorrection.summary.betweenPoints.gameChangeover.medianMs, 2000);
+  assert.equal(afterCorrection.summary.betweenPoints.afterTrackedLoss.count, 1);
+  assert.equal(afterCorrection.summary.betweenPoints.afterTrackedWin.count, 0);
+  assert.equal(afterCorrection.match.points[4].pointStartedAtMs, base + 4000);
+  assert.equal(afterCorrection.match.points[4].secondServeAtMs, base + 3500);
+
+  await localMatches.undoLocalPoint(match.id);
+  const afterUndo = await getTiming();
+  assert.equal(afterUndo.match.points.length, 5);
+  assert.equal(afterUndo.summary.betweenPoints.all.count, 1);
+  assert.equal(afterUndo.summary.betweenPoints.sameGame.count, 1);
+  assert.equal(afterUndo.summary.betweenPoints.gameChangeover.count, 0);
+  assert.equal(afterUndo.summary.betweenPoints.afterTrackedLoss.count, 1);
+  assert.equal(
+    afterUndo.summary.firstToSecondServe.tracked.count +
+      afterUndo.summary.firstToSecondServe.opponent.count,
+    1,
+  );
+});
+
+test('correcting completed-set points refreshes timing from completed-set history', async () => {
+  storageValues.clear();
+  const { localMatches } = loadStorageModulesAfterRestart();
+  const timing = require(path.join(__dirname, '../lib/match-timing.ts'));
+  const match = await localMatches.createLocalMatch({
+    matchDate: '2026-11-02',
+    trackedPlayer: 'Alex Player',
+    opponent: 'Bailey Player',
+    surface: 'Hard',
+    firstServer: 'tracked',
+    setNumber: 1,
+  });
+  let saved = match;
+  for (let index = 0; index < 24; index += 1) {
+    saved = await localMatches.recordLocalPoint(match.id, { winner: 'tracked' });
+  }
+  saved = await localMatches.addLocalSet(match.id, 'standard');
+  const completedSetWinners =
+    'TTTOOOOOTTOTOTTTTTTOTTOOOOOOOOOTOOTOOOOTOOOTTOTTTTTOTOTOOTOTO';
+  for (const winner of completedSetWinners) {
+    saved = await localMatches.recordLocalPoint(match.id, {
+      winner: winner === 'T' ? 'tracked' : 'opponent',
+    });
+  }
+  assert.equal(saved.score.isComplete, true);
+  saved = await localMatches.addLocalSet(match.id, 'standard');
+
+  const base = Date.parse('2025-01-01T00:00:00.000Z');
+  const completedSets = saved.completedSets.map((set) =>
+    set.setNumber === 2
+      ? {
+          ...set,
+          points: set.points.map((point, index) => {
+            if (index === 0) {
+              return {
+                ...point,
+                firstServeFault: true,
+                firstServeFaultAtMs: base + 1000,
+                secondServeAtMs: base + 2000,
+                createdAt: new Date(base).toISOString(),
+              };
+            }
+            if (index === 1) {
+              return {
+                ...point,
+                pointStartedAtMs: base + 5000,
+                createdAt: new Date(base + 6000).toISOString(),
+              };
+            }
+            return point;
+          }),
+        }
+      : set,
+  );
+  storeRawMatch({ ...saved, completedSets });
+
+  const getTiming = async () => {
+    const localMatch = await localMatches.getLocalMatch(match.id);
+    assert.ok(localMatch);
+    return {
+      match: localMatch,
+      summary: timing.summarizeMatchTiming(
+        timing.getMatchTimingPoints(localMatch),
+      ),
+    };
+  };
+  const pointToCorrect = completedSets[1].points[0];
+  const beforeCorrection = await getTiming();
+  assert.equal(beforeCorrection.match.completedSets.length, 2);
+  assert.equal(beforeCorrection.summary.betweenPoints.all.count, 1);
+  assert.equal(beforeCorrection.summary.betweenPoints.afterTrackedWin.count, 1);
+  assert.equal(
+    beforeCorrection.summary.firstToSecondServe.tracked.count +
+      beforeCorrection.summary.firstToSecondServe.opponent.count,
+    1,
+  );
+
+  await localMatches.editLocalPointWinner(
+    match.id,
+    2,
+    pointToCorrect.id,
+    'opponent',
+  );
+  const afterCorrection = await getTiming();
+  assert.equal(afterCorrection.match.completedSets.length, 2);
+  assert.equal(afterCorrection.match.completedSets[1].score.isComplete, true);
+  assert.equal(afterCorrection.summary.betweenPoints.all.count, 1);
+  assert.equal(afterCorrection.summary.betweenPoints.afterTrackedWin.count, 0);
+  assert.equal(afterCorrection.summary.betweenPoints.afterTrackedLoss.count, 1);
+  const correctedPoint = afterCorrection.match.completedSets[1].points.find(
+    (point) => point.id === pointToCorrect.id,
+  );
+  assert.equal(correctedPoint.pointStartedAtMs, undefined);
+  assert.equal(correctedPoint.firstServeFaultAtMs, base + 1000);
+  assert.equal(correctedPoint.secondServeAtMs, base + 2000);
 });
 
 test('player development history refreshes after one and final match deletion', async () => {
