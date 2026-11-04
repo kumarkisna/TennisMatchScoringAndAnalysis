@@ -7,3 +7,4 @@
 - [Home and history split](home-history.md) — keep the two newest matches on Home; put older matches in a dedicated newest-first History screen.
 - [Vibrant local themes](offline-themes.md) — offer clearly varied, vivid palettes and editable custom colors while preserving the original default and offline storage.
 - [Expo monorepo autolinking](expo-monorepo-autolinking.md) — search app/root node_modules; use an explicit React Native package root when discovery still misses it.
+- [Video preview diagnostics](video-preview.md) — a dev-banner 404 can be non-blocking if scenes render and production build plus recording checks pass.

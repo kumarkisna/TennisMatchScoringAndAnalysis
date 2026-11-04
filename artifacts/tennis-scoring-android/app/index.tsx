@@ -217,9 +217,20 @@ export default function HomeScreen() {
               <View style={[styles.brandMark, { borderColor: colors.primary }]}>
                 <Ionicons name="tennisball-outline" size={21} color={colors.primary} />
               </View>
-              <Text style={[styles.brandName, { color: colors.foreground }]}>
-                Tennis<Text style={{ color: colors.primary }}>Scoring</Text>
-              </Text>
+              <View style={styles.brandTitleGroup}>
+                <Text style={[styles.brandName, { color: colors.foreground }]}>
+                  Tennis<Text style={{ color: colors.primary }}>Scoring</Text>
+                </Text>
+                <Text
+                  numberOfLines={2}
+                  style={[
+                    styles.brandCopyright,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  Copyright Shreshth Bharat Tennis Trust - 2026 - Present
+                </Text>
+              </View>
               <View style={styles.courtBadge}>
                 <View style={[styles.statusDot, { backgroundColor: colors.accent }]} />
                 <Text style={[styles.courtBadgeText, { color: colors.mutedForeground }]}>
@@ -798,6 +809,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   brandName: { fontFamily: 'Manrope_700Bold', fontSize: 17, letterSpacing: -0.7 },
+  brandTitleGroup: { flex: 1, minWidth: 0 },
+  brandCopyright: {
+    marginTop: 1,
+    fontFamily: 'DMSans_400Regular',
+    fontSize: 7,
+    lineHeight: 9,
+    letterSpacing: 0.05,
+  },
   courtBadge: { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 7 },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
   courtBadgeText: {
