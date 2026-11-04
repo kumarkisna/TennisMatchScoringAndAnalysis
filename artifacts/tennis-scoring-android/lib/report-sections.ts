@@ -8,6 +8,7 @@ export const PLAYER_REPORT_SECTIONS = [
   { id: 'game-notes', label: 'Game notes' },
   { id: 'break-points', label: 'Break-point pressure' },
   { id: 'break-point-context', label: 'Break-point moments' },
+  { id: 'timing', label: 'Timing and reset patterns' },
   { id: 'coaching', label: 'Coaching notes' },
   { id: 'point-ending', label: 'Point-ending analysis' },
   { id: 'strokes', label: 'Recorded strokes' },
@@ -32,7 +33,15 @@ export const PLAYER_REPORT_SECTION_PRESETS = [
   {
     id: 'statistics',
     label: 'Statistics',
-    sections: ['overview', 'serve', 'return', 'sets', 'game-notes', 'break-points'],
+    sections: [
+      'overview',
+      'serve',
+      'return',
+      'sets',
+      'game-notes',
+      'break-points',
+      'timing',
+    ],
   },
   {
     id: 'full',

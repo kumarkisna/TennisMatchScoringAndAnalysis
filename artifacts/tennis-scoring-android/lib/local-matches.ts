@@ -141,6 +141,9 @@ export interface LocalPoint {
   shotDirection?: ShotDirection | null;
   rallyLength?: RallyLength | null;
   strokes?: LocalStroke[];
+  pointStartedAtMs?: number;
+  firstServeFaultAtMs?: number;
+  secondServeAtMs?: number;
   createdAt: string;
 }
 
@@ -209,6 +212,9 @@ export interface NewLocalPoint {
   shotDirection?: ShotDirection | null;
   rallyLength?: RallyLength | null;
   strokes?: NewLocalStroke[];
+  pointStartedAtMs?: number;
+  firstServeFaultAtMs?: number;
+  secondServeAtMs?: number;
 }
 
 const strokeTypes = STROKE_TYPE_OPTIONS.map(({ value }) => value);
@@ -1371,6 +1377,34 @@ export async function recordLocalPoint(
       input.endingCode,
     );
     if (validationError) throw new Error(validationError);
+    const markerNow = Date.now();
+    const isCurrentMarker = (value: number | undefined): value is number =>
+      value !== undefined &&
+      Number.isSafeInteger(value) &&
+      value >= 0 &&
+      value <= markerNow;
+    const firstServeFaultAtMs =
+      input.firstServeFault && isCurrentMarker(input.firstServeFaultAtMs)
+        ? input.firstServeFaultAtMs
+        : undefined;
+    const secondServeAtMs =
+      firstServeFaultAtMs !== undefined &&
+      isCurrentMarker(input.secondServeAtMs) &&
+      input.secondServeAtMs >= firstServeFaultAtMs
+        ? input.secondServeAtMs
+        : undefined;
+    let pointStartedAtMs = isCurrentMarker(input.pointStartedAtMs)
+      ? input.pointStartedAtMs
+      : undefined;
+    const pointStartTime = pointStartedAtMs;
+    if (
+      pointStartTime !== undefined &&
+      [firstServeFaultAtMs, secondServeAtMs].some(
+        (value) => value !== undefined && value < pointStartTime,
+      )
+    ) {
+      pointStartedAtMs = undefined;
+    }
     const point: LocalPoint = {
       id: newId(),
       sequenceNumber: match.points.length + 1,
@@ -1383,6 +1417,15 @@ export async function recordLocalPoint(
       firstServeFault: input.firstServeFault ?? false,
       shotDirection: input.shotDirection ?? null,
       rallyLength: input.rallyLength ?? null,
+      ...(pointStartedAtMs !== undefined
+        ? { pointStartedAtMs }
+        : {}),
+      ...(firstServeFaultAtMs !== undefined
+        ? { firstServeFaultAtMs }
+        : {}),
+      ...(secondServeAtMs !== undefined
+        ? { secondServeAtMs }
+        : {}),
       strokes: (input.strokes ?? []).map((stroke) => ({
         ...stroke,
         id: newId(),

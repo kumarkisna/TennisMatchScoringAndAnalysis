@@ -809,14 +809,27 @@ test('backup restore remaps both saved player links and keeps each player histor
     endingCode: 'A',
     firstServeFault: false,
   });
+  const pointStartedAtMs = Date.now();
+  const firstServeFaultAtMs = Date.now();
+  const secondServeAtMs = Date.now();
   await activeModules.localMatches.recordLocalPoint(match.id, {
     winner: 'opponent',
+    firstServeFault: true,
+    pointStartedAtMs,
+    firstServeFaultAtMs,
+    secondServeAtMs,
   });
 
   const backupJson = await loadBackupModule().createLocalBackupJson();
   const exported = JSON.parse(backupJson);
   assert.equal(exported.matches[0].trackedPlayerId, trackedPlayer.id);
   assert.equal(exported.matches[0].opponentPlayerId, opponentPlayer.id);
+  assert.equal(exported.matches[0].points[1].pointStartedAtMs, pointStartedAtMs);
+  assert.equal(
+    exported.matches[0].points[1].firstServeFaultAtMs,
+    firstServeFaultAtMs,
+  );
+  assert.equal(exported.matches[0].points[1].secondServeAtMs, secondServeAtMs);
   assert.deepEqual(
     exported.players.find((player) => player.id === trackedPlayer.id)
       .profileUrlLabels,
@@ -864,6 +877,9 @@ test('backup restore remaps both saved player links and keeps each player histor
   assert.equal(restoredMatch.trackedPlayerId, restoredTrackedPlayer.id);
   assert.equal(restoredMatch.opponentPlayerId, restoredOpponentPlayer.id);
   assert.notEqual(restoredMatch.trackedPlayerId, restoredMatch.opponentPlayerId);
+  assert.equal(restoredMatch.points[1].pointStartedAtMs, pointStartedAtMs);
+  assert.equal(restoredMatch.points[1].firstServeFaultAtMs, firstServeFaultAtMs);
+  assert.equal(restoredMatch.points[1].secondServeAtMs, secondServeAtMs);
   assert.equal(
     await activeModules.localPlayers.getActiveLocalPlayerId(),
     restoredTrackedPlayer.id,

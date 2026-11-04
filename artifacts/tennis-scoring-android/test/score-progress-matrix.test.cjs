@@ -88,6 +88,28 @@ test('the shot code is highlighted only in the point winner’s lane', () => {
   assert.match(scoreCell, /score \$\{score\}/);
 });
 
+test('live point entry exposes optional event timing markers without changing score controls', () => {
+  for (const marker of [
+    'toggle-timing-entry',
+    'mark-point-start',
+    'mark-first-serve-fault',
+    'mark-second-serve',
+  ]) {
+    assert.ok(
+      screenSource.includes(`testID="${marker}"`),
+      `Missing timing control ${marker}`,
+    );
+  }
+  assert.match(
+    screenSource,
+    /pointStartedAtMs: pointStartedAtMs \?\? undefined/,
+  );
+  assert.match(
+    screenSource,
+    /firstServeFaultAtMs: firstServeFaultAtMs \?\? undefined/,
+  );
+});
+
 test('undo removes the latest shot from its lane and restores both point scores', async () => {
   storageValues.clear();
   const match = await localMatches.createLocalMatch({

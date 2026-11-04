@@ -65,6 +65,14 @@ Module._load = function (request, parent, isMain) {
       isMain,
     );
   }
+  if (request === '@/lib/match-timing') {
+    return originalLoad.call(
+      this,
+      path.join(__dirname, '../lib/match-timing.ts'),
+      parent,
+      isMain,
+    );
+  }
   if (request === '@/lib/report-review') {
     return originalLoad.call(
       this,
@@ -185,6 +193,7 @@ test('report layouts provide overview, statistics, and full presets for both rep
     'sets',
     'game-notes',
     'break-points',
+    'timing',
   ]);
   assert.deepEqual(
     PLAYER_REPORT_SECTION_PRESETS[2].sections,
@@ -2379,6 +2388,40 @@ test('player statistics match a deterministic four-game point log', () => {
     headToHeadHtml,
     /Unforced errors<\/td>\s*<td>2 · 24 recorded points<\/td>\s*<td>1 · 24 recorded points<\/td>/,
   );
+});
+
+test('single-match report summarizes marked serve and between-point timing', () => {
+  const match = performanceSampleMatch();
+  const base = Date.parse('2026-10-30T12:00:00.000Z');
+  match.points = match.points.map((point, index) => ({
+    ...point,
+    createdAt: new Date(base + (index + 1) * 60_000).toISOString(),
+    ...(index > 0 && index < 6
+      ? { pointStartedAtMs: base + index * 60_000 + 20_000 }
+      : {}),
+    ...(index === 0
+      ? {
+          firstServeFaultAtMs: base + 5_000,
+          secondServeAtMs: base + 9_000,
+        }
+      : {}),
+  }));
+  const insights = calculateLocalInsights(match);
+  const performance = summarizePlayerPerformance(insights, 1);
+  const html = buildPlayerReportHtml(match, insights, performance);
+  const overviewOnly = buildPlayerReportHtml(
+    match,
+    insights,
+    performance,
+    ['overview'],
+  );
+
+  assert.match(html, /Timing and reset patterns/);
+  assert.match(html, /First fault to second-serve start · Tracked serving/);
+  assert.ok(html.includes('Median 4s · range 4s · n=1'));
+  assert.ok(html.includes('Median 20s · range 20s · n=5'));
+  assert.match(html, /manual tap times, not official chair-umpire measurements/);
+  assert.doesNotMatch(overviewOnly, /Timing and reset patterns/);
 });
 
 test('saved-point corrections and undo refresh match and head-to-head report stats', async () => {

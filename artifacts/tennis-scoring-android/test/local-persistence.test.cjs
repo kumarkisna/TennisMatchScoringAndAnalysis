@@ -144,10 +144,12 @@ test('saved match points and editable player profiles survive offline app restar
     setNumber: 1,
     trackedPlayerId: player.id,
   });
+  const pointStartedAtMs = Date.now() - 3000;
   await beforeRestart.localMatches.recordLocalPoint(match.id, {
     winner: 'tracked',
     endingCode: 'A',
     firstServeFault: false,
+    pointStartedAtMs,
   });
   const matchStorageKey = `@tennis-scoring/matches/record-v1/${match.id}`;
   const legacyRecord = JSON.parse(storageValues.get(matchStorageKey));
@@ -179,6 +181,7 @@ test('saved match points and editable player profiles survive offline app restar
   assert.equal(restoredMatch.points.length, 1);
   assert.equal(restoredMatch.points[0].winner, 'tracked');
   assert.equal(restoredMatch.points[0].endingCode, 'A');
+  assert.equal(restoredMatch.points[0].pointStartedAtMs, pointStartedAtMs);
   assert.equal('syncStatus' in restoredMatch, false);
   assert.equal('syncStatus' in restoredMatch.points[0], false);
   const migratedRecord = JSON.parse(storageValues.get(matchStorageKey));

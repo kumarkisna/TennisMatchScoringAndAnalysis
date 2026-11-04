@@ -25,6 +25,10 @@ import {
   allPlayerReportSections,
   type PlayerReportSection,
 } from '@/lib/report-sections';
+import {
+  summarizeMatchTiming,
+  type TimingIntervalSummary,
+} from '@/lib/match-timing';
 
 type ReportMatch = Pick<
   LocalMatch,
@@ -116,6 +120,28 @@ function setScore(set: PlayerReportInsights['sets'][number]): string {
   return set.trackedTiebreakPoints > 0 || set.opponentTiebreakPoints > 0
     ? `${games} · tie-break ${set.trackedTiebreakPoints}–${set.opponentTiebreakPoints}`
     : games;
+}
+
+function formatTimingDuration(durationMs: number): string {
+  const seconds = Math.round(durationMs / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function formatTimingInterval(summary: TimingIntervalSummary): string {
+  if (
+    summary.count === 0 ||
+    summary.medianMs === null ||
+    summary.minMs === null ||
+    summary.maxMs === null
+  ) {
+    return '— · no markers';
+  }
+  const range =
+    summary.minMs === summary.maxMs
+      ? formatTimingDuration(summary.minMs)
+      : `${formatTimingDuration(summary.minMs)}–${formatTimingDuration(summary.maxMs)}`;
+  return `Median ${formatTimingDuration(summary.medianMs)} · range ${range} · n=${summary.count}`;
 }
 
 function setWinnerSide(
@@ -246,6 +272,49 @@ export function buildPlayerReportHtml(
     hidePlayerNames
       ? anonymizeReportPlayerNames(value, match.trackedPlayer, match.opponent)
       : value;
+  const timingPoints = Array.from(
+    new Map(
+      [
+        ...(match.completedSets ?? []).flatMap((set) => set.points),
+        ...(match.points ?? []),
+      ].map((point) => [point.id, point] as const),
+    ).values(),
+  );
+  const timing = summarizeMatchTiming(timingPoints);
+  const timingRowsData: [string, TimingIntervalSummary][] = [
+    [
+      `First fault to second-serve start · ${trackedPlayerLabel} serving`,
+      timing.firstToSecondServe.tracked,
+    ],
+    [
+      `First fault to second-serve start · ${opponentLabel} serving`,
+      timing.firstToSecondServe.opponent,
+    ],
+    ['Between points · same game', timing.betweenPoints.sameGame],
+    ['After a tracked-player point win · same game', timing.betweenPoints.afterTrackedWin],
+    ['After a tracked-player point loss · same game', timing.betweenPoints.afterTrackedLoss],
+    [
+      'After a tracked-player unforced error or double fault',
+      timing.betweenPoints.afterTrackedError,
+    ],
+    ['Between games · changeovers', timing.betweenPoints.gameChangeover],
+  ];
+  const timingRows = timingRowsData
+    .filter(([, interval]) => interval.count > 0)
+    .map(
+      ([label, interval]) =>
+        `<tr><td>${escape(label)}</td><td>${formatTimingInterval(interval)}</td></tr>`,
+    )
+    .join('');
+  const trackedWinMedian = timing.betweenPoints.afterTrackedWin.medianMs;
+  const trackedLossMedian = timing.betweenPoints.afterTrackedLoss.medianMs;
+  const timingReflection =
+    timing.betweenPoints.afterTrackedWin.count >= 3 &&
+    timing.betweenPoints.afterTrackedLoss.count >= 3 &&
+    trackedWinMedian !== null &&
+    trackedLossMedian !== null
+      ? `Median between-point time was ${formatTimingDuration(trackedLossMedian)} after a tracked-player loss and ${formatTimingDuration(trackedWinMedian)} after a win. Consider whether a consistent reset routine helps; timing alone cannot explain the difference.`
+      : 'Compare your reset routine after wins and losses as more marked points are recorded. No faster-or-slower target is assumed.';
   const shotRows = summary.codeInsights.length
     ? summary.codeInsights
         .map(
@@ -1011,6 +1080,18 @@ export function buildPlayerReportHtml(
       </thead>
       <tbody>${breakPointContextRows || '<tr><td colspan="6">No saved or converted break-point moments were recorded.</td></tr>'}</tbody>
     </table>
+    ` : ''}
+
+    ${includes('timing') ? `
+    <h2>Timing and reset patterns</h2>
+    <p class="context-coverage">
+      Optional markers show medians, ranges, and sample counts. Serve time runs from a marked first-serve fault to the marked second-serve start. Between-point time runs from saving the previous point to marking the next point's start. These are manual tap times, not official chair-umpire measurements; a longer pause is not automatically worse.
+    </p>
+    <table class="metric-table timing-table">
+      <thead><tr><th>Measure</th><th>Recorded timing</th></tr></thead>
+      <tbody>${timingRows || '<tr><td colspan="2">No timing markers were recorded for this match.</td></tr>'}</tbody>
+    </table>
+    <p class="note">${escape(timingReflection)}</p>
     ` : ''}
 
     ${includes('coaching') ? `

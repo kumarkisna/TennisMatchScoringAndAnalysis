@@ -439,6 +439,10 @@ export default function MatchScreen() {
   const [pointHistoryFilter, setPointHistoryFilter] =
     useState<'all' | 'break_points'>('all');
   const [firstServeFault, setFirstServeFault] = useState(false);
+  const [pointStartedAtMs, setPointStartedAtMs] = useState<number | null>(null);
+  const [firstServeFaultAtMs, setFirstServeFaultAtMs] = useState<number | null>(null);
+  const [secondServeAtMs, setSecondServeAtMs] = useState<number | null>(null);
+  const [isTimingEntryExpanded, setIsTimingEntryExpanded] = useState(false);
   const [isPointContextExpanded, setIsPointContextExpanded] = useState(false);
   const [isStrokeEntryExpanded, setIsStrokeEntryExpanded] = useState(false);
   const [strokeTypeDraft, setStrokeTypeDraft] = useState<StrokeType>('first_serve');
@@ -536,6 +540,10 @@ export default function MatchScreen() {
     setEditPointError('');
     setPointHistoryFilter('all');
     setFirstServeFault(false);
+    setPointStartedAtMs(null);
+    setFirstServeFaultAtMs(null);
+    setSecondServeAtMs(null);
+    setIsTimingEntryExpanded(false);
     setShotDirection(null);
     setRallyLength(null);
     setIsPointContextExpanded(false);
@@ -560,6 +568,9 @@ export default function MatchScreen() {
     onSuccess: (updatedMatch) => {
       setEndingCode(null);
       setFirstServeFault(false);
+      setPointStartedAtMs(null);
+      setFirstServeFaultAtMs(null);
+      setSecondServeAtMs(null);
       setShotDirection(null);
       setRallyLength(null);
       setStrokeDrafts([]);
@@ -820,6 +831,32 @@ export default function MatchScreen() {
     updateDetails.mutate(editDraft);
   }
 
+  function markPointStarted() {
+    setPointStartedAtMs(Date.now());
+  }
+
+  function markFirstServeFaultNow() {
+    const markedAt = Date.now();
+    setFirstServeFault(true);
+    setFirstServeFaultAtMs(markedAt);
+    setSecondServeAtMs(null);
+  }
+
+  function markSecondServeNow() {
+    if (firstServeFaultAtMs === null) return;
+    const markedAt = Date.now();
+    if (markedAt >= firstServeFaultAtMs) setSecondServeAtMs(markedAt);
+  }
+
+  function toggleFirstServeFault() {
+    const next = !firstServeFault;
+    setFirstServeFault(next);
+    if (!next) {
+      setFirstServeFaultAtMs(null);
+      setSecondServeAtMs(null);
+    }
+  }
+
   function addPoint(winner: Side) {
     if (
       !match ||
@@ -845,6 +882,9 @@ export default function MatchScreen() {
       winner,
       endingCode,
       firstServeFault,
+      pointStartedAtMs: pointStartedAtMs ?? undefined,
+      firstServeFaultAtMs: firstServeFaultAtMs ?? undefined,
+      secondServeAtMs: secondServeAtMs ?? undefined,
       shotDirection,
       rallyLength,
       strokes: strokeDrafts,
@@ -2011,7 +2051,7 @@ export default function MatchScreen() {
               testID="toggle-first-serve-fault"
               accessibilityRole="button"
               accessibilityState={{ selected: firstServeFault }}
-              onPress={() => setFirstServeFault((current) => !current)}
+              onPress={toggleFirstServeFault}
               style={[
                 styles.faultToggle,
                 {
@@ -2033,6 +2073,165 @@ export default function MatchScreen() {
                 Logged as a dot
               </Text>
             </Pressable>
+
+            <Pressable
+              testID="toggle-timing-entry"
+              accessibilityRole="button"
+              accessibilityState={{ expanded: isTimingEntryExpanded }}
+              onPress={() => setIsTimingEntryExpanded((current) => !current)}
+              style={[styles.contextToggle, { borderTopColor: colors.border }]}
+            >
+              <Ionicons
+                name={isTimingEntryExpanded ? 'chevron-up-outline' : 'time-outline'}
+                size={17}
+                color={colors.primary}
+              />
+              <View style={styles.contextToggleCopy}>
+                <Text style={[styles.contextToggleTitle, { color: colors.foreground }]}>
+                  Timing markers · optional
+                </Text>
+                <Text style={[styles.contextToggleHint, { color: colors.mutedForeground }]}>
+                  {pointStartedAtMs !== null ||
+                  firstServeFaultAtMs !== null ||
+                  secondServeAtMs !== null
+                    ? 'Markers ready to save with this point'
+                    : 'Tap at the moment each event happens'}
+                </Text>
+              </View>
+              <Ionicons
+                name={isTimingEntryExpanded ? 'chevron-up' : 'chevron-down'}
+                size={15}
+                color={colors.mutedForeground}
+              />
+            </Pressable>
+            {isTimingEntryExpanded ? (
+              <View
+                style={[
+                  styles.contextPanel,
+                  { backgroundColor: colors.background, borderColor: colors.border },
+                ]}
+              >
+                <Text style={[styles.contextToggleHint, { color: colors.mutedForeground }]}>
+                  Mark the point start, first-serve fault, and second-serve start as they happen.
+                  These times are saved with the point when you record its winner.
+                </Text>
+                <View style={styles.codeWrap}>
+                  <Pressable
+                    testID="mark-point-start"
+                    accessibilityRole="button"
+                    accessibilityLabel="Mark point start now"
+                    accessibilityState={{
+                      disabled: isBusy,
+                      selected: pointStartedAtMs !== null,
+                    }}
+                    disabled={isBusy}
+                    onPress={markPointStarted}
+                    style={[
+                      styles.contextChip,
+                      {
+                        backgroundColor:
+                          pointStartedAtMs !== null ? colors.primary : colors.card,
+                        borderColor:
+                          pointStartedAtMs !== null ? colors.primary : colors.border,
+                        borderRadius: colors.radius,
+                        opacity: isBusy ? 0.5 : 1,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.contextChipText,
+                        {
+                          color:
+                            pointStartedAtMs !== null
+                              ? colors.primaryForeground
+                              : colors.foreground,
+                        },
+                      ]}
+                    >
+                      {pointStartedAtMs !== null ? 'Point start marked' : 'Mark point start'}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    testID="mark-first-serve-fault"
+                    accessibilityRole="button"
+                    accessibilityLabel="Mark first-serve fault now"
+                    accessibilityState={{
+                      disabled: isBusy,
+                      selected: firstServeFaultAtMs !== null,
+                    }}
+                    disabled={isBusy}
+                    onPress={markFirstServeFaultNow}
+                    style={[
+                      styles.contextChip,
+                      {
+                        backgroundColor:
+                          firstServeFaultAtMs !== null ? colors.primary : colors.card,
+                        borderColor:
+                          firstServeFaultAtMs !== null ? colors.primary : colors.border,
+                        borderRadius: colors.radius,
+                        opacity: isBusy ? 0.5 : 1,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.contextChipText,
+                        {
+                          color:
+                            firstServeFaultAtMs !== null
+                              ? colors.primaryForeground
+                              : colors.foreground,
+                        },
+                      ]}
+                    >
+                      {firstServeFaultAtMs !== null
+                        ? 'First fault marked'
+                        : 'Mark first fault'}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    testID="mark-second-serve"
+                    accessibilityRole="button"
+                    accessibilityLabel="Mark second serve start now"
+                    accessibilityState={{
+                      disabled: isBusy || firstServeFaultAtMs === null,
+                      selected: secondServeAtMs !== null,
+                    }}
+                    disabled={isBusy || firstServeFaultAtMs === null}
+                    onPress={markSecondServeNow}
+                    style={[
+                      styles.contextChip,
+                      {
+                        backgroundColor:
+                          secondServeAtMs !== null ? colors.primary : colors.card,
+                        borderColor:
+                          secondServeAtMs !== null ? colors.primary : colors.border,
+                        borderRadius: colors.radius,
+                        opacity:
+                          isBusy || firstServeFaultAtMs === null ? 0.5 : 1,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.contextChipText,
+                        {
+                          color:
+                            secondServeAtMs !== null
+                              ? colors.primaryForeground
+                              : colors.foreground,
+                        },
+                      ]}
+                    >
+                      {secondServeAtMs !== null && firstServeFaultAtMs !== null
+                        ? `Second serve · ${((secondServeAtMs - firstServeFaultAtMs) / 1000).toFixed(1)}s`
+                        : 'Mark second serve'}
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
 
             <View style={styles.codeGroup}>
               <Text style={[styles.codeGroupLabel, { color: colors.mutedForeground }]}>

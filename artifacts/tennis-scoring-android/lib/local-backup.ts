@@ -125,6 +125,13 @@ function isNonnegativeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 }
 
+function isOptionalTimestampMs(value: unknown): value is number | undefined {
+  return (
+    value === undefined ||
+    (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0)
+  );
+}
+
 function isTimestamp(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && Number.isFinite(Date.parse(value));
 }
@@ -222,6 +229,34 @@ function isScore(value: unknown): boolean {
 
 function isBackupPoint(value: unknown): boolean {
   if (!isRecord(value)) return false;
+  const createdAtMs =
+    typeof value.createdAt === 'string' ? Date.parse(value.createdAt) : Number.NaN;
+  const pointStartedAtMs =
+    typeof value.pointStartedAtMs === 'number' ? value.pointStartedAtMs : undefined;
+  const firstServeFaultAtMs =
+    typeof value.firstServeFaultAtMs === 'number'
+      ? value.firstServeFaultAtMs
+      : undefined;
+  const secondServeAtMs =
+    typeof value.secondServeAtMs === 'number' ? value.secondServeAtMs : undefined;
+  const markerTimes = [
+    pointStartedAtMs,
+    firstServeFaultAtMs,
+    secondServeAtMs,
+  ].filter((time): time is number => typeof time === 'number');
+  const validTimingMarkers =
+    isOptionalTimestampMs(value.pointStartedAtMs) &&
+    isOptionalTimestampMs(value.firstServeFaultAtMs) &&
+    isOptionalTimestampMs(value.secondServeAtMs) &&
+    markerTimes.every((time) => time <= createdAtMs) &&
+    (firstServeFaultAtMs === undefined || value.firstServeFault === true) &&
+    (secondServeAtMs === undefined ||
+      (firstServeFaultAtMs !== undefined &&
+        secondServeAtMs >= firstServeFaultAtMs)) &&
+    (pointStartedAtMs === undefined ||
+      [firstServeFaultAtMs, secondServeAtMs].every(
+        (time) => time === undefined || time >= pointStartedAtMs,
+      ));
   return (
     typeof value.id === 'string' &&
     value.id.length > 0 &&
@@ -243,6 +278,7 @@ function isBackupPoint(value: unknown): boolean {
     (value.rallyLength === undefined ||
       value.rallyLength === null ||
       rallyLengths.includes(value.rallyLength as (typeof rallyLengths)[number])) &&
+    validTimingMarkers &&
     (value.strokes === undefined ||
       (Array.isArray(value.strokes) &&
         value.strokes.length <= 20 &&
