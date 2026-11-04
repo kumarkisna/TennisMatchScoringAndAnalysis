@@ -21,6 +21,7 @@ import {
   type PlayerMatchOutcomeRecord,
   type PlayerMatchOutcomeSummary,
   type PlayerPerformanceSummary,
+  type PlayerResetTimingSummary,
 } from '@/lib/player-insights';
 import {
   getMatchTimingPoints,
@@ -107,6 +108,11 @@ export interface HeadToHeadReport {
   personalAverageMatches: number;
   timing?: MatchTimingSummary;
   personalAverageTiming?: MatchTimingSummary;
+  resetTimingByPlayer?: {
+    trackedPlayer: PlayerResetTimingSummary;
+    opponent: PlayerResetTimingSummary;
+  };
+  resetTimingMeetingVersions?: string[];
   personalAverageMeetingVersions?: string[];
   personalAverageBreakPointsBySurface: SurfaceBreakPointBaseline[];
   breakPointsBySurface: HeadToHeadSurfaceBreakPoints[];

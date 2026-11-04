@@ -252,7 +252,10 @@ test('single-match and head-to-head report pickers expose saved local layouts', 
   assert.match(playerDevelopmentScreenSource, /player-timing-average-primary/);
   assert.match(playerDevelopmentScreenSource, /selectedPrimaryMatchIds/);
   assert.match(playerDevelopmentScreenSource, /outsidePrimaryTimingMatches/);
-  assert.match(playerDevelopmentScreenSource, /describeTimingPeriodComparison/);
+  assert.match(
+    playerDevelopmentScreenSource,
+    /describePlayerTimingPeriodComparison/,
+  );
 });
 
 test('both report screens use the same saved local hide-names preference', () => {
@@ -1040,6 +1043,44 @@ test('head-to-head reports pool timing intervals and include the player average'
     html,
     /Neither measure establishes rally speed or proves that play felt smooth/i,
   );
+
+  const resetSummary = (medianMs, count, startDate, endDate) => ({
+    interval: {
+      count,
+      medianMs,
+      minMs: medianMs,
+      maxMs: medianMs,
+      q1Ms: medianMs,
+      q3Ms: medianMs,
+      interquartileRangeMs: 0,
+    },
+    matchCount: count,
+    startDate,
+    endDate,
+  });
+  const reportWithPlayerTiming = {
+    ...report,
+    resetTimingByPlayer: {
+      trackedPlayer: {
+        firstToSecondServe: resetSummary(2500, 2, '2026-10-30', '2026-11-02'),
+        betweenPoints: resetSummary(12000, 3, '2026-10-30', '2026-11-04'),
+      },
+      opponent: {
+        firstToSecondServe: resetSummary(3500, 1, '2026-11-01', '2026-11-01'),
+        betweenPoints: resetSummary(null, 0, null, null),
+      },
+    },
+  };
+  const htmlWithPlayerTiming = buildHeadToHeadReportHtml(
+    reportWithPlayerTiming,
+    ['timing'],
+  );
+  assert.match(htmlWithPlayerTiming, /Player timing history/);
+  assert.match(htmlWithPlayerTiming, /First fault to second serve/);
+  assert.match(htmlWithPlayerTiming, /Between points/);
+  assert.match(htmlWithPlayerTiming, /n=2 intervals · 2 matches/);
+  assert.match(htmlWithPlayerTiming, /October 30, 2026–November 2, 2026/);
+  assert.match(htmlWithPlayerTiming, /Unavailable · no marked intervals/);
 });
 
 test('surface break-point averages pool chances and mark missing rates unavailable', () => {

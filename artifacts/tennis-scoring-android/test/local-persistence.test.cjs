@@ -3137,6 +3137,18 @@ test('player trend summaries separate match outcomes without inventing point sam
     /describePlayerTimingPeriodComparison\(\s*comparison\.selected,\s*comparison\.baseline,\s*comparison\.baselineLabel,\s*comparison\.surfaceLabel,\s*\)/,
   );
   assert.match(developmentScreen, /isSegmentOpen = false/);
+  const headToHeadScreen = fs.readFileSync(
+    path.join(__dirname, '../app/head-to-head.tsx'),
+    'utf8',
+  );
+  assert.match(
+    headToHeadScreen,
+    /testID="head-to-head-player-reset-timing"/,
+  );
+  assert.match(headToHeadScreen, /summarizePlayerResetTiming/);
+  assert.match(headToHeadScreen, /including matches against other opponents/);
+  assert.match(headToHeadScreen, /label: 'First fault to second serve'/);
+  assert.match(headToHeadScreen, /label: 'Between points'/);
 });
 
 test('player reset timing combines marked intervals and leaves unsupported groups unavailable', () => {
@@ -3497,6 +3509,131 @@ test('player reset comparisons after wins and losses stay sample-gated and separ
   assert.match(supportedLosses, /after point losses by Jordan/i);
   assert.match(supportedLosses, /selected period: 8\.0s median \(n=4\)/i);
   assert.match(supportedLosses, /other saved matches: 5\.0s median \(n=3\)/i);
+});
+
+test('head-to-head player reset timing compares each side with sampled date ranges', () => {
+  const playerInsights = loadPlayerInsights();
+  const makeTimingPoint = ({
+    id,
+    sequenceNumber,
+    server,
+    createdAtMs,
+    pointStartedAtMs,
+    firstServeFaultAtMs,
+    secondServeAtMs,
+  }) => ({
+    id,
+    sequenceNumber,
+    setNumber: 1,
+    gameNumber: 1,
+    server,
+    isTiebreak: false,
+    winner: 'tracked',
+    endingCode: null,
+    firstServeFault: firstServeFaultAtMs !== undefined,
+    pointStartedAtMs,
+    firstServeFaultAtMs,
+    secondServeAtMs,
+    createdAt: new Date(createdAtMs).toISOString(),
+  });
+  const makeTimingMatch = (id, matchDate, playerSide, points) => ({
+    match: {
+      id,
+      matchDate,
+      completedSets: [],
+      points,
+    },
+    playerSide,
+  });
+  const firstMatch = makeTimingMatch('timing-one', '2026-11-01', 'tracked', [
+    makeTimingPoint({
+      id: 'timing-one-a',
+      sequenceNumber: 1,
+      server: 'tracked',
+      createdAtMs: 4000,
+      firstServeFaultAtMs: 1000,
+      secondServeAtMs: 3000,
+    }),
+    makeTimingPoint({
+      id: 'timing-one-b',
+      sequenceNumber: 2,
+      server: 'opponent',
+      createdAtMs: 9000,
+      pointStartedAtMs: 7000,
+      firstServeFaultAtMs: 8000,
+      secondServeAtMs: 14000,
+    }),
+  ]);
+  const secondMatch = makeTimingMatch('timing-two', '2026-11-04', 'opponent', [
+    makeTimingPoint({
+      id: 'timing-two-a',
+      sequenceNumber: 1,
+      server: 'opponent',
+      createdAtMs: 28000,
+      firstServeFaultAtMs: 20000,
+      secondServeAtMs: 26000,
+    }),
+    makeTimingPoint({
+      id: 'timing-two-b',
+      sequenceNumber: 2,
+      server: 'tracked',
+      createdAtMs: 41000,
+      pointStartedAtMs: 33000,
+      firstServeFaultAtMs: 34000,
+      secondServeAtMs: 40000,
+    }),
+  ]);
+  const unmarkedMatch = makeTimingMatch(
+    'timing-unmarked',
+    '2026-11-05',
+    'tracked',
+    [
+      makeTimingPoint({
+        id: 'timing-unmarked-a',
+        sequenceNumber: 1,
+        server: 'tracked',
+        createdAtMs: 50000,
+      }),
+    ],
+  );
+  const selectedPlayer = playerInsights.summarizePlayerResetTiming([
+    firstMatch,
+    secondMatch,
+    unmarkedMatch,
+  ]);
+  assert.deepEqual(selectedPlayer.firstToSecondServe, {
+    interval: {
+      count: 2,
+      medianMs: 4000,
+      minMs: 2000,
+      maxMs: 6000,
+      q1Ms: 3000,
+      q3Ms: 5000,
+      interquartileRangeMs: 2000,
+    },
+    matchCount: 2,
+    startDate: '2026-11-01',
+    endDate: '2026-11-04',
+  });
+  assert.equal(selectedPlayer.betweenPoints.interval.count, 2);
+  assert.equal(selectedPlayer.betweenPoints.interval.medianMs, 4000);
+  assert.equal(selectedPlayer.betweenPoints.matchCount, 2);
+  assert.equal(selectedPlayer.betweenPoints.endDate, '2026-11-04');
+
+  const opponent = playerInsights.summarizePlayerResetTiming([
+    { ...firstMatch, playerSide: 'opponent' },
+    { ...secondMatch, playerSide: 'tracked' },
+  ]);
+  assert.equal(opponent.firstToSecondServe.interval.count, 2);
+  assert.equal(opponent.firstToSecondServe.interval.medianMs, 6000);
+
+  const unavailable = playerInsights.summarizePlayerResetTiming([
+    unmarkedMatch,
+  ]);
+  assert.equal(unavailable.firstToSecondServe.interval.medianMs, null);
+  assert.equal(unavailable.firstToSecondServe.matchCount, 0);
+  assert.equal(unavailable.firstToSecondServe.startDate, null);
+  assert.equal(unavailable.betweenPoints.interval.medianMs, null);
 });
 
 test('point correction and undo refresh current-set timing markers and crossing intervals', async () => {

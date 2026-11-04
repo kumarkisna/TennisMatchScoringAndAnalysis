@@ -6,7 +6,10 @@ import {
   calculateBreakPointStats,
   getLocalPointHistory,
 } from '@/lib/local-matches';
-import { BREAK_POINT_DIRECTIONAL_SAMPLE_THRESHOLD } from '@/lib/player-insights';
+import {
+  BREAK_POINT_DIRECTIONAL_SAMPLE_THRESHOLD,
+  type PlayerResetTimingMetricSummary,
+} from '@/lib/player-insights';
 import { POINT_CODE_LABELS } from '@/lib/player-report-html';
 import {
   getAnonymizedReportPlayerLabels,
@@ -21,6 +24,7 @@ import {
 } from '@/lib/report-sections';
 import { buildReportReviewVersion } from '@/lib/report-review';
 import {
+  formatTimingDuration,
   formatTimingDetails,
   summarizeMatchTimingAcrossMatches,
 } from '@/lib/match-timing';
@@ -75,6 +79,23 @@ function formatDate(value: string): string {
     { month: 'long', timeZone: 'UTC' },
   );
   return `${monthName} ${day}, ${year}`;
+}
+
+function formatPlayerResetTiming(
+  summary: PlayerResetTimingMetricSummary,
+): string {
+  if (summary.interval.medianMs === null) {
+    return 'Unavailable · no marked intervals';
+  }
+  const dateRange =
+    summary.startDate === summary.endDate
+      ? formatDate(summary.startDate ?? '')
+      : `${formatDate(summary.startDate ?? '')}–${formatDate(summary.endDate ?? '')}`;
+  return `Median ${formatTimingDuration(summary.interval.medianMs)} · n=${
+    summary.interval.count
+  } intervals · ${summary.matchCount} ${
+    summary.matchCount === 1 ? 'match' : 'matches'
+  } · ${dateRange}`;
 }
 
 function rate(wins: number, attempts: number): string {
@@ -603,6 +624,20 @@ export function buildHeadToHeadReportHtml(
       formatTimingDetails(personalAverageTiming.betweenPoints.gameChangeover),
     ],
   ]);
+  const playerTimingRows = report.resetTimingByPlayer
+    ? tableRows([
+        [
+          'First fault to second serve',
+          formatPlayerResetTiming(report.resetTimingByPlayer.trackedPlayer.firstToSecondServe),
+          formatPlayerResetTiming(report.resetTimingByPlayer.opponent.firstToSecondServe),
+        ],
+        [
+          'Between points',
+          formatPlayerResetTiming(report.resetTimingByPlayer.trackedPlayer.betweenPoints),
+          formatPlayerResetTiming(report.resetTimingByPlayer.opponent.betweenPoints),
+        ],
+      ])
+    : '';
   const personalAverageSurfaces =
     report.personalAverageBreakPointsBySurface;
   const personalAverageSurfaceRows = tableRows([
@@ -1056,6 +1091,11 @@ export function buildHeadToHeadReportHtml(
       <h3>${escapeHtml(trackedPlayer)} · personal timing average</h3>
       <p class="note">Pooled marked intervals across ${report.personalAverageMatches} saved ${report.personalAverageMatches === 1 ? 'match' : 'matches'} where this player was recorded as the tracked player. Matches without timing markers do not count as zero-time samples.</p>
       <table><thead><tr><th>Measure</th><th>Personal average</th></tr></thead><tbody>${personalTimingRows}</tbody></table>
+      ${report.resetTimingByPlayer ? `
+      <h3>Player timing history</h3>
+      <p class="note">Each side pools marked intervals from that person’s saved matches, including matches against other opponents. Date ranges cover matches with recorded intervals; unavailable markers are not counted as zero.</p>
+      <table><thead><tr><th>Measure</th><th>${escapeHtml(trackedPlayer)}</th><th>${escapeHtml(opponent)}</th></tr></thead><tbody>${playerTimingRows}</tbody></table>
+      ` : ''}
       ` : ''}
 
       ${includes('break-point-context') ? `

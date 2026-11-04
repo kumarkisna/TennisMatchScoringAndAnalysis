@@ -24,6 +24,7 @@ import {
   getLocalInsights,
   listLocalMatches,
   LOCAL_MATCH_LIST_KEY,
+  type PlayerSide,
   type LocalMatchSummary,
 } from '@/lib/local-matches';
 import {
@@ -60,7 +61,9 @@ import {
 } from '@/lib/match-timing';
 import {
   formatPlayerMatchOutcomeSummary,
+  summarizePlayerResetTiming,
   type ContextPerformanceInsight,
+  type PlayerResetTimingMetricSummary,
 } from '@/lib/player-insights';
 import {
   getLocalReportBenchmarkSettings,
@@ -170,6 +173,25 @@ function timingValue(summary: TimingIntervalSummary): RateValue {
   return {
     value: `${formatTimingDuration(summary.medianMs)} median`,
     sample: `n=${summary.count} · range ${formatTimingDuration(summary.minMs)}–${formatTimingDuration(summary.maxMs)} · middle 50% ${formatTimingDuration(summary.q1Ms)}–${formatTimingDuration(summary.q3Ms)}`,
+  };
+}
+
+function playerResetTimingValue(
+  summary: PlayerResetTimingMetricSummary,
+): RateValue {
+  const interval = summary.interval;
+  if (interval.medianMs === null) {
+    return unavailableValue('No marked intervals');
+  }
+  const dateRange =
+    summary.startDate === summary.endDate
+      ? formatDate(summary.startDate ?? '')
+      : `${formatDate(summary.startDate ?? '')}–${formatDate(summary.endDate ?? '')}`;
+  return {
+    value: `${formatTimingDuration(interval.medianMs)} median`,
+    sample: `n=${interval.count} · ${summary.matchCount} ${
+      summary.matchCount === 1 ? 'match' : 'matches'
+    } · ${dateRange}`,
   };
 }
 
@@ -521,12 +543,57 @@ export default function HeadToHeadScreen() {
         ({ summary }) =>
           normalizedName(summary.opponent) === normalizedName(selectedOpponent),
       );
-      return buildHeadToHeadReport(
+      const resetTimingSummaries = matches.filter(
+        ({ trackedPlayer, opponent }) =>
+          [trackedPlayer, opponent].some(
+            (name) =>
+              normalizedName(name) === normalizedName(selectedTrackedPlayer) ||
+              normalizedName(name) === normalizedName(selectedOpponent),
+          ),
+      );
+      const resetTimingMatches = (
+        await Promise.all(
+          resetTimingSummaries.map(async (summary) => {
+            const match = await getLocalMatch(summary.id);
+            return match ? { summary, match } : null;
+          }),
+        )
+      ).filter(
+        (
+          item,
+        ): item is {
+          summary: LocalMatchSummary;
+          match: NonNullable<HeadToHeadMeeting['match']>;
+        } => item !== null,
+      );
+      const resetTimingFor = (playerName: string) =>
+        resetTimingMatches.flatMap(({ summary, match }) => {
+          const playerSide: PlayerSide | null =
+            normalizedName(summary.trackedPlayer) === normalizedName(playerName)
+              ? 'tracked'
+              : normalizedName(summary.opponent) === normalizedName(playerName)
+                ? 'opponent'
+                : null;
+          return playerSide ? [{ match, playerSide }] : [];
+        });
+      const report = buildHeadToHeadReport(
         selectedTrackedPlayer,
         selectedOpponent,
         meetingsWithPointData,
         allTrackedMeetingsWithPointData,
       );
+      return {
+        ...report,
+        resetTimingByPlayer: {
+          trackedPlayer: summarizePlayerResetTiming(
+            resetTimingFor(selectedTrackedPlayer),
+          ),
+          opponent: summarizePlayerResetTiming(resetTimingFor(selectedOpponent)),
+        },
+        resetTimingMeetingVersions: resetTimingSummaries.map(
+          (summary) => `${summary.id}:${summary.updatedAt}`,
+        ),
+      };
     },
   });
 
@@ -537,6 +604,7 @@ export default function HeadToHeadScreen() {
           .map(({ summary }) => `${summary.id}:${summary.updatedAt}`)
           .join('|'),
         report.personalAverageMeetingVersions?.join('|') ?? '',
+        report.resetTimingMeetingVersions?.join('|') ?? '',
       ].join('::')
     : '';
   const reportLabelVersion = getReportNameVisibilityVersion(
@@ -877,6 +945,29 @@ export default function HeadToHeadScreen() {
         },
       ]
     : [];
+  const playerResetTimingRows: StatRow[] =
+    report?.resetTimingByPlayer
+      ? [
+          {
+            label: 'First fault to second serve',
+            tracked: playerResetTimingValue(
+              report.resetTimingByPlayer.trackedPlayer.firstToSecondServe,
+            ),
+            opponent: playerResetTimingValue(
+              report.resetTimingByPlayer.opponent.firstToSecondServe,
+            ),
+          },
+          {
+            label: 'Between points',
+            tracked: playerResetTimingValue(
+              report.resetTimingByPlayer.trackedPlayer.betweenPoints,
+            ),
+            opponent: playerResetTimingValue(
+              report.resetTimingByPlayer.opponent.betweenPoints,
+            ),
+          },
+        ]
+      : [];
   const personalBreakPointStats =
     report?.personalAverageInsights.breakPoints.tracked;
   const personalBreakPointRows = personalBreakPointStats
@@ -1254,8 +1345,16 @@ export default function HeadToHeadScreen() {
               opponentName={report.opponent}
               colors={colors}
             />
+            <StatTable
+              testID="head-to-head-player-reset-timing"
+              title="Player timing history"
+              rows={playerResetTimingRows}
+              trackedName={report.trackedPlayer}
+              opponentName={report.opponent}
+              colors={colors}
+            />
             <Text style={[styles.sectionHint, { color: colors.mutedForeground }]}>
-              Shorter between-point pauses mean quicker recorded resets; a narrower middle-50% spread means more consistent intervals. These markers do not measure rally speed or prove that play felt smooth.
+              Player timing history pools marked intervals from each person’s saved matches, including matches against other opponents. Shorter pauses mean quicker recorded resets; the existing timing summary shows the interval spread. Markers do not measure rally speed or prove that play felt smooth.
             </Text>
             <View
               testID="head-to-head-personal-break-point-average"

@@ -17,11 +17,13 @@ import {
   BreakPointStats,
   type LocalPlayerMatchInsight,
   type CourtSurface,
+  type LocalMatch,
 } from '@/lib/local-matches';
 import {
   collectMatchTimingSamples,
   type MatchTimingSummary,
   type TimingIntervalSummary,
+  getMatchTimingPoints,
 } from '@/lib/match-timing';
 
 const shotCodes = ['A', 'F', 'B', 'V', 'O', 'P'] as const satisfies readonly PointCode[];
@@ -204,6 +206,23 @@ export interface PlayerTimingMatchTrend {
   opponent: string;
   firstToSecondServe: TimingIntervalSummary;
   betweenPoints: TimingIntervalSummary;
+}
+
+export interface PlayerResetTimingHistoryMatch {
+  match: Pick<LocalMatch, 'matchDate' | 'completedSets' | 'points'>;
+  playerSide: PlayerSide;
+}
+
+export interface PlayerResetTimingMetricSummary {
+  interval: TimingIntervalSummary;
+  matchCount: number;
+  startDate: string | null;
+  endDate: string | null;
+}
+
+export interface PlayerResetTimingSummary {
+  firstToSecondServe: PlayerResetTimingMetricSummary;
+  betweenPoints: PlayerResetTimingMetricSummary;
 }
 
 export const PLAYER_TIMING_PACE_MINIMUM_INTERVALS = 3;
@@ -570,6 +589,47 @@ function summarizeTimingValues(values: readonly number[]): TimingIntervalSummary
     q1Ms,
     q3Ms,
     interquartileRangeMs: q3Ms - q1Ms,
+  };
+}
+
+export function summarizePlayerResetTiming(
+  matches: readonly PlayerResetTimingHistoryMatch[],
+): PlayerResetTimingSummary {
+  const serveValues: number[] = [];
+  const betweenPointValues: number[] = [];
+  const serveDates: string[] = [];
+  const betweenPointDates: string[] = [];
+
+  for (const { match, playerSide } of matches) {
+    const samples = collectMatchTimingSamples(getMatchTimingPoints(match));
+    const serveIntervals = samples.firstToSecondServe[playerSide];
+    const betweenIntervals = samples.betweenPoints.all;
+    if (serveIntervals.length > 0) {
+      serveValues.push(...serveIntervals);
+      serveDates.push(match.matchDate.slice(0, 10));
+    }
+    if (betweenIntervals.length > 0) {
+      betweenPointValues.push(...betweenIntervals);
+      betweenPointDates.push(match.matchDate.slice(0, 10));
+    }
+  }
+
+  const summarize = (
+    values: readonly number[],
+    dates: readonly string[],
+  ): PlayerResetTimingMetricSummary => {
+    const orderedDates = [...dates].sort();
+    return {
+      interval: summarizeTimingValues(values),
+      matchCount: dates.length,
+      startDate: orderedDates[0] ?? null,
+      endDate: orderedDates[orderedDates.length - 1] ?? null,
+    };
+  };
+
+  return {
+    firstToSecondServe: summarize(serveValues, serveDates),
+    betweenPoints: summarize(betweenPointValues, betweenPointDates),
   };
 }
 
