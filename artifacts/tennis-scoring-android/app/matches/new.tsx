@@ -8,6 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { GuideHelpButton } from '@/components/GuideHelpButton';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { LocalPlayerPicker } from '@/components/LocalPlayerPicker';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -206,7 +207,13 @@ export default function NewMatchScreen() {
         </Pressable>
 
         <Text style={[styles.eyebrow, { color: colors.accent }]}>NEW SCORE SHEET</Text>
-        <Text style={[styles.title, { color: colors.foreground }]}>Set up the set</Text>
+        <View style={styles.titleHelpRow}>
+          <Text style={[styles.title, { color: colors.foreground }]}>Set up the set</Text>
+          <GuideHelpButton
+            section="match-setup"
+            accessibilityLabel="Help with match setup"
+          />
+        </View>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
           Enter both names, choose the court and first server, then open the live score.
         </Text>
@@ -475,6 +482,7 @@ const styles = StyleSheet.create({
   backButton: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 42, marginBottom: 23 },
   backText: { fontFamily: 'DMSans_600SemiBold', fontSize: 13 },
   eyebrow: { fontFamily: 'DMSans_700Bold', fontSize: 10, letterSpacing: 1.6 },
+  titleHelpRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   title: { marginTop: 8, fontFamily: 'Manrope_700Bold', fontSize: 31, letterSpacing: -1.1 },
   subtitle: { marginTop: 6, marginBottom: 21, fontFamily: 'DMSans_400Regular', fontSize: 14, lineHeight: 20 },
   formCard: { borderWidth: 1, borderRadius: 14, padding: 16, gap: 16 },

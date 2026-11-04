@@ -4604,6 +4604,10 @@ test('About guide coverage matches app routes and key user-facing features', () 
     path.join(__dirname, '../app/about.tsx'),
     'utf8',
   );
+  const helpButtonSource = fs.readFileSync(
+    path.join(__dirname, '../components/GuideHelpButton.tsx'),
+    'utf8',
+  );
   const homeSource = fs.readFileSync(
     path.join(__dirname, '../app/index.tsx'),
     'utf8',
@@ -4635,8 +4639,23 @@ test('About guide coverage matches app routes and key user-facing features', () 
   assert.match(homeSource, /APP_COPYRIGHT_NOTICE/);
   assert.match(aboutSource, /APP_GUIDE_SECTIONS\.map/);
   assert.match(aboutSource, /scrollTo\(/);
+  assert.match(aboutSource, /useLocalSearchParams/);
+  assert.match(aboutSource, /normalizeAppGuideSectionId/);
+  assert.match(aboutSource, /pendingDeepLinkSection\.current === section\.id/);
   assert.match(aboutSource, /<BottomTabBar activeTab="about"/);
   assert.doesNotMatch(aboutSource, /Print all instructions|button-print-all-about|expo-print/);
+  assert.equal(
+    guide.getAboutGuideHref('match-setup'),
+    '/about?section=match-setup',
+    'Contextual help should open the About screen with its matching guide topic.',
+  );
+  assert.equal(guide.normalizeAppGuideSectionId('reports'), 'reports');
+  assert.equal(guide.normalizeAppGuideSectionId(['players']), 'players');
+  assert.equal(guide.normalizeAppGuideSectionId('unknown-topic'), null);
+  assert.match(helpButtonSource, /accessibilityRole="button"/);
+  assert.match(helpButtonSource, /accessibilityLabel=\{label\}/);
+  assert.match(helpButtonSource, /accessibilityHint=/);
+  assert.match(helpButtonSource, /getAboutGuideHref\(section\)/);
   const textElements = aboutSource.match(/<Text\b[^>]*>/g) ?? [];
   assert.ok(textElements.length > 0);
   for (const textElement of textElements) {

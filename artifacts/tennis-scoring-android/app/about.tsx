@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
-import { useRef } from 'react';
+import { useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useRef } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -14,6 +15,7 @@ import { BottomTabBar } from '@/components/BottomTabBar';
 import { useColors } from '@/hooks/useColors';
 import {
   APP_GUIDE_SECTIONS,
+  normalizeAppGuideSectionId,
   type AppGuideSectionId,
 } from '@/lib/app-guide';
 import {
@@ -28,19 +30,52 @@ export default function AboutScreen() {
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollViewInstance | null>(null);
   const sectionOffsets = useRef<Partial<Record<AppGuideSectionId, number>>>({});
+  const guideSectionsOffset = useRef<number | null>(null);
+  const pendingDeepLinkSection = useRef<AppGuideSectionId | null>(null);
+  const { section: sectionParam } = useLocalSearchParams<{
+    section?: string | string[];
+  }>();
+  const requestedSection = normalizeAppGuideSectionId(sectionParam);
   const matchesQuery = useQuery({
     queryKey: LOCAL_MATCH_LIST_KEY,
     queryFn: listLocalMatches,
   });
   const historyCount = splitHomeMatches(matchesQuery.data ?? []).history.length;
 
-  const jumpToSection = (id: AppGuideSectionId) => {
-    const sectionOffset = sectionOffsets.current[id];
-    if (sectionOffset === undefined) return;
-    scrollRef.current?.scrollTo({
-      y: Math.max(sectionOffset - 12, 0),
+  const scrollToSection = useCallback((id: AppGuideSectionId) => {
+    const relativeSectionOffset = sectionOffsets.current[id];
+    const guideOffset = guideSectionsOffset.current;
+    const scrollView = scrollRef.current;
+    if (relativeSectionOffset === undefined || guideOffset === null || !scrollView) {
+      return false;
+    }
+    scrollView.scrollTo({
+      y: Math.max(guideOffset + relativeSectionOffset - 12, 0),
       animated: true,
     });
+    return true;
+  }, []);
+
+  useEffect(() => {
+    if (!requestedSection) {
+      pendingDeepLinkSection.current = null;
+      return;
+    }
+    pendingDeepLinkSection.current = requestedSection;
+    const frame = requestAnimationFrame(() => {
+      if (
+        pendingDeepLinkSection.current === requestedSection &&
+        scrollToSection(requestedSection)
+      ) {
+        pendingDeepLinkSection.current = null;
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [requestedSection, scrollToSection]);
+
+  const jumpToSection = (id: AppGuideSectionId) => {
+    pendingDeepLinkSection.current = null;
+    scrollToSection(id);
   };
 
   return (
@@ -143,13 +178,39 @@ export default function AboutScreen() {
           </View>
         </View>
 
-        <View style={styles.guideSections}>
+        <View
+          style={styles.guideSections}
+          onLayout={(event) => {
+            guideSectionsOffset.current = event.nativeEvent.layout.y;
+            const pendingSection = pendingDeepLinkSection.current;
+            if (pendingSection) {
+              requestAnimationFrame(() => {
+                if (
+                  pendingDeepLinkSection.current === pendingSection &&
+                  scrollToSection(pendingSection)
+                ) {
+                  pendingDeepLinkSection.current = null;
+                }
+              });
+            }
+          }}
+        >
           {APP_GUIDE_SECTIONS.map((section, sectionIndex) => (
             <View
               key={section.id}
               testID={`about-section-${section.id}`}
               onLayout={(event) => {
                 sectionOffsets.current[section.id] = event.nativeEvent.layout.y;
+                if (pendingDeepLinkSection.current === section.id) {
+                  requestAnimationFrame(() => {
+                    if (
+                      pendingDeepLinkSection.current === section.id &&
+                      scrollToSection(section.id)
+                    ) {
+                      pendingDeepLinkSection.current = null;
+                    }
+                  });
+                }
               }}
               style={[
                 styles.guideCard,

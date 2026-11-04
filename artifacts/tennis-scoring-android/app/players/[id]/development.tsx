@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import Svg, { Circle, G, Line, Path, Text as SvgText } from 'react-native-svg';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { GuideHelpButton } from '@/components/GuideHelpButton';
 import { useColors } from '@/hooks/useColors';
 import {
   getLocalMatch,
@@ -1711,9 +1712,18 @@ export default function PlayerDevelopmentScreen() {
         </Pressable>
 
         <Text style={[styles.eyebrow, { color: colors.accent }]}>PLAYER DEVELOPMENT</Text>
-        <Text style={[styles.title, { color: colors.foreground }]}>
-          {comparisonPlayerId ? 'Performance comparison' : player?.name ?? 'Performance trends'}
-        </Text>
+        <View style={styles.titleHelpRow}>
+          <Text
+            numberOfLines={2}
+            style={[styles.title, { color: colors.foreground, flex: 1 }]}
+          >
+            {comparisonPlayerId ? 'Performance comparison' : player?.name ?? 'Performance trends'}
+          </Text>
+          <GuideHelpButton
+            section="reports"
+            accessibilityLabel="Help with player performance reports"
+          />
+        </View>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
           Match-by-match percentages from points recorded on this device.
         </Text>
@@ -2233,6 +2243,7 @@ const styles = StyleSheet.create({
   backButton: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 42, marginBottom: 22 },
   backText: { fontFamily: 'DMSans_600SemiBold', fontSize: 13 },
   eyebrow: { fontFamily: 'DMSans_700Bold', fontSize: 10, letterSpacing: 1.6 },
+  titleHelpRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   title: { marginTop: 8, fontFamily: 'Manrope_700Bold', fontSize: 29, letterSpacing: -1 },
   subtitle: { marginTop: 6, marginBottom: 21, fontFamily: 'DMSans_400Regular', fontSize: 14, lineHeight: 20 },
   loading: { minHeight: 180, alignItems: 'center', justifyContent: 'center', gap: 10 },

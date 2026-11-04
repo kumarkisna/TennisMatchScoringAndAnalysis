@@ -99,6 +99,18 @@ export const APP_GUIDE_SECTIONS = [
 
 export type AppGuideSectionId = (typeof APP_GUIDE_SECTIONS)[number]['id'];
 
+export function getAboutGuideHref(section: AppGuideSectionId) {
+  return `/about?section=${encodeURIComponent(section)}`;
+}
+
+export function normalizeAppGuideSectionId(
+  value: unknown,
+): AppGuideSectionId | null {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  if (typeof candidate !== 'string') return null;
+  return APP_GUIDE_SECTIONS.find(({ id }) => id === candidate)?.id ?? null;
+}
+
 /**
  * Review this map whenever a user-facing screen or capability changes.
  * The offline-persistence test compares it with real app routes and checks
@@ -111,6 +123,11 @@ export const APP_GUIDE_SCREEN_COVERAGE = [
     requiredSourceMarkers: [
       'APP_GUIDE_SECTIONS.map',
       'jumpToSection',
+      'useLocalSearchParams',
+      'normalizeAppGuideSectionId',
+      'pendingDeepLinkSection',
+      'guideSectionsOffset.current',
+      'guideOffset + relativeSectionOffset',
       'APP_COPYRIGHT_NOTICE',
       'selectable={false}',
     ],
@@ -118,7 +135,11 @@ export const APP_GUIDE_SCREEN_COVERAGE = [
   {
     route: 'head-to-head.tsx',
     sectionIds: ['reports'],
-    requiredSourceMarkers: ['head-to-head-summary', 'head-to-head-timing-summary'],
+    requiredSourceMarkers: [
+      'head-to-head-summary',
+      'head-to-head-timing-summary',
+      'section="reports"',
+    ],
   },
   {
     route: 'history.tsx',
@@ -134,6 +155,7 @@ export const APP_GUIDE_SCREEN_COVERAGE = [
       'button-save-local-backup',
       'button-share-local-backup',
       'button-load-local-backup',
+      'section="history-backups"',
     ],
   },
   {
@@ -145,6 +167,8 @@ export const APP_GUIDE_SCREEN_COVERAGE = [
       'button-add-custom-tiebreak-set',
       'toggle-game-notes',
       'toggle-point-context',
+      'section="point-scoring"',
+      'section="reports"',
     ],
   },
   {
@@ -155,12 +179,17 @@ export const APP_GUIDE_SCREEN_COVERAGE = [
       'input-set-number',
       'input-tracked-player',
       'Open live score',
+      'section="match-setup"',
     ],
   },
   {
     route: 'players/[id]/development.tsx',
     sectionIds: ['reports'],
-    requiredSourceMarkers: ['player-timing-history', 'player-timing-match-trend'],
+    requiredSourceMarkers: [
+      'player-timing-history',
+      'player-timing-match-trend',
+      'section="reports"',
+    ],
   },
   {
     route: 'players.tsx',
@@ -169,6 +198,7 @@ export const APP_GUIDE_SCREEN_COVERAGE = [
       'input-saved-player-name',
       'button-add-player-profile-link',
       'button-add-player-phone-number',
+      'section="players"',
     ],
   },
   {

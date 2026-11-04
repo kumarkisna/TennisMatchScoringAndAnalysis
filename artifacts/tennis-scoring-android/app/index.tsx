@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomTabBar } from '@/components/BottomTabBar';
+import { GuideHelpButton } from '@/components/GuideHelpButton';
 import { useColors } from '@/hooks/useColors';
 import {
   deleteLocalMatch,
@@ -402,6 +403,10 @@ export default function HomeScreen() {
                   {loadBackup.isPending ? 'Loading…' : 'Load'}
                 </Text>
               </Pressable>
+              <GuideHelpButton
+                section="history-backups"
+                accessibilityLabel="Help with match history and backups"
+              />
             </View>
             <Text style={[styles.backupNote, { color: colors.mutedForeground }]}>
               Includes saved players and full match history. You choose where it goes; TennisScoring never uploads backups. Loading adds missing records and keeps existing data unchanged.

@@ -21,6 +21,7 @@ import {
 } from '@tanstack/react-query';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
+import { GuideHelpButton } from '@/components/GuideHelpButton';
 import { LocalPlayerPicker } from '@/components/LocalPlayerPicker';
 import { ReportBenchmarkManager } from '@/components/ReportBenchmarkManager';
 import { ReportAnonymityToggle } from '@/components/ReportAnonymityToggle';
@@ -2119,7 +2120,13 @@ export default function MatchScreen() {
         ) : !isReviewingHistoricalSet && match.matchStatus !== 'complete' ? (
           <View style={[styles.scoringPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={styles.panelHeading}>
-              <Text style={[styles.panelTitle, { color: colors.foreground }]}>Record a point</Text>
+              <View style={styles.panelTitleRow}>
+                <Text style={[styles.panelTitle, { color: colors.foreground }]}>Record a point</Text>
+                <GuideHelpButton
+                  section="point-scoring"
+                  accessibilityLabel="Help with recording points"
+                />
+              </View>
               <Text style={[styles.panelHint, { color: colors.mutedForeground }]}>
                 Tap the winner after each point; the score updates automatically.
               </Text>
@@ -3150,7 +3157,13 @@ export default function MatchScreen() {
 
         <View style={styles.sectionHeader}>
           <View style={styles.reportHeading}>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Player report</Text>
+            <View style={styles.reportTitleRow}>
+              <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Player report</Text>
+              <GuideHelpButton
+                section="reports"
+                accessibilityLabel="Help understanding player reports"
+              />
+            </View>
             <Text style={[styles.sectionCaption, { color: colors.mutedForeground }]}>
               {insightsQuery.data?.pointCount ?? match.points.length} points across {setHistory.length} sets · calculated on this device
             </Text>
@@ -4626,7 +4639,8 @@ const styles = StyleSheet.create({
   liveNextPointText: { fontFamily: 'DMSans_700Bold', fontSize: 7, letterSpacing: 0.5 },
   liveGameServer: { fontFamily: 'DMSans_500Medium', fontSize: 9 },
   scoringPanel: { marginTop: 12, borderRadius: 14, borderWidth: 1, padding: 14 },
-  panelHeading: { marginBottom: 11, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 },
+  panelHeading: { marginBottom: 11, gap: 4 },
+  panelTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   panelTitle: { fontFamily: 'Manrope_700Bold', fontSize: 17, letterSpacing: -0.3 },
   panelHint: { fontFamily: 'DMSans_400Regular', fontSize: 10 },
   awardRow: { flexDirection: 'row', gap: 8 },
@@ -4677,6 +4691,7 @@ const styles = StyleSheet.create({
   mutationErrorText: { flex: 1, fontFamily: 'DMSans_500Medium', fontSize: 11 },
   sectionHeader: { marginTop: 25, marginBottom: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   reportHeading: { flex: 1, minWidth: 0 },
+  reportTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
   reportActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   sectionTitle: { fontFamily: 'Manrope_700Bold', fontSize: 18, letterSpacing: -0.4 },
   sectionCaption: { marginTop: 3, fontFamily: 'DMSans_400Regular', fontSize: 10 },

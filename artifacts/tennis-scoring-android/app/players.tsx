@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { GuideHelpButton } from '@/components/GuideHelpButton';
 import { useColors } from '@/hooks/useColors';
 import { countLocalPlayerMatchRecords } from '@/lib/local-matches';
 import {
@@ -254,7 +255,13 @@ export default function PlayersScreen() {
         </Pressable>
 
         <Text style={[styles.eyebrow, { color: colors.accent }]}>ON THIS DEVICE</Text>
-        <Text style={[styles.title, { color: colors.foreground }]}>Saved players</Text>
+        <View style={styles.titleHelpRow}>
+          <Text style={[styles.title, { color: colors.foreground }]}>Saved players</Text>
+          <GuideHelpButton
+            section="players"
+            accessibilityLabel="Help with saved players"
+          />
+        </View>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
           Choose the main tracked player for new match sheets. Switching never changes past matches.
         </Text>
@@ -1052,6 +1059,7 @@ const styles = StyleSheet.create({
   backButton: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 42, marginBottom: 22 },
   backText: { fontFamily: 'DMSans_600SemiBold', fontSize: 13 },
   eyebrow: { fontFamily: 'DMSans_700Bold', fontSize: 10, letterSpacing: 1.6 },
+  titleHelpRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   title: { marginTop: 8, fontFamily: 'Manrope_700Bold', fontSize: 31, letterSpacing: -1.1 },
   subtitle: { marginTop: 6, marginBottom: 20, fontFamily: 'DMSans_400Regular', fontSize: 14, lineHeight: 20 },
   addCard: { borderWidth: 1, borderRadius: 13, padding: 13, gap: 11 },

@@ -16,6 +16,7 @@ import { useColors } from '@/hooks/useColors';
 import { useLocalReportNameLabels } from '@/hooks/useLocalReportNameLabels';
 import { useLocalReportNameVisibility } from '@/hooks/useLocalReportNameVisibility';
 import { ReportAnonymityToggle } from '@/components/ReportAnonymityToggle';
+import { GuideHelpButton } from '@/components/GuideHelpButton';
 import { ReportSectionPicker } from '@/components/ReportSectionPicker';
 import { HeadToHeadSurfaceMatchOutcomesCard } from '@/components/HeadToHeadSurfaceMatchOutcomes';
 import {
@@ -1084,6 +1085,10 @@ export default function HeadToHeadScreen() {
               Head-to-head
             </Text>
           </View>
+          <GuideHelpButton
+            section="reports"
+            accessibilityLabel="Help with head-to-head reports"
+          />
         </View>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
           Compare saved meetings from the tracked player’s point of view. Everything is calculated on this device.
