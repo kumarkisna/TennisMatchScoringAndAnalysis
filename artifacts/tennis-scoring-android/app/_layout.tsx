@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
+import { Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { AppThemeProvider } from '@/hooks/ThemeContext';
@@ -16,7 +17,10 @@ import { Manrope_700Bold } from '@expo-google-fonts/manrope';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
+const MIN_NATIVE_SPLASH_DURATION_MS = 1800;
+const appStartTime = Date.now();
+
+// Keep the combined logo, app name, and copyright visible until the app is ready.
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
@@ -29,6 +33,7 @@ function RootLayoutNav() {
       <Stack.Screen name="matches/new" />
       <Stack.Screen name="matches/[id]" />
       <Stack.Screen name="players" />
+      <Stack.Screen name="about" />
       <Stack.Screen name="+not-found" />
     </Stack>
   );
@@ -45,7 +50,17 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (fontsLoaded || fontError) {
-      SplashScreen.hideAsync();
+      const remainingSplashTime =
+        Platform.OS === 'web'
+          ? 0
+          : Math.max(
+              0,
+              MIN_NATIVE_SPLASH_DURATION_MS - (Date.now() - appStartTime),
+            );
+      const hideTimer = setTimeout(() => {
+        void SplashScreen.hideAsync();
+      }, remainingSplashTime);
+      return () => clearTimeout(hideTimer);
     }
   }, [fontsLoaded, fontError]);
 

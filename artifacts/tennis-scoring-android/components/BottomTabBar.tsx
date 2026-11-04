@@ -4,12 +4,13 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 
-type AppTab = 'home' | 'history' | 'settings';
+type AppTab = 'home' | 'history' | 'settings' | 'about';
 
 const tabs: { id: AppTab; label: string; icon: keyof typeof Ionicons.glyphMap; route: string }[] = [
   { id: 'home', label: 'Home', icon: 'home-outline', route: '/' },
   { id: 'history', label: 'History', icon: 'archive-outline', route: '/history' },
   { id: 'settings', label: 'Settings', icon: 'settings-outline', route: '/settings' },
+  { id: 'about', label: 'About', icon: 'information-circle-outline', route: '/about' },
 ];
 
 export function BottomTabBar({

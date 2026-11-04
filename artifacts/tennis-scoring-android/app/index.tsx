@@ -44,6 +44,11 @@ import {
   shareLocalBackup,
 } from '@/lib/local-backup';
 import { LOCAL_REPORT_BENCHMARKS_KEY } from '@/lib/local-benchmarks';
+import {
+  APP_BRAND_PREFIX,
+  APP_BRAND_SUFFIX,
+  APP_COPYRIGHT_NOTICE,
+} from '@/lib/branding';
 
 function formatMatchDate(date: string) {
   const normalizedDate = date.slice(0, 10);
@@ -219,7 +224,8 @@ export default function HomeScreen() {
               </View>
               <View style={styles.brandTitleGroup}>
                 <Text style={[styles.brandName, { color: colors.foreground }]}>
-                  Tennis<Text style={{ color: colors.primary }}>Scoring</Text>
+                  {APP_BRAND_PREFIX}
+                  <Text style={{ color: colors.primary }}>{APP_BRAND_SUFFIX}</Text>
                 </Text>
                 <Text
                   numberOfLines={2}
@@ -228,7 +234,7 @@ export default function HomeScreen() {
                     { color: colors.mutedForeground },
                   ]}
                 >
-                  Copyright Shreshth Bharat Tennis Trust - 2026 - Present
+                  {APP_COPYRIGHT_NOTICE}
                 </Text>
               </View>
               <View style={styles.courtBadge}>

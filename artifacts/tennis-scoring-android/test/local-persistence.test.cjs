@@ -4534,6 +4534,58 @@ test('home match sections sort by match date and remember tabs and expanded card
   assert.match(homeSource, /saveHomeScreenPreferences\(next\)/);
 });
 
+test('About guide jump links, sections, branding, and launch splash stay aligned', () => {
+  const guide = require(path.join(__dirname, '../lib/app-guide.ts'));
+  const sectionIds = guide.APP_GUIDE_SECTIONS.map(({ id }) => id);
+  assert.ok(sectionIds.length >= 8);
+  assert.equal(new Set(sectionIds).size, sectionIds.length);
+  for (const section of guide.APP_GUIDE_SECTIONS) {
+    assert.ok(section.navLabel.trim(), `Missing jump label for ${section.id}`);
+    assert.ok(section.title.trim(), `Missing title for ${section.id}`);
+    assert.ok(section.steps.length > 0, `Missing instructions for ${section.id}`);
+  }
+
+  const aboutSource = fs.readFileSync(
+    path.join(__dirname, '../app/about.tsx'),
+    'utf8',
+  );
+  const homeSource = fs.readFileSync(
+    path.join(__dirname, '../app/index.tsx'),
+    'utf8',
+  );
+  const tabsSource = fs.readFileSync(
+    path.join(__dirname, '../components/BottomTabBar.tsx'),
+    'utf8',
+  );
+  const layoutSource = fs.readFileSync(
+    path.join(__dirname, '../app/_layout.tsx'),
+    'utf8',
+  );
+  const branding = require(path.join(__dirname, '../lib/branding.ts'));
+  const appConfig = JSON.parse(
+    fs.readFileSync(path.join(__dirname, '../app.json'), 'utf8'),
+  );
+
+  assert.equal(branding.APP_BRAND_NAME, 'TennisScoring');
+  assert.equal(appConfig.expo.name, branding.APP_BRAND_NAME);
+  assert.equal(
+    branding.APP_COPYRIGHT_NOTICE,
+    'Copyright Shreshth Bharat Tennis Trust - 2026 - Present',
+  );
+  assert.equal(
+    appConfig.expo.splash.image,
+    './assets/images/launch-splash.png',
+  );
+  assert.match(homeSource, /APP_BRAND_PREFIX/);
+  assert.match(homeSource, /APP_COPYRIGHT_NOTICE/);
+  assert.match(aboutSource, /APP_GUIDE_SECTIONS\.map/);
+  assert.match(aboutSource, /scrollTo\(/);
+  assert.match(aboutSource, /<BottomTabBar activeTab="about"/);
+  assert.match(tabsSource, /route: '\/about'/);
+  assert.match(layoutSource, /MIN_NATIVE_SPLASH_DURATION_MS = 1800/);
+  assert.match(layoutSource, /setTimeout\(\(\) => \{\s*void SplashScreen\.hideAsync\(\)/);
+});
+
 test('match book filters search opponents, distinguish results, and compose with completed visibility', () => {
   storageValues.clear();
   delete require.cache[require.resolve(homeScreenStatePath)];
