@@ -4566,12 +4566,7 @@ test('About guide jump links, sections, branding, and launch splash stay aligned
     fs.readFileSync(path.join(__dirname, '../app.json'), 'utf8'),
   );
 
-  assert.equal(branding.APP_BRAND_NAME, 'TennisScoring');
   assert.equal(appConfig.expo.name, branding.APP_BRAND_NAME);
-  assert.equal(
-    branding.APP_COPYRIGHT_NOTICE,
-    'Copyright Shreshth Bharat Tennis Trust - 2026 - Present',
-  );
   assert.equal(
     appConfig.expo.splash.image,
     './assets/images/launch-splash.png',

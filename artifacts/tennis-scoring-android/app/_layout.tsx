@@ -20,7 +20,7 @@ import * as SplashScreen from 'expo-splash-screen';
 const MIN_NATIVE_SPLASH_DURATION_MS = 1800;
 const appStartTime = Date.now();
 
-// Keep the combined logo, app name, and copyright visible until the app is ready.
+// Keep the generated branded splash visible until the app is ready.
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();

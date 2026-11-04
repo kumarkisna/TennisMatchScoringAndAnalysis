@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720">
+  <rect width="1200" height="720" fill="#f4f1e8"/>
+  <g transform="translate(500 54)">
+    <rect width="200" height="200" rx="34" fill="#102a20"/>
+    <path d="M0 126 200 200H0Z" fill="#39732d"/>
+    <path d="m0 118 200 74" fill="none" stroke="#f4f1e8" stroke-width="10"/>
+    <circle cx="111" cy="92" r="57" fill="#a9d900"/>
+    <path d="M71 48c-16 22-19 58-2 78 12 14 29 16 43 7 20-13 19-44 38-57" fill="none" stroke="#f4f1e8" stroke-width="7" stroke-linecap="round"/>
+  </g>
+  <text x="600" y="384" text-anchor="middle" fill="#203e33"
+        font-family="DejaVu Sans, sans-serif" font-size="72" font-weight="700">{{APP_BRAND_NAME}}</text>
+  <text x="600" y="455" text-anchor="middle" fill="#858680"
+        font-family="DejaVu Sans, sans-serif" font-size="27" font-weight="400">{{APP_COPYRIGHT_NOTICE}}</text>
+</svg>

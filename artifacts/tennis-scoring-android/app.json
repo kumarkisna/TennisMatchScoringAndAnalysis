@@ -20,15 +20,31 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#214b3a"
-      }
+      },
+      "package": "com.tennisscoringandroid"
     },
     "web": {
       "favicon": "./assets/images/icon.png",
       "output": "static"
     },
-    "plugins": ["expo-router"],
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/launch-splash.png",
+          "imageWidth": 340,
+          "resizeMode": "contain",
+          "backgroundColor": "#f4f1e8"
+        }
+      ],
+      "./plugins/withBrandingCheck"
+    ],
     "autolinking": {
-      "searchPaths": ["../../node_modules", "./node_modules"]
+      "searchPaths": [
+        "../../node_modules",
+        "./node_modules"
+      ]
     },
     "experiments": {
       "typedRoutes": true,
