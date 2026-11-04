@@ -352,6 +352,8 @@ export interface LocalPlayerMatchInsight {
     | 'opponent'
     | 'trackedPlayerId'
     | 'opponentPlayerId'
+    | 'surface'
+    | 'points'
     | 'matchStatus'
     | 'matchOutcome'
   > & { winner: PlayerSide | null };
@@ -2205,6 +2207,8 @@ export async function listLocalPlayerMatchInsights(
           opponent: match.opponent,
           trackedPlayerId: match.trackedPlayerId,
           opponentPlayerId: match.opponentPlayerId,
+          surface: match.surface,
+          points: getLocalSetHistory(match).flatMap((set) => set.points),
           matchStatus: summary.status,
           matchOutcome: summary.matchOutcome,
           winner: summary.winner,

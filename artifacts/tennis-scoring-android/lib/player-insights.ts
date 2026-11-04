@@ -16,7 +16,12 @@ import {
   type StrokeType,
   BreakPointStats,
   type LocalPlayerMatchInsight,
+  type CourtSurface,
 } from '@/lib/local-matches';
+import {
+  collectMatchTimingSamples,
+  type TimingIntervalSummary,
+} from '@/lib/match-timing';
 
 const shotCodes = ['A', 'F', 'B', 'V', 'O', 'P'] as const satisfies readonly PointCode[];
 type ShotCode = (typeof shotCodes)[number];
@@ -171,8 +176,24 @@ export interface PlayerTrendMatch {
   status: 'in_progress' | 'complete';
   result: 'win' | 'loss' | 'no_winner' | null;
   outcomeType: 'ordinary' | 'retirement' | 'walkover' | null;
+  surface: CourtSurface;
+  timing: {
+    firstToSecondServeMs: number[];
+    betweenPointsMs: number[];
+  };
   metrics: Record<PlayerTrendMetricKey, PlayerTrendMetricValue>;
   strokeRatings: Partial<Record<StrokeType, PlayerStrokeRatingMatchValue>>;
+}
+
+export type PlayerTimingGrouping = 'all' | 'result' | 'surface';
+
+export interface PlayerTimingGroupSummary {
+  key: string;
+  label: string;
+  firstToSecondServe: TimingIntervalSummary;
+  betweenPoints: TimingIntervalSummary;
+  matchesWithServeSamples: number;
+  matchesWithBetweenPointSamples: number;
 }
 
 export interface PlayerStrokeRatingSample {
@@ -302,6 +323,7 @@ export function buildPlayerPerformanceHistory(
   records: readonly LocalPlayerMatchInsight[],
 ): PlayerTrendMatch[] {
   return records.map(({ match, playerSide, insights }) => {
+    const timingIntervals = collectMatchTimingSamples(match.points);
     const playerWon =
       playerSide === 'tracked'
         ? insights.trackedPointsWon
@@ -394,6 +416,11 @@ export function buildPlayerPerformanceHistory(
       status: match.matchStatus,
       result,
       outcomeType,
+      surface: match.surface,
+      timing: {
+        firstToSecondServeMs: timingIntervals.firstToSecondServe[playerSide],
+        betweenPointsMs: timingIntervals.betweenPoints.all,
+      },
       metrics,
       strokeRatings,
     };
@@ -401,6 +428,102 @@ export function buildPlayerPerformanceHistory(
     (left, right) =>
       left.date.localeCompare(right.date) || left.id.localeCompare(right.id),
   );
+}
+
+function summarizeTimingValues(values: readonly number[]): TimingIntervalSummary {
+  if (values.length === 0) {
+    return {
+      count: 0,
+      medianMs: null,
+      minMs: null,
+      maxMs: null,
+      q1Ms: null,
+      q3Ms: null,
+      interquartileRangeMs: null,
+    };
+  }
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  const quantile = (position: number) => {
+    const index = (sorted.length - 1) * position;
+    const lowerIndex = Math.floor(index);
+    const upperIndex = Math.ceil(index);
+    if (lowerIndex === upperIndex) return sorted[lowerIndex];
+    const fraction = index - lowerIndex;
+    return sorted[lowerIndex] + (sorted[upperIndex] - sorted[lowerIndex]) * fraction;
+  };
+  const q1Ms = quantile(0.25);
+  const q3Ms = quantile(0.75);
+  return {
+    count: sorted.length,
+    medianMs:
+      sorted.length % 2 === 0
+        ? (sorted[middle - 1] + sorted[middle]) / 2
+        : sorted[middle],
+    minMs: sorted[0],
+    maxMs: sorted[sorted.length - 1],
+    q1Ms,
+    q3Ms,
+    interquartileRangeMs: q3Ms - q1Ms,
+  };
+}
+
+const PLAYER_TIMING_RESULT_GROUPS = [
+  { key: 'win', label: 'Wins' },
+  { key: 'loss', label: 'Losses' },
+  { key: 'no_winner', label: 'No clear result' },
+] as const;
+
+const PLAYER_TIMING_SURFACE_GROUPS: readonly {
+  key: CourtSurface;
+  label: CourtSurface;
+}[] = [
+  { key: 'Hard', label: 'Hard' },
+  { key: 'Clay', label: 'Clay' },
+  { key: 'Grass', label: 'Grass' },
+  { key: 'Carpet', label: 'Carpet' },
+  { key: 'Other', label: 'Other' },
+];
+
+export function summarizePlayerTiming(
+  matches: readonly PlayerTrendMatch[],
+  grouping: PlayerTimingGrouping = 'all',
+): PlayerTimingGroupSummary[] {
+  const buckets =
+    grouping === 'all'
+      ? [{ key: 'all', label: 'All matches', matches: [...matches] }]
+      : grouping === 'result'
+        ? PLAYER_TIMING_RESULT_GROUPS.map(({ key, label }) => ({
+            key,
+            label,
+            matches: matches.filter((match) => match.result === key),
+          }))
+        : PLAYER_TIMING_SURFACE_GROUPS.map(({ key, label }) => ({
+            key,
+            label,
+            matches: matches.filter((match) => match.surface === key),
+          }));
+
+  return buckets.map(({ key, label, matches: groupMatches }) => {
+    const serveValues = groupMatches.flatMap(
+      (match) => match.timing.firstToSecondServeMs,
+    );
+    const betweenPointValues = groupMatches.flatMap(
+      (match) => match.timing.betweenPointsMs,
+    );
+    return {
+      key,
+      label,
+      firstToSecondServe: summarizeTimingValues(serveValues),
+      betweenPoints: summarizeTimingValues(betweenPointValues),
+      matchesWithServeSamples: groupMatches.filter(
+        (match) => match.timing.firstToSecondServeMs.length > 0,
+      ).length,
+      matchesWithBetweenPointSamples: groupMatches.filter(
+        (match) => match.timing.betweenPointsMs.length > 0,
+      ).length,
+    };
+  });
 }
 
 export function summarizePlayerStrokeRating(

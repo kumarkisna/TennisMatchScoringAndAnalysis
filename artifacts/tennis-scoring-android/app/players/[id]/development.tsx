@@ -35,6 +35,9 @@ import {
   summarizePlayerTrendMetric,
   type PlayerTrendMatch,
   type PlayerTrendMetricKey,
+  summarizePlayerTiming,
+  type PlayerTimingGrouping,
+  type PlayerTimingGroupSummary,
 } from '@/lib/player-insights';
 import {
   formatTimingDetails,
@@ -44,6 +47,12 @@ import {
   type PlayerTimingMatch,
   type TimingIntervalSummary,
 } from '@/lib/match-timing';
+
+const timingGroupingOptions: { key: PlayerTimingGrouping; label: string }[] = [
+  { key: 'all', label: 'All matches' },
+  { key: 'result', label: 'By result' },
+  { key: 'surface', label: 'By surface' },
+];
 
 function formatDate(date: string) {
   const [year, month, day] = date.slice(0, 10).split('-').map(Number);
@@ -63,6 +72,137 @@ type PlayerTimingHistoryMatch = Omit<PlayerTimingMatch, 'points'> & {
 
 function trendLabel(match: PlayerTrendMatch) {
   return match.event?.trim() || 'Match';
+}
+
+function formatTimingDuration(durationMs: number) {
+  const seconds = durationMs / 1000;
+  if (seconds < 60) return `${Math.round(seconds * 10) / 10}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+}
+
+function TimingIntervalCard({
+  label,
+  summary,
+  matchesWithSamples,
+}: {
+  label: string;
+  summary: PlayerTimingGroupSummary['firstToSecondServe'];
+  matchesWithSamples: number;
+}) {
+  const colors = useColors();
+  return (
+    <View style={styles.timingMetric}>
+      <Text style={[styles.timingMetricLabel, { color: colors.mutedForeground }]}>
+        {label}
+      </Text>
+      <Text style={[styles.timingMetricValue, { color: colors.foreground }]}>
+        {summary.medianMs === null
+          ? 'Not recorded'
+          : `${formatTimingDuration(summary.medianMs)} median`}
+      </Text>
+      <Text style={[styles.timingMetricMeta, { color: colors.mutedForeground }]}>
+        {summary.count} marked {summary.count === 1 ? 'interval' : 'intervals'} · {matchesWithSamples} {matchesWithSamples === 1 ? 'match' : 'matches'}
+      </Text>
+      {summary.minMs !== null && summary.maxMs !== null ? (
+        <Text style={[styles.timingMetricMeta, { color: colors.mutedForeground }]}>
+          Range {formatTimingDuration(summary.minMs)}–{formatTimingDuration(summary.maxMs)}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+function PlayerTimingHistory({
+  matches,
+  grouping,
+  onGroupingChange,
+}: {
+  matches: PlayerTrendMatch[];
+  grouping: PlayerTimingGrouping;
+  onGroupingChange: (grouping: PlayerTimingGrouping) => void;
+}) {
+  const colors = useColors();
+  const groups = summarizePlayerTiming(matches, grouping);
+  const hasTimingSamples = matches.some(
+    (match) =>
+      match.timing.firstToSecondServeMs.length > 0 ||
+      match.timing.betweenPointsMs.length > 0,
+  );
+
+  return (
+    <View testID="player-timing-history">
+      <Text style={[styles.sectionTitle, styles.matchListHeading, { color: colors.foreground }]}>
+        Serve and reset timing
+      </Text>
+      <Text style={[styles.countHint, { color: colors.mutedForeground }]}>
+        Manual markers only; longer times are not automatically better or worse. Date filters above apply.
+      </Text>
+      <View style={styles.timingGroupingChoices}>
+        {timingGroupingOptions.map((option) => {
+          const selected = grouping === option.key;
+          return (
+            <Pressable
+              key={option.key}
+              testID={`button-player-timing-group-${option.key}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+              onPress={() => onGroupingChange(option.key)}
+              style={[
+                styles.metricChip,
+                {
+                  backgroundColor: selected ? colors.primary : colors.card,
+                  borderColor: selected ? colors.primary : colors.border,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.metricChipText,
+                  { color: selected ? colors.primaryForeground : colors.foreground },
+                ]}
+              >
+                {option.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      {groups.map((group) => (
+        <View
+          key={group.key}
+          testID={`player-timing-group-${group.key}`}
+          style={[
+            styles.timingGroupCard,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.timingGroupTitle, { color: colors.foreground }]}>
+            {group.label}
+          </Text>
+          {!hasTimingSamples && grouping === 'all' ? (
+            <Text style={[styles.timingUnavailable, { color: colors.mutedForeground }]}>
+              No timing markers were recorded in these matches.
+            </Text>
+          ) : (
+            <View style={styles.timingMetrics}>
+              <TimingIntervalCard
+                label="First fault to second serve"
+                summary={group.firstToSecondServe}
+                matchesWithSamples={group.matchesWithServeSamples}
+              />
+              <TimingIntervalCard
+                label="Between points"
+                summary={group.betweenPoints}
+                matchesWithSamples={group.matchesWithBetweenPointSamples}
+              />
+            </View>
+          )}
+        </View>
+      ))}
+    </View>
+  );
 }
 
 function PerformanceChart({
@@ -1075,6 +1215,8 @@ export default function PlayerDevelopmentScreen() {
   >(null);
   const [selectedMetric, setSelectedMetric] =
     useState<PlayerTrendMetricKey>('overall');
+  const [timingGrouping, setTimingGrouping] =
+    useState<PlayerTimingGrouping>('all');
   const [startDateInput, setStartDateInput] = useState('');
   const [endDateInput, setEndDateInput] = useState('');
   const playersQuery = useQuery({
@@ -1672,6 +1814,11 @@ export default function PlayerDevelopmentScreen() {
                 />
               </>
             )}
+            <PlayerTimingHistory
+              matches={matches}
+              grouping={timingGrouping}
+              onGroupingChange={setTimingGrouping}
+            />
             <Text style={[styles.localNote, { color: colors.mutedForeground }]}>
               Names shown on old match sheets are unchanged. Player links and calculations stay on this device.
             </Text>
@@ -1817,6 +1964,15 @@ const styles = StyleSheet.create({
   strokeRatingMatch: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 6, gap: 2 },
   strokeRatingMatchMeta: { fontFamily: 'DMSans_500Medium', fontSize: 10, lineHeight: 14 },
   strokeRatingSamples: { fontFamily: 'DMSans_600SemiBold', fontSize: 10, lineHeight: 15 },
+  timingGroupingChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 10 },
+  timingGroupCard: { borderWidth: 1, borderRadius: 10, padding: 11, marginBottom: 8, gap: 9 },
+  timingGroupTitle: { fontFamily: 'DMSans_700Bold', fontSize: 12 },
+  timingMetrics: { flexDirection: 'row', gap: 9 },
+  timingMetric: { flex: 1, minWidth: 0, gap: 3 },
+  timingMetricLabel: { fontFamily: 'DMSans_600SemiBold', fontSize: 9, lineHeight: 13 },
+  timingMetricValue: { fontFamily: 'Manrope_700Bold', fontSize: 14, fontVariant: ['tabular-nums'] },
+  timingMetricMeta: { fontFamily: 'DMSans_400Regular', fontSize: 9, lineHeight: 13 },
+  timingUnavailable: { fontFamily: 'DMSans_400Regular', fontSize: 10, lineHeight: 15 },
   historyHeading: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 5 },
   emptyHistory: { borderWidth: 1, borderRadius: 10, padding: 12 },
   modalOverlay: { flex: 1, justifyContent: 'center', padding: 22, backgroundColor: 'rgba(12, 25, 19, 0.48)' },

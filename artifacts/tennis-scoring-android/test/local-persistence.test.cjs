@@ -87,6 +87,14 @@ Module._load = function (request, parent, isMain) {
   if (request === '@/lib/local-matches') {
     return originalModuleLoad.call(this, localMatchesPath, parent, isMain);
   }
+  if (request === '@/lib/match-timing') {
+    return originalModuleLoad.call(
+      this,
+      path.join(__dirname, '../lib/match-timing.ts'),
+      parent,
+      isMain,
+    );
+  }
   if (request === '@/constants/colors') {
     return originalModuleLoad.call(this, colorsPath, parent, isMain);
   }
@@ -3002,6 +3010,185 @@ test('player trend summaries separate match outcomes without inventing point sam
   assert.match(developmentScreen, /formatPlayerMatchOutcomeSummary\(summary\)/);
   assert.match(developmentScreen, /matches=\{pointSampledMatches\}/);
   assert.match(developmentScreen, /No \$\{value\.countLabel\} recorded/);
+  assert.match(developmentScreen, /testID="player-timing-history"/);
+  assert.match(developmentScreen, /summarizePlayerTiming\(matches, grouping\)/);
+});
+
+test('player reset timing combines marked intervals and leaves unsupported groups unavailable', () => {
+  const playerInsights = loadPlayerInsights();
+  const emptyServeStats = () => ({
+    servicePoints: 0,
+    servicePointsWon: 0,
+    firstServePoints: 0,
+    firstServePointsWon: 0,
+    secondServePoints: 0,
+    secondServePointsWon: 0,
+  });
+  const makePoint = ({
+    id,
+    sequenceNumber,
+    server,
+    createdAtMs,
+    pointStartedAtMs,
+    firstServeFaultAtMs,
+    secondServeAtMs,
+  }) => ({
+    id,
+    sequenceNumber,
+    setNumber: 1,
+    gameNumber: 1,
+    server,
+    isTiebreak: false,
+    winner: 'tracked',
+    endingCode: null,
+    firstServeFault: firstServeFaultAtMs !== undefined,
+    pointStartedAtMs,
+    firstServeFaultAtMs,
+    secondServeAtMs,
+    createdAt: new Date(createdAtMs).toISOString(),
+  });
+  const makeRecord = ({ id, playerSide, winner, surface, points }) => ({
+    match: {
+      id,
+      matchDate: '2026-11-01',
+      event: null,
+      round: null,
+      trackedPlayer: 'Selected Player',
+      opponent: 'Other Player',
+      trackedPlayerId: playerSide === 'tracked' ? 'selected' : 'other',
+      opponentPlayerId: playerSide === 'opponent' ? 'selected' : 'other',
+      surface,
+      points,
+      matchStatus: 'complete',
+      matchOutcome: null,
+      winner,
+    },
+    playerSide,
+    insights: {
+      pointCount: 0,
+      trackedPointsWon: 0,
+      opponentPointsWon: 0,
+      serveStats: {
+        tracked: emptyServeStats(),
+        opponent: emptyServeStats(),
+      },
+      sets: [],
+    },
+  });
+
+  const records = [
+    makeRecord({
+      id: 'win-hard',
+      playerSide: 'tracked',
+      winner: 'tracked',
+      surface: 'Hard',
+      points: [
+        makePoint({
+          id: 'a1',
+          sequenceNumber: 1,
+          server: 'tracked',
+          createdAtMs: 3000,
+          firstServeFaultAtMs: 1000,
+          secondServeAtMs: 2000,
+        }),
+        makePoint({
+          id: 'a2',
+          sequenceNumber: 2,
+          server: 'opponent',
+          createdAtMs: 8000,
+          pointStartedAtMs: 7000,
+          firstServeFaultAtMs: 9000,
+          secondServeAtMs: 9500,
+        }),
+        makePoint({
+          id: 'a3',
+          sequenceNumber: 3,
+          server: 'tracked',
+          createdAtMs: 9000,
+          pointStartedAtMs: 10000,
+          firstServeFaultAtMs: 11000,
+          secondServeAtMs: 14000,
+        }),
+      ],
+    }),
+    makeRecord({
+      id: 'loss-clay',
+      playerSide: 'opponent',
+      winner: 'tracked',
+      surface: 'Clay',
+      points: [
+        makePoint({
+          id: 'b1',
+          sequenceNumber: 1,
+          server: 'opponent',
+          createdAtMs: 12000,
+          firstServeFaultAtMs: 2000,
+          secondServeAtMs: 8000,
+        }),
+        makePoint({
+          id: 'b2',
+          sequenceNumber: 2,
+          server: 'tracked',
+          createdAtMs: 19000,
+          pointStartedAtMs: 18000,
+          firstServeFaultAtMs: 20000,
+          secondServeAtMs: 21000,
+        }),
+      ],
+    }),
+  ];
+  const history = playerInsights.buildPlayerPerformanceHistory(records);
+
+  assert.deepEqual(playerInsights.summarizePlayerTiming(history), [
+    {
+      key: 'all',
+      label: 'All matches',
+      firstToSecondServe: {
+        count: 3,
+        medianMs: 3000,
+        minMs: 1000,
+        maxMs: 6000,
+        q1Ms: 2000,
+        q3Ms: 4500,
+        interquartileRangeMs: 2500,
+      },
+      betweenPoints: {
+        count: 3,
+        medianMs: 4000,
+        minMs: 2000,
+        maxMs: 6000,
+        q1Ms: 3000,
+        q3Ms: 5000,
+        interquartileRangeMs: 2000,
+      },
+      matchesWithServeSamples: 2,
+      matchesWithBetweenPointSamples: 2,
+    },
+  ]);
+  const byResult = playerInsights.summarizePlayerTiming(history, 'result');
+  assert.equal(byResult.find(({ key }) => key === 'win').firstToSecondServe.medianMs, 2000);
+  assert.equal(byResult.find(({ key }) => key === 'loss').firstToSecondServe.medianMs, 6000);
+  assert.deepEqual(byResult.find(({ key }) => key === 'no_winner').firstToSecondServe, {
+    count: 0,
+    medianMs: null,
+    minMs: null,
+    maxMs: null,
+    q1Ms: null,
+    q3Ms: null,
+    interquartileRangeMs: null,
+  });
+  const bySurface = playerInsights.summarizePlayerTiming(history, 'surface');
+  assert.equal(bySurface.find(({ key }) => key === 'Hard').firstToSecondServe.count, 2);
+  assert.equal(bySurface.find(({ key }) => key === 'Clay').betweenPoints.medianMs, 6000);
+  assert.deepEqual(bySurface.find(({ key }) => key === 'Grass').betweenPoints, {
+    count: 0,
+    medianMs: null,
+    minMs: null,
+    maxMs: null,
+    q1Ms: null,
+    q3Ms: null,
+    interquartileRangeMs: null,
+  });
 });
 
 test('player development history refreshes after one and final match deletion', async () => {
