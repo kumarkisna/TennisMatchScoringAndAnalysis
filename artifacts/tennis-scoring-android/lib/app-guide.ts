@@ -98,3 +98,82 @@ export const APP_GUIDE_SECTIONS = [
 ] as const;
 
 export type AppGuideSectionId = (typeof APP_GUIDE_SECTIONS)[number]['id'];
+
+/**
+ * Review this map whenever a user-facing screen or capability changes.
+ * The offline-persistence test compares it with real app routes and checks
+ * that important controls still exist on each route.
+ */
+export const APP_GUIDE_SCREEN_COVERAGE = [
+  {
+    route: 'about.tsx',
+    sectionIds: APP_GUIDE_SECTIONS.map(({ id }) => id),
+    requiredSourceMarkers: [
+      'APP_GUIDE_SECTIONS.map',
+      'jumpToSection',
+      'APP_COPYRIGHT_NOTICE',
+      'selectable={false}',
+    ],
+  },
+  {
+    route: 'head-to-head.tsx',
+    sectionIds: ['reports'],
+    requiredSourceMarkers: ['head-to-head-summary', 'head-to-head-timing-summary'],
+  },
+  {
+    route: 'history.tsx',
+    sectionIds: ['history-backups', 'reports'],
+    requiredSourceMarkers: ['history-match-list', 'history-toggle-completed-matches'],
+  },
+  {
+    route: 'index.tsx',
+    sectionIds: ['players', 'match-setup', 'history-backups'],
+    requiredSourceMarkers: [
+      'button-start-match',
+      'button-switch-main-player',
+      'button-save-local-backup',
+      'button-share-local-backup',
+      'button-load-local-backup',
+    ],
+  },
+  {
+    route: 'matches/[id].tsx',
+    sectionIds: ['point-scoring', 'sets', 'notes-timing', 'reports'],
+    requiredSourceMarkers: [
+      'button-point-tracked',
+      'button-add-standard-set',
+      'button-add-custom-tiebreak-set',
+      'toggle-game-notes',
+      'toggle-point-context',
+    ],
+  },
+  {
+    route: 'matches/new.tsx',
+    sectionIds: ['match-setup', 'players', 'sets'],
+    requiredSourceMarkers: [
+      'input-match-date',
+      'input-set-number',
+      'input-tracked-player',
+      'Open live score',
+    ],
+  },
+  {
+    route: 'players/[id]/development.tsx',
+    sectionIds: ['reports'],
+    requiredSourceMarkers: ['player-timing-history', 'player-timing-match-trend'],
+  },
+  {
+    route: 'players.tsx',
+    sectionIds: ['players'],
+    requiredSourceMarkers: [
+      'input-saved-player-name',
+      'button-add-player-profile-link',
+      'button-add-player-phone-number',
+    ],
+  },
+  {
+    route: 'settings.tsx',
+    sectionIds: ['settings-privacy'],
+    requiredSourceMarkers: ['<ThemeSettingsPanel'],
+  },
+] as const;

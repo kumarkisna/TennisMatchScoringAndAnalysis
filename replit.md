@@ -6,7 +6,7 @@ An offline-first Android app for recording tennis points and reviewing player de
 
 - `pnpm --filter @workspace/tennis-scoring-android run dev` — start the Android preview
 - `pnpm --filter @workspace/tennis-scoring-android run typecheck` — typecheck the mobile app
-- `pnpm --filter @workspace/tennis-scoring-android run test:offline-persistence` — verify local storage and backup behavior
+- `pnpm --filter @workspace/tennis-scoring-android run test:offline-persistence` — verify local storage, backup behavior, and About guide coverage
 - `pnpm --filter @workspace/tennis-scoring-android run test:reports` — verify report generation
 - `pnpm --filter @workspace/tennis-scoring-android run test:score-progress` — verify scoring logic
 - `pnpm --filter @workspace/tennis-scoring-android run test:match-ui` — verify match UI behavior
@@ -36,6 +36,7 @@ An offline-first Android app for recording tennis points and reviewing player de
 ## Gotchas
 
 - The Replit Expo workflow is only for development preview; match data remains on-device.
+- When adding, changing, or removing a user-facing screen or feature, review `artifacts/tennis-scoring-android/lib/app-guide.ts` and update `APP_GUIDE_SCREEN_COVERAGE`. The offline-persistence test checks route coverage, section links, and key feature markers before release.
 
 ## Pointers
 

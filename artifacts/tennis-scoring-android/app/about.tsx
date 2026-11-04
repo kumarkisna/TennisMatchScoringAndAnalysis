@@ -1,11 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import * as Print from 'expo-print';
 import { useQuery } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -24,17 +20,14 @@ import {
   APP_BRAND_NAME,
   APP_COPYRIGHT_NOTICE,
 } from '@/lib/branding';
-import { buildAppGuidePrintHtml } from '@/lib/app-guide-print';
 import { listLocalMatches, LOCAL_MATCH_LIST_KEY } from '@/lib/local-matches';
 import { splitHomeMatches } from '@/lib/home-screen-state';
-import { createAndPreviewLocalPdf } from '@/lib/report-pdf';
 
 export default function AboutScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollViewInstance | null>(null);
   const sectionOffsets = useRef<Partial<Record<AppGuideSectionId, number>>>({});
-  const [isPrinting, setIsPrinting] = useState(false);
   const matchesQuery = useQuery({
     queryKey: LOCAL_MATCH_LIST_KEY,
     queryFn: listLocalMatches,
@@ -48,27 +41,6 @@ export default function AboutScreen() {
       y: Math.max(sectionOffset - 12, 0),
       animated: true,
     });
-  };
-
-  const printAllInstructions = async () => {
-    if (isPrinting) return;
-    setIsPrinting(true);
-    try {
-      await createAndPreviewLocalPdf(
-        buildAppGuidePrintHtml(),
-        Platform.OS,
-        Print,
-      );
-    } catch (error) {
-      Alert.alert(
-        'Could not open print options',
-        error instanceof Error
-          ? error.message
-          : 'Please try printing the guide again.',
-      );
-    } finally {
-      setIsPrinting(false);
-    }
   };
 
   return (
@@ -122,39 +94,6 @@ export default function AboutScreen() {
             </Text>
           </View>
         </View>
-
-        <Pressable
-          testID="button-print-all-about"
-          accessibilityRole="button"
-          accessibilityLabel="Print all About instructions"
-          accessibilityHint="Opens print options for the complete guide. You can print it or save it as a PDF."
-          accessibilityState={{ disabled: isPrinting, busy: isPrinting }}
-          disabled={isPrinting}
-          onPress={() => void printAllInstructions()}
-          style={({ pressed }) => [
-            styles.printButton,
-            {
-              backgroundColor: colors.primary,
-              opacity: isPrinting ? 0.75 : pressed ? 0.82 : 1,
-            },
-          ]}
-        >
-          {isPrinting ? (
-            <ActivityIndicator size="small" color={colors.primaryForeground} />
-          ) : (
-            <Ionicons
-              name="print-outline"
-              size={18}
-              color={colors.primaryForeground}
-            />
-          )}
-          <Text
-            selectable={false}
-            style={[styles.printButtonText, { color: colors.primaryForeground }]}
-          >
-            {isPrinting ? 'Preparing print…' : 'Print all instructions'}
-          </Text>
-        </Pressable>
 
         <View style={styles.contentsBlock}>
           <View style={styles.contentsHeading}>
@@ -300,16 +239,6 @@ const styles = StyleSheet.create({
   contentsHeading: { gap: 3 },
   sectionHeading: { fontFamily: 'Manrope_700Bold', fontSize: 18 },
   contentsHint: { fontFamily: 'DMSans_400Regular', fontSize: 11 },
-  printButton: {
-    minHeight: 48,
-    borderRadius: 13,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 9,
-  },
-  printButtonText: { fontFamily: 'DMSans_700Bold', fontSize: 13 },
   topicGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   topicButton: {
     flexBasis: '47%',

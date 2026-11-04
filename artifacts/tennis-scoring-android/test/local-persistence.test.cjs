@@ -4534,9 +4534,10 @@ test('home match sections sort by match date and remember tabs and expanded card
   assert.match(homeSource, /saveHomeScreenPreferences\(next\)/);
 });
 
-test('About guide jump links, sections, branding, and launch splash stay aligned', () => {
+test('About guide coverage matches app routes and key user-facing features', () => {
   const guide = require(path.join(__dirname, '../lib/app-guide.ts'));
   const sectionIds = guide.APP_GUIDE_SECTIONS.map(({ id }) => id);
+  const sectionIdSet = new Set(sectionIds);
   assert.ok(sectionIds.length >= 8);
   assert.equal(new Set(sectionIds).size, sectionIds.length);
   for (const section of guide.APP_GUIDE_SECTIONS) {
@@ -4545,14 +4546,64 @@ test('About guide jump links, sections, branding, and launch splash stay aligned
     assert.ok(section.steps.length > 0, `Missing instructions for ${section.id}`);
   }
 
+  const appDirectory = path.join(__dirname, '../app');
+  const discoverRoutes = (directory, parent = '') =>
+    fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const relativePath = path.join(parent, entry.name).split(path.sep).join('/');
+      if (entry.isDirectory()) return discoverRoutes(path.join(directory, entry.name), relativePath);
+      if (
+        !entry.isFile() ||
+        !entry.name.endsWith('.tsx') ||
+        entry.name.startsWith('_') ||
+        entry.name.startsWith('+')
+      ) {
+        return [];
+      }
+      return [relativePath];
+    });
+  const actualRoutes = discoverRoutes(appDirectory).sort();
+  const coveredRoutes = guide.APP_GUIDE_SCREEN_COVERAGE
+    .map(({ route }) => route)
+    .sort();
+  assert.deepEqual(
+    coveredRoutes,
+    actualRoutes,
+    'Every app screen route must have guide coverage; remove stale entries when routes are removed.',
+  );
+  assert.equal(
+    new Set(coveredRoutes).size,
+    coveredRoutes.length,
+    'Each screen route should have one coverage entry.',
+  );
+
+  const coveredSectionIds = new Set();
+  for (const coverage of guide.APP_GUIDE_SCREEN_COVERAGE) {
+    assert.ok(coverage.sectionIds.length > 0, `No guide section mapped for ${coverage.route}`);
+    for (const id of coverage.sectionIds) {
+      assert.ok(sectionIdSet.has(id), `Unknown guide section ${id} mapped for ${coverage.route}`);
+      coveredSectionIds.add(id);
+    }
+    const screenSource = fs.readFileSync(
+      path.join(appDirectory, coverage.route),
+      'utf8',
+    );
+    for (const marker of coverage.requiredSourceMarkers) {
+      assert.ok(
+        screenSource.includes(marker),
+        `Feature marker "${marker}" is missing from ${coverage.route}; review its guide entry.`,
+      );
+    }
+  }
+  assert.deepEqual(
+    [...coveredSectionIds].sort(),
+    [...sectionIdSet].sort(),
+    'Every guide section must map to at least one app screen.',
+  );
+
   const aboutSource = fs.readFileSync(
     path.join(__dirname, '../app/about.tsx'),
     'utf8',
   );
-  const printHtml = require(path.join(
-    __dirname,
-    '../lib/app-guide-print.ts',
-  )).buildAppGuidePrintHtml();
   const homeSource = fs.readFileSync(
     path.join(__dirname, '../app/index.tsx'),
     'utf8',
@@ -4585,17 +4636,7 @@ test('About guide jump links, sections, branding, and launch splash stay aligned
   assert.match(aboutSource, /APP_GUIDE_SECTIONS\.map/);
   assert.match(aboutSource, /scrollTo\(/);
   assert.match(aboutSource, /<BottomTabBar activeTab="about"/);
-  assert.match(aboutSource, /testID="button-print-all-about"/);
-  assert.match(aboutSource, /createAndPreviewLocalPdf/);
-  assert.match(printHtml, /How to use the app/);
-  assert.match(printHtml, /Copyright Shreshth Bharat Tennis Trust - 2026 - Present/);
-  assert.match(printHtml, /Notes &amp; timing/);
-  for (const section of guide.APP_GUIDE_SECTIONS) {
-    assert.ok(printHtml.includes(section.title), `Print guide is missing ${section.title}`);
-    for (const step of section.steps) {
-      assert.ok(printHtml.includes(step), `Print guide is missing an instruction in ${section.id}`);
-    }
-  }
+  assert.doesNotMatch(aboutSource, /Print all instructions|button-print-all-about|expo-print/);
   const textElements = aboutSource.match(/<Text\b[^>]*>/g) ?? [];
   assert.ok(textElements.length > 0);
   for (const textElement of textElements) {
