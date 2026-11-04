@@ -3128,6 +3128,14 @@ test('player trend summaries separate match outcomes without inventing point sam
   );
   assert.match(developmentScreen, /player-timing-after-wins-comparison/);
   assert.match(developmentScreen, /player-timing-after-losses-comparison/);
+  assert.match(developmentScreen, /PLAYER_TIMING_SURFACE_GROUPS\.flatMap/);
+  assert.match(developmentScreen, /match\.surface === key/);
+  assert.match(developmentScreen, /surface: match\.surface/);
+  assert.match(developmentScreen, /testID="player-timing-surface-comparisons"/);
+  assert.match(
+    developmentScreen,
+    /describePlayerTimingPeriodComparison\(\s*comparison\.selected,\s*comparison\.baseline,\s*comparison\.baselineLabel,\s*comparison\.surfaceLabel,\s*\)/,
+  );
   assert.match(developmentScreen, /isSegmentOpen = false/);
 });
 
@@ -3403,6 +3411,15 @@ test('player reset pace insight requires samples and shows medians with counts',
   assert.match(supported, /manual tap estimates/i);
   assert.doesNotMatch(supported, /middle-50% spread/);
 
+  const surfaceSpecific = playerInsights.describePlayerTimingPeriodComparison(
+    timingSummary(3, 2000, 800),
+    timingSummary(3, 5000, 1500),
+    'other saved hard-court matches',
+    'hard courts',
+  );
+  assert.match(surfaceSpecific, /reset on hard courts/i);
+  assert.match(surfaceSpecific, /other saved hard-court matches: 5\.0s median \(n=3\)/i);
+
   const similar = playerInsights.describePlayerTimingPeriodComparison(
     timingSummary(3, 2500, 800),
     timingSummary(3, 3000, 900),
@@ -3424,6 +3441,17 @@ test('player reset pace insight requires samples and shows medians with counts',
   assert.match(steadier, /4\.0s shorter/);
   assert.match(steadier, /3\.0s narrower, suggesting more consistent recorded pauses/);
   assert.match(steadier, /median \(n=5\)/);
+
+  const unavailableSurface = playerInsights.describePlayerTimingPeriodComparison(
+    timingSummary(1, 2000, null),
+    timingSummary(2, 5000, null),
+    'other saved clay-court matches',
+    'clay courts',
+  );
+  assert.match(unavailableSurface, /not enough data/i);
+  assert.match(unavailableSurface, /selected period n=1/i);
+  assert.match(unavailableSurface, /other saved clay-court matches n=2/i);
+  assert.doesNotMatch(unavailableSurface, /shorter|longer|similar between periods/i);
 });
 
 test('player reset comparisons after wins and losses stay sample-gated and separate', () => {

@@ -20,6 +20,7 @@ import {
   listLocalPlayerMatchInsights,
   PLAYER_PERFORMANCE_HISTORY_KEY,
   STROKE_TYPE_OPTIONS,
+  type CourtSurface,
   type LocalPoint,
 } from '@/lib/local-matches';
 import { listLocalPlayers } from '@/lib/local-players';
@@ -32,6 +33,7 @@ import {
   getPlayerTrendComparisonSampleNotice,
   isValidPlayerTrendDate,
   PLAYER_TREND_METRICS,
+  PLAYER_TIMING_SURFACE_GROUPS,
   summarizePlayerMatchOutcomes,
   summarizePlayerStrokeRating,
   summarizePlayerTimingByMatch,
@@ -71,6 +73,7 @@ function formatDate(date: string) {
 
 type PlayerTimingHistoryMatch = Omit<PlayerTimingMatch, 'points'> & {
   matchId: string;
+  surface: CourtSurface;
   points: LocalPoint[];
 };
 
@@ -1151,6 +1154,38 @@ function PlayerTimingAverageCard({
       label: `After point losses by ${playerName}`,
     },
   ];
+  const surfaceComparisons = PLAYER_TIMING_SURFACE_GROUPS.flatMap(
+    ({ key, label }) => {
+      const selectedSurfaceMatches = selectedMatches.filter(
+        (match) => match.surface === key,
+      );
+      const outsideSurfaceMatches = outsideMatches.filter(
+        (match) => match.surface === key,
+      );
+      if (
+        selectedSurfaceMatches.length === 0 &&
+        outsideSurfaceMatches.length === 0
+      ) {
+        return [];
+      }
+      return [
+        {
+          key,
+          label: key === 'Other' ? 'Other surfaces' : `${label} court`,
+          selected: summarizePlayerTimingAcrossMatches(selectedSurfaceMatches),
+          baseline: summarizePlayerTimingAcrossMatches(outsideSurfaceMatches),
+          baselineLabel:
+            key === 'Other'
+              ? 'other saved matches on other surfaces'
+              : `other saved ${label.toLowerCase()}-court matches`,
+          surfaceLabel:
+            key === 'Other'
+              ? 'other surfaces'
+              : `${label.toLowerCase()} courts`,
+        },
+      ];
+    },
+  );
 
   return (
     <View
@@ -1234,6 +1269,49 @@ function PlayerTimingAverageCard({
               </View>
             ))}
           </View>
+          {surfaceComparisons.length > 0 ? (
+            <View
+              testID="player-timing-surface-comparisons"
+              style={styles.timingSurfaceComparisons}
+            >
+              <Text
+                style={[styles.timingAverageLabel, { color: colors.foreground }]}
+              >
+                Reset pace by court surface
+              </Text>
+              {surfaceComparisons.map((comparison) => (
+                <View
+                  key={comparison.key}
+                  style={[
+                    styles.timingSurfaceComparison,
+                    { borderTopColor: colors.border },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.timingAverageLabel,
+                      { color: colors.foreground },
+                    ]}
+                  >
+                    {comparison.label}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.timingAverageBaseline,
+                      { color: colors.mutedForeground },
+                    ]}
+                  >
+                    {describePlayerTimingPeriodComparison(
+                      comparison.selected,
+                      comparison.baseline,
+                      comparison.baselineLabel,
+                      comparison.surfaceLabel,
+                    )}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
         </>
       ) : dateRangeActive ? (
         <Text style={[styles.dateRangeHint, { color: colors.mutedForeground }]}>
@@ -1461,6 +1539,7 @@ async function loadPlayerTrendHistory(playerId: string) {
           ? {
               matchId: match.id,
               playerSide,
+              surface: match.surface,
               points: getMatchTimingPoints(localMatch),
             }
           : null;
@@ -2233,6 +2312,12 @@ const styles = StyleSheet.create({
   },
   timingOutcomeComparisons: { gap: 6 },
   timingOutcomeComparison: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 7,
+    gap: 3,
+  },
+  timingSurfaceComparisons: { gap: 6, marginTop: 4 },
+  timingSurfaceComparison: {
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingTop: 7,
     gap: 3,

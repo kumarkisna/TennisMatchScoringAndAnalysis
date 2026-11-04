@@ -254,25 +254,28 @@ export function describePlayerTimingOutcomeComparison(
 export function describePlayerTimingPeriodComparison(
   selected: MatchTimingSummary,
   baseline: MatchTimingSummary,
+  baselineLabel = 'other saved matches',
+  surfaceLabel?: string,
 ): string {
   const selectedPauses = selected.betweenPoints.all;
   const baselinePauses = baseline.betweenPoints.all;
+  const surfaceQualifier = surfaceLabel ? ` on ${surfaceLabel}` : '';
   if (
     selectedPauses.count < PLAYER_TIMING_PACE_MINIMUM_INTERVALS ||
     baselinePauses.count < PLAYER_TIMING_PACE_MINIMUM_INTERVALS ||
     selectedPauses.medianMs === null ||
     baselinePauses.medianMs === null
   ) {
-    return `Not enough data for a reset-pace comparison yet. Record at least ${PLAYER_TIMING_PACE_MINIMUM_INTERVALS} marked between-point gaps in both periods.`;
+    return `Not enough data for a reset-pace comparison${surfaceQualifier}. Selected period n=${selectedPauses.count}; ${baselineLabel} n=${baselinePauses.count}. Record at least ${PLAYER_TIMING_PACE_MINIMUM_INTERVALS} marked between-point gaps in both periods.`;
   }
 
   const medianDifference = selectedPauses.medianMs - baselinePauses.medianMs;
   const paceDescription =
     Math.abs(medianDifference) < 1000
-      ? 'The median between-point reset was similar between periods.'
-      : `The median between-point reset was ${formatTimingDifference(medianDifference)} ${
+      ? `The median between-point reset${surfaceQualifier} was similar between periods.`
+      : `The median between-point reset${surfaceQualifier} was ${formatTimingDifference(medianDifference)} ${
           medianDifference < 0 ? 'shorter' : 'longer'
-        } in the selected period than in other saved matches.`;
+        } in the selected period than in ${baselineLabel}.`;
   const selectedSpread = selectedPauses.interquartileRangeMs;
   const baselineSpread = baselinePauses.interquartileRangeMs;
   const consistencyDescription =
@@ -291,7 +294,7 @@ export function describePlayerTimingPeriodComparison(
       : '';
   const sampleDetails = ` Selected period: ${formatTimingDifference(
     selectedPauses.medianMs,
-  )} median (n=${selectedPauses.count}); other saved matches: ${formatTimingDifference(
+  )} median (n=${selectedPauses.count}); ${baselineLabel}: ${formatTimingDifference(
     baselinePauses.medianMs,
   )} median (n=${baselinePauses.count}).`;
 
@@ -596,7 +599,7 @@ const PLAYER_TIMING_RESULT_GROUPS = [
   { key: 'no_winner', label: 'No clear result' },
 ] as const;
 
-const PLAYER_TIMING_SURFACE_GROUPS: readonly {
+export const PLAYER_TIMING_SURFACE_GROUPS: readonly {
   key: CourtSurface;
   label: CourtSurface;
 }[] = [
