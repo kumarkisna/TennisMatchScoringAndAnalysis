@@ -4549,6 +4549,10 @@ test('About guide jump links, sections, branding, and launch splash stay aligned
     path.join(__dirname, '../app/about.tsx'),
     'utf8',
   );
+  const printHtml = require(path.join(
+    __dirname,
+    '../lib/app-guide-print.ts',
+  )).buildAppGuidePrintHtml();
   const homeSource = fs.readFileSync(
     path.join(__dirname, '../app/index.tsx'),
     'utf8',
@@ -4581,6 +4585,22 @@ test('About guide jump links, sections, branding, and launch splash stay aligned
   assert.match(aboutSource, /APP_GUIDE_SECTIONS\.map/);
   assert.match(aboutSource, /scrollTo\(/);
   assert.match(aboutSource, /<BottomTabBar activeTab="about"/);
+  assert.match(aboutSource, /testID="button-print-all-about"/);
+  assert.match(aboutSource, /createAndPreviewLocalPdf/);
+  assert.match(printHtml, /How to use the app/);
+  assert.match(printHtml, /Copyright Shreshth Bharat Tennis Trust - 2026 - Present/);
+  assert.match(printHtml, /Notes &amp; timing/);
+  for (const section of guide.APP_GUIDE_SECTIONS) {
+    assert.ok(printHtml.includes(section.title), `Print guide is missing ${section.title}`);
+    for (const step of section.steps) {
+      assert.ok(printHtml.includes(step), `Print guide is missing an instruction in ${section.id}`);
+    }
+  }
+  const textElements = aboutSource.match(/<Text\b[^>]*>/g) ?? [];
+  assert.ok(textElements.length > 0);
+  for (const textElement of textElements) {
+    assert.match(textElement, /selectable=\{false\}/);
+  }
   assert.match(tabsSource, /route: '\/about'/);
   assert.match(layoutSource, /MIN_NATIVE_SPLASH_DURATION_MS = 1800/);
   assert.match(layoutSource, /setTimeout\(\(\) => \{\s*void SplashScreen\.hideAsync\(\)/);

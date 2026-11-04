@@ -1,7 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Print from 'expo-print';
 import { useQuery } from '@tanstack/react-query';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -20,14 +24,17 @@ import {
   APP_BRAND_NAME,
   APP_COPYRIGHT_NOTICE,
 } from '@/lib/branding';
+import { buildAppGuidePrintHtml } from '@/lib/app-guide-print';
 import { listLocalMatches, LOCAL_MATCH_LIST_KEY } from '@/lib/local-matches';
 import { splitHomeMatches } from '@/lib/home-screen-state';
+import { createAndPreviewLocalPdf } from '@/lib/report-pdf';
 
 export default function AboutScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollViewInstance | null>(null);
   const sectionOffsets = useRef<Partial<Record<AppGuideSectionId, number>>>({});
+  const [isPrinting, setIsPrinting] = useState(false);
   const matchesQuery = useQuery({
     queryKey: LOCAL_MATCH_LIST_KEY,
     queryFn: listLocalMatches,
@@ -41,6 +48,27 @@ export default function AboutScreen() {
       y: Math.max(sectionOffset - 12, 0),
       animated: true,
     });
+  };
+
+  const printAllInstructions = async () => {
+    if (isPrinting) return;
+    setIsPrinting(true);
+    try {
+      await createAndPreviewLocalPdf(
+        buildAppGuidePrintHtml(),
+        Platform.OS,
+        Print,
+      );
+    } catch (error) {
+      Alert.alert(
+        'Could not open print options',
+        error instanceof Error
+          ? error.message
+          : 'Please try printing the guide again.',
+      );
+    } finally {
+      setIsPrinting(false);
+    }
   };
 
   return (
@@ -57,13 +85,13 @@ export default function AboutScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <Text style={[styles.eyebrow, { color: colors.primary }]}>
+          <Text selectable={false} style={[styles.eyebrow, { color: colors.primary }]}>
             APP INFO & HELP
           </Text>
-          <Text style={[styles.pageTitle, { color: colors.foreground }]}>
+          <Text selectable={false} style={[styles.pageTitle, { color: colors.foreground }]}>
             About {APP_BRAND_NAME}
           </Text>
-          <Text style={[styles.pageSubtitle, { color: colors.mutedForeground }]}>
+          <Text selectable={false} style={[styles.pageSubtitle, { color: colors.mutedForeground }]}>
             A practical guide to recording matches and reviewing player performance.
           </Text>
         </View>
@@ -83,24 +111,57 @@ export default function AboutScreen() {
             <Ionicons name="tennisball-outline" size={25} color={colors.primary} />
           </View>
           <View style={styles.brandCopy}>
-            <Text style={[styles.brandName, { color: colors.foreground }]}>
+            <Text selectable={false} style={[styles.brandName, { color: colors.foreground }]}>
               {APP_BRAND_NAME}
             </Text>
-            <Text style={[styles.copyright, { color: colors.mutedForeground }]}>
+            <Text selectable={false} style={[styles.copyright, { color: colors.mutedForeground }]}>
               {APP_COPYRIGHT_NOTICE}
             </Text>
-            <Text style={[styles.localNote, { color: colors.mutedForeground }]}>
+            <Text selectable={false} style={[styles.localNote, { color: colors.mutedForeground }]}>
               Match and player records stay on this device.
             </Text>
           </View>
         </View>
 
+        <Pressable
+          testID="button-print-all-about"
+          accessibilityRole="button"
+          accessibilityLabel="Print all About instructions"
+          accessibilityHint="Opens print options for the complete guide. You can print it or save it as a PDF."
+          accessibilityState={{ disabled: isPrinting, busy: isPrinting }}
+          disabled={isPrinting}
+          onPress={() => void printAllInstructions()}
+          style={({ pressed }) => [
+            styles.printButton,
+            {
+              backgroundColor: colors.primary,
+              opacity: isPrinting ? 0.75 : pressed ? 0.82 : 1,
+            },
+          ]}
+        >
+          {isPrinting ? (
+            <ActivityIndicator size="small" color={colors.primaryForeground} />
+          ) : (
+            <Ionicons
+              name="print-outline"
+              size={18}
+              color={colors.primaryForeground}
+            />
+          )}
+          <Text
+            selectable={false}
+            style={[styles.printButtonText, { color: colors.primaryForeground }]}
+          >
+            {isPrinting ? 'Preparing print…' : 'Print all instructions'}
+          </Text>
+        </Pressable>
+
         <View style={styles.contentsBlock}>
           <View style={styles.contentsHeading}>
-            <Text style={[styles.sectionHeading, { color: colors.foreground }]}>
+            <Text selectable={false} style={[styles.sectionHeading, { color: colors.foreground }]}>
               How to use the app
             </Text>
-            <Text style={[styles.contentsHint, { color: colors.mutedForeground }]}>
+            <Text selectable={false} style={[styles.contentsHint, { color: colors.mutedForeground }]}>
               Tap a topic to jump to its instructions.
             </Text>
           </View>
@@ -127,6 +188,7 @@ export default function AboutScreen() {
                   color={colors.primary}
                 />
                 <Text
+                  selectable={false}
                   numberOfLines={1}
                   style={[styles.topicLabel, { color: colors.foreground }]}
                 >
@@ -169,15 +231,15 @@ export default function AboutScreen() {
                   />
                 </View>
                 <View style={styles.guideTitleCopy}>
-                  <Text style={[styles.guideEyebrow, { color: colors.primary }]}>
+                  <Text selectable={false} style={[styles.guideEyebrow, { color: colors.primary }]}>
                     {String(sectionIndex + 1).padStart(2, '0')}
                   </Text>
-                  <Text style={[styles.guideTitle, { color: colors.foreground }]}>
+                  <Text selectable={false} style={[styles.guideTitle, { color: colors.foreground }]}>
                     {section.title}
                   </Text>
                 </View>
               </View>
-              <Text style={[styles.guideIntro, { color: colors.mutedForeground }]}>
+              <Text selectable={false} style={[styles.guideIntro, { color: colors.mutedForeground }]}>
                 {section.intro}
               </Text>
               <View style={styles.steps}>
@@ -189,11 +251,11 @@ export default function AboutScreen() {
                         { backgroundColor: colors.background, borderColor: colors.border },
                       ]}
                     >
-                      <Text style={[styles.stepNumberText, { color: colors.primary }]}>
+                      <Text selectable={false} style={[styles.stepNumberText, { color: colors.primary }]}>
                         {stepIndex + 1}
                       </Text>
                     </View>
-                    <Text style={[styles.stepText, { color: colors.foreground }]}>
+                    <Text selectable={false} style={[styles.stepText, { color: colors.foreground }]}>
                       {step}
                     </Text>
                   </View>
@@ -238,6 +300,16 @@ const styles = StyleSheet.create({
   contentsHeading: { gap: 3 },
   sectionHeading: { fontFamily: 'Manrope_700Bold', fontSize: 18 },
   contentsHint: { fontFamily: 'DMSans_400Regular', fontSize: 11 },
+  printButton: {
+    minHeight: 48,
+    borderRadius: 13,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 9,
+  },
+  printButtonText: { fontFamily: 'DMSans_700Bold', fontSize: 13 },
   topicGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   topicButton: {
     flexBasis: '47%',
